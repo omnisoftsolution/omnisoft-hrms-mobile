@@ -112,6 +112,7 @@ class _CompanyCodeScreenState extends State<CompanyCodeScreen> {
                       LabeledField(
                         label: 'Company Code',
                         controller: _codeController,
+                        hintText: 'Provided by your HR administrator',
                         prefixIcon: Icons.vpn_key_outlined,
                         textCapitalization: TextCapitalization.characters,
                         textInputAction: TextInputAction.done,
@@ -154,10 +155,12 @@ class _CompanyCodeScreenState extends State<CompanyCodeScreen> {
                       Center(
                         child: Text(
                           'POWERED BY OMNISOFT TECHNOLOGIES',
+                          maxLines: 1,
+                          overflow: TextOverflow.visible,
                           style: GoogleFonts.inter(
-                            fontSize: 10,
+                            fontSize: 9,
                             fontWeight: FontWeight.w700,
-                            letterSpacing: 4,
+                            letterSpacing: 2,
                             color: AppTheme.outline.withValues(alpha: 0.7),
                           ),
                         ),

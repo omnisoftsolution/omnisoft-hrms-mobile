@@ -13,9 +13,38 @@ import '../models/location_result.dart';
 class LocationService {
   static const _timeout = Duration(seconds: 12);
 
+  // Single-flight guard. The Geolocator plugin throws
+  // PermissionRequestInProgressException if two requestPermission /
+  // getCurrentPosition calls overlap (observed on iOS when the user
+  // double-taps Check In, or an app-resume listener races with the
+  // tap handler). Coalesce concurrent callers onto the same Future
+  // so only one OS-level request is in flight at a time.
+  //
+  // Static so instances created at different call sites still share
+  // the lock — the LocationService isn't a DI singleton today, and
+  // making it one would touch every caller.
+  static Future<LocationResult>? _inFlight;
+
   /// One-shot location request. Resolves to a LocationResult — never
   /// throws. The caller inspects `status` and `friendlyMessage`.
+  /// Concurrent callers receive the same Future.
   Future<LocationResult> getCurrent() async {
+    final pending = _inFlight;
+    if (pending != null) return pending;
+    final fresh = _runCurrent();
+    _inFlight = fresh;
+    try {
+      return await fresh;
+    } finally {
+      // Only clear if no newer call replaced it — defensive against
+      // edge cases where two clears might race.
+      if (identical(_inFlight, fresh)) {
+        _inFlight = null;
+      }
+    }
+  }
+
+  Future<LocationResult> _runCurrent() async {
     if (DevConstants.useDevLocation) {
       return LocationResult.ready(
         latitude: DevConstants.fallbackLatitude,

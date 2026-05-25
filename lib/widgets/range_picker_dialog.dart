@@ -10,6 +10,15 @@ class RangePickerDialog extends StatefulWidget {
   final DateTime lastDate;
   final String? Function(DateTime)? holidayName;
   final bool Function(DateTime)? isNonWorkingDay;
+  /// Optional working-days calculator. When provided, the picker's
+  /// header shows the count from this function (e.g. excludes
+  /// weekends + holidays) instead of raw calendar days. Otherwise
+  /// falls back to (end - start + 1) inclusive-calendar-day count.
+  ///
+  /// Wire to HolidayService.workingDaysBetween from leave-create
+  /// flow so the count shown while choosing dates matches what the
+  /// leave form shows after the picker closes.
+  final int Function(DateTime start, DateTime end)? dayCount;
 
   const RangePickerDialog({
     super.key,
@@ -19,6 +28,7 @@ class RangePickerDialog extends StatefulWidget {
     required this.lastDate,
     this.holidayName,
     this.isNonWorkingDay,
+    this.dayCount,
   });
 
   @override
@@ -101,11 +111,18 @@ class _RangePickerDialogState extends State<RangePickerDialog> {
   @override
   Widget build(BuildContext context) {
     final fmt = DateFormat('dd MMM');
+    final int dayCount;
+    if (_start != null && _end != null) {
+      dayCount = widget.dayCount?.call(_start!, _end!) ??
+          (_end!.difference(_start!).inDays + 1);
+    } else {
+      dayCount = 0;
+    }
     final headerText = _start == null
         ? 'Select start date'
         : _end == null
             ? '${fmt.format(_start!)} → ?'
-            : '${fmt.format(_start!)} → ${fmt.format(_end!)}  ·  ${_end!.difference(_start!).inDays + 1}d';
+            : '${fmt.format(_start!)} → ${fmt.format(_end!)}  ·  ${dayCount}d';
 
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),

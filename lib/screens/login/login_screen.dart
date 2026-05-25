@@ -214,6 +214,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       LabeledField(
                         label: 'Email or login',
                         controller: _loginController,
+                        hintText: 'name@company.com',
                         prefixIcon: Icons.mail_outline_rounded,
                         keyboardType: TextInputType.emailAddress,
                         autofillHints: const [AutofillHints.email],
@@ -255,10 +256,12 @@ class _LoginScreenState extends State<LoginScreen> {
                       Center(
                         child: Text(
                           'POWERED BY OMNISOFT TECHNOLOGIES',
+                          maxLines: 1,
+                          overflow: TextOverflow.visible,
                           style: GoogleFonts.inter(
-                            fontSize: 10,
+                            fontSize: 9,
                             fontWeight: FontWeight.w700,
-                            letterSpacing: 4,
+                            letterSpacing: 2,
                             color: AppTheme.outline.withValues(alpha: 0.7),
                           ),
                         ),

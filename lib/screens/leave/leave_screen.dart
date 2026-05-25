@@ -375,6 +375,10 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
         lastDate: firstDate.add(const Duration(days: 365)),
         holidayName: holidays.holidayName,
         isNonWorkingDay: (d) => !holidays.isWorkingDay(d),
+        // Show working-day count in the picker header so it matches
+        // the count shown on the leave form after the picker closes
+        // (Fri→Mon was previously "4d" in picker but "2d" on form).
+        dayCount: holidays.workingDaysBetween,
       ),
     );
     if (picked != null) {
@@ -574,7 +578,16 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
     // SingleChildScrollView (not Padding) so the form scrolls when
     // the keyboard rises and pushes available height below the
     // column's intrinsic size — otherwise the column would overflow.
-    return SingleChildScrollView(
+    //
+    // Wrapped in a GestureDetector so tapping anywhere outside an
+    // input dismisses the keyboard. Combined with the explicit close
+    // (X) button in the header row below, this addresses the older-
+    // iPhone softlock where users couldn't dismiss the modal once an
+    // inline validation error appeared with the keyboard up.
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => FocusScope.of(context).unfocus(),
+      child: SingleChildScrollView(
       padding: EdgeInsets.only(
         left: 24,
         right: 24,
@@ -585,11 +598,31 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(widget.leaveType.name,
-              style: Theme.of(context)
-                  .textTheme
-                  .titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w700)),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(widget.leaveType.name,
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w700)),
+              ),
+              // Always-visible dismiss affordance. The native drag-to-
+              // dismiss strip is too small to grab on iPhone 8 / X
+              // when the keyboard is up; an explicit button removes
+              // the softlock risk on every screen size.
+              IconButton(
+                tooltip: 'Close',
+                icon: const Icon(Icons.close),
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(
+                    minWidth: 40, minHeight: 40),
+                onPressed: () => Navigator.of(context).maybePop(),
+              ),
+            ],
+          ),
           if (balance != null)
             Padding(
               padding: const EdgeInsets.only(top: 4),
@@ -740,6 +773,7 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
             onPressed: _submitting ? null : _submit,
           ),
         ],
+      ),
       ),
     );
   }

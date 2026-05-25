@@ -343,12 +343,28 @@ class LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
                 ],
                 if (r.state == 'confirm') ...[
                   const SizedBox(height: 12),
+                  // Both buttons share half-width via Expanded. Default
+                  // OutlinedButton.icon padding + a 6-char label like
+                  // "Cancel" overflows on iPhone 15 with iOS Dynamic
+                  // Type bumped above default — the label wraps mid-
+                  // word. Tighten horizontal padding and lock the
+                  // label to one line with ellipsis as graceful
+                  // degradation if it still doesn't fit.
                   Row(
                     children: [
                       Expanded(
                         child: OutlinedButton.icon(
                           icon: const Icon(Icons.edit_outlined, size: 18),
-                          label: const Text('Edit'),
+                          label: const Text(
+                            'Edit',
+                            maxLines: 1,
+                            softWrap: false,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8),
+                          ),
                           onPressed: () => _openEditSheet(r),
                         ),
                       ),
@@ -356,10 +372,17 @@ class LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
                       Expanded(
                         child: OutlinedButton.icon(
                           icon: const Icon(Icons.close_rounded, size: 18),
-                          label: const Text('Cancel'),
+                          label: const Text(
+                            'Cancel',
+                            maxLines: 1,
+                            softWrap: false,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: AppTheme.error,
                             side: BorderSide(color: AppTheme.error),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8),
                           ),
                           onPressed: () => _openCancelDialog(r),
                         ),
@@ -664,6 +687,7 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
         lastDate: firstDate.add(const Duration(days: 365)),
         holidayName: holidays.holidayName,
         isNonWorkingDay: (d) => !holidays.isWorkingDay(d),
+        dayCount: holidays.workingDaysBetween,
       ),
     );
     if (picked != null) {
