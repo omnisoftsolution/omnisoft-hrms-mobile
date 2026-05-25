@@ -1,0 +1,69 @@
+# Fastlane lanes for Omni HR Android releases.
+#
+# Usage from the omnisoft-hrms-mobile/android/ directory:
+#
+#   fastlane internal           — upload existing AAB to Internal testing
+#   fastlane build_and_internal — flutter build appbundle + upload
+#   fastlane promote_to_alpha   — promote Internal testing → Closed alpha
+#   fastlane promote_to_prod    — promote alpha → Production
+#
+# Requires:
+#   - fastlane installed (brew install fastlane)
+#   - Service account JSON at the path in Appfile
+#   - Signing config in android/key.properties
+
+default_platform(:android)
+
+# Resolve from android/ to the AAB Flutter produces.
+AAB_PATH = "../build/app/outputs/bundle/release/app-release.aab"
+
+platform :android do
+  desc "Upload the existing AAB to Internal testing (no metadata)"
+  lane :internal do
+    upload_to_play_store(
+      aab: AAB_PATH,
+      track: "internal",
+      release_status: "completed",
+      # We manage release notes inline (via Play Console UI) rather
+      # than from local files for now — flip these if you want to
+      # ship metadata changes via fastlane too.
+      skip_upload_metadata: true,
+      skip_upload_changelogs: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+      # Don't validate against existing tracks — just push the new
+      # build. Without this, supply complains if metadata diverges.
+      validate_only: false,
+    )
+  end
+
+  desc "Run flutter build appbundle then upload to Internal testing"
+  lane :build_and_internal do
+    sh("cd ../.. && flutter build appbundle --release")
+    internal
+  end
+
+  desc "Promote the current Internal track build to Closed alpha"
+  lane :promote_to_alpha do
+    upload_to_play_store(
+      track: "internal",
+      track_promote_to: "alpha",
+      skip_upload_metadata: true,
+      skip_upload_changelogs: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+    )
+  end
+
+  desc "Promote the current alpha build to Production"
+  lane :promote_to_prod do
+    upload_to_play_store(
+      track: "alpha",
+      track_promote_to: "production",
+      skip_upload_metadata: true,
+      skip_upload_changelogs: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+    )
+  end
+end

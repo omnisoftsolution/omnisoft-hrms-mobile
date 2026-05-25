@@ -1,0 +1,13 @@
+# Fastlane Appfile — identity + auth for the Play Developer API.
+#
+# json_key_file points at the Google Cloud service-account JSON
+# that has "Release manager" (or higher) access to the Omni HR app
+# in Play Console. Generated via Play Console → Setup → API access
+# → Create service account → download JSON.
+#
+# Keep the JSON file OUTSIDE this repo. The path here is just a
+# pointer — the contents stay on the developer's machine.
+json_key_file("/Users/willytanuwiharja/Keys/play-publisher-omnihr.json")
+
+# Application ID from android/app/build.gradle.
+package_name("com.omnisoft.omnihr")

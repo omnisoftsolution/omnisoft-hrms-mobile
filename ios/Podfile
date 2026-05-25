@@ -31,7 +31,20 @@ target 'Runner' do
   use_frameworks!
   use_modular_headers!
 
+  # NOTE: tflite_flutter 0.12.1's podspec is locally patched to pin
+  # TensorFlowLite{Swift,C} to 2.17.0 instead of the upstream 2.12.0.
+  # The patch lives at
+  # ~/.pub-cache/hosted/pub.dev/tflite_flutter-0.12.1/ios/tflite_flutter.podspec
+  # — a `tflite_version = '2.17.0'` line. Reason: TFLite 2.12 (April
+  # 2023) predates Google's `ai_edge_torch` PyTorch→TFLite converter
+  # (2024+), and our spoof models from that converter contain int64
+  # padding tensors + bool intermediates the 2.12 interpreter can't
+  # allocate ("Failed to allocate memory for input tensors"). The
+  # patch will be reapplied automatically by tools/patch_tflite_pod.sh
+  # on each `flutter pub get` (see Fastfile pre-hooks). New devs
+  # cloning the repo: run that script once before `pod install`.
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+
   target 'RunnerTests' do
     inherit! :search_paths
   end
@@ -54,5 +67,31 @@ post_install do |installer|
       # Real iPhone / iPad builds are unaffected.
       config.build_settings['EXCLUDED_ARCHS[sdk=iphonesimulator*]'] = 'arm64'
     end
+  end
+
+  # KNOWN ISSUE — iOS face match (tflite_flutter) fails on Xcode 26
+  # release builds with "dlsym(RTLD_DEFAULT, ...): symbol not found"
+  # because Apple's linker strips the TFLite C symbols that dart:ffi
+  # looks up at runtime. We tried 9 documented workarounds (
+  # -force_load, -all_load, Swift @_silgen_name, C __attribute__((used)),
+  # C __attribute__((constructor)), upgrading tflite_flutter to 0.12.1)
+  # — every approach was dead-stripped at link time. Needs deeper
+  # investigation (ld -why_live, upstream tflite_flutter issue).
+  # Until then, the mobile app uses DevConstants.simulateFaceRecognition
+  # on iOS only — see lib/core/constants.dart. Android works fine.
+  #
+  # The defensive OTHER_LDFLAGS cleanup below clears any stale
+  # -force_load / -all_load entries left in project.pbxproj from
+  # earlier debugging — prevents pod-install surprises.
+  installer.aggregate_targets.each do |aggregate_target|
+    aggregate_target.user_project.native_targets.each do |target|
+      next unless target.name == 'Runner'
+      target.build_configurations.each do |config|
+        config.build_settings['OTHER_LDFLAGS'] = '$(inherited)'
+        config.build_settings.delete('OTHER_LDFLAGS[sdk=iphoneos*]')
+        config.build_settings.delete('OTHER_LDFLAGS[sdk=iphonesimulator*]')
+      end
+    end
+    aggregate_target.user_project.save
   end
 end

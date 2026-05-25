@@ -6,6 +6,17 @@ plugins {
     id "dev.flutter.flutter-gradle-plugin"
 }
 
+// Production release signing config is loaded from android/key.properties
+// when present (Play Store builds). When absent (local dev / CI without
+// secrets), the release build type falls back to the debug keystore so
+// `flutter run --release` still works.
+def keystorePropertiesFile = rootProject.file("key.properties")
+def keystoreProperties = new Properties()
+def hasReleaseKeystore = keystorePropertiesFile.exists()
+if (hasReleaseKeystore) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
 android {
     namespace = "com.omnisoft.omni_hr"
     compileSdk = flutter.compileSdkVersion
@@ -21,7 +32,13 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.omnisoft.omni_hr"
+        // applicationId is what Play Store / on-device install identity
+        // uses. Matches the iOS bundle ID for cross-platform consistency.
+        // Note: the Gradle `namespace` (above) stays as omni_hr — that's
+        // the internal Kotlin/Java package path. Gradle allows the two
+        // to diverge, and changing namespace would require moving the
+        // MainActivity source folder.
+        applicationId = "com.omnisoft.omnihr"
         // camera + geolocator both require minSdk >= 21; we pin at 23
         // for safer runtime-permissions behaviour.
         minSdkVersion = flutter.minSdkVersion
@@ -30,11 +47,26 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (hasReleaseKeystore) {
+            release {
+                keyAlias = keystoreProperties["keyAlias"]
+                keyPassword = keystoreProperties["keyPassword"]
+                storeFile = file(keystoreProperties["storeFile"])
+                storePassword = keystoreProperties["storePassword"]
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // Signing with the debug keys for now so `flutter run --release`
-            // still produces a runnable APK during development.
-            signingConfig signingConfigs.debug
+            signingConfig = hasReleaseKeystore
+                ? signingConfigs.release
+                : signingConfigs.debug
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"),
+                          "proguard-rules.pro"
         }
     }
 

@@ -1,0 +1,8 @@
+# Fastlane Appfile — identity for the iOS app.
+#
+# No Apple ID / app-specific password needed because uploads
+# authenticate via the App Store Connect API key referenced in
+# Fastfile (api_key_path → /Users/willytanuwiharja/Keys/asc-api-key.json).
+
+app_identifier("com.omnisoftsolution.omnihr")
+team_id("5PBHZ3JDAD")
