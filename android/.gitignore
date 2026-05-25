@@ -11,3 +11,12 @@ GeneratedPluginRegistrant.java
 key.properties
 **/*.keystore
 **/*.jks
+
+# Fastlane runtime artifacts. The Fastfile and Appfile themselves
+# are committed (no secrets — Appfile only holds a PATH to the
+# service-account JSON, which lives outside the repo).
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots
+fastlane/test_output
+fastlane/README.md

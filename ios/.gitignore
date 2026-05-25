@@ -32,3 +32,12 @@ Runner/GeneratedPluginRegistrant.*
 !default.mode2v3
 !default.pbxuser
 !default.perspectivev3
+
+# Fastlane runtime artifacts. The Fastfile and Appfile themselves
+# are committed (no secrets — Appfile only holds bundle id + team id,
+# and the API-key JSON path points OUTSIDE the repo).
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots
+fastlane/test_output
+fastlane/README.md

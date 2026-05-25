@@ -1,0 +1,18 @@
+# Production signing config for Play Store release builds.
+# Copy to `key.properties` (gitignored) and fill in with the values
+# from your release keystore. Never commit the populated file.
+#
+# To generate a release keystore (one-time, do this outside the repo):
+#
+#   keytool -genkey -v -keystore ~/omnisoft-omni-hr-release.jks \
+#       -keyalg RSA -keysize 2048 -validity 10000 \
+#       -alias omni-hr
+#
+# `storeFile` must be an ABSOLUTE path (or a path relative to
+# android/app/), so e.g. `/Users/you/omnisoft-omni-hr-release.jks`.
+# Storing the .jks outside the repo prevents accidental commits.
+
+storeFile=/absolute/path/to/your.jks
+storePassword=changeme
+keyAlias=omni-hr
+keyPassword=changeme
