@@ -1,7 +1,7 @@
 name: omni_hr
 description: Omni HR — Mobile attendance and leave management
 publish_to: 'none'
-version: 1.17.4+32
+version: 1.17.8+56
 
 environment:
   sdk: ^3.11.0
@@ -31,13 +31,37 @@ dependencies:
   device_info_plus: ^11.5.0
   package_info_plus: ^9.0.1
   google_mlkit_face_detection: ^0.13.0
-  tflite_flutter: ^0.11.0
+  tflite_flutter: ^0.12.1
   image: ^4.1.7
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  # Generates platform launcher icons from a single source PNG.
+  # Source lives at macos/Runner/Assets.xcassets/AppIcon.appiconset/
+  # because that's where the original 1024×1024 Omnisoft icon is
+  # checked in. Run `dart run flutter_launcher_icons` after updating
+  # the source to regenerate iOS + Android icons.
+  flutter_launcher_icons: ^0.14.4
+
+flutter_launcher_icons:
+  ios: true
+  android: true
+  # Source is the in-app Omnisoft brand mark (450×450). The generator
+  # upscales it to 1024×1024 for the App Store icon — slightly soft
+  # but recognizably Omnisoft, not Flutter's default placeholder.
+  # When a higher-res export from design lands, swap this path.
+  image_path: "assets/images/omnisoft_logo.png"
+  # Apple rejects 1024×1024 App Store icons that contain an alpha
+  # channel. Strip alpha and composite the swirl onto a white card so
+  # the iOS launcher matches the in-app login-screen branding.
+  remove_alpha_ios: true
+  background_color_ios: "#ffffff"
+  # Android adaptive icon (covers C2 from the Wave 1 review — modern
+  # Android 8+ launchers expect this).
+  adaptive_icon_background: "#ffffff"
+  adaptive_icon_foreground: "assets/images/omnisoft_logo.png"
 
 flutter:
   uses-material-design: true
