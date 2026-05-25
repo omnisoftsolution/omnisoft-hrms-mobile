@@ -19,7 +19,7 @@ import '../../widgets/big_check_button.dart';
 import '../../widgets/feature_locked_pane.dart';
 import '../../widgets/info_card.dart';
 import '../../widgets/omni_app_bar.dart';
-import '../face_scan/face_capture_screen.dart';
+import '../../widgets/silent_face_capture.dart';
 import '../face_scan/face_enrollment_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -55,6 +55,14 @@ class HomeScreenState extends State<HomeScreen> {
   Timer? _clockTimer;
   DateTime _now = DateTime.now();
 
+  // Inline face-capture state. When true, BigCheckButton swaps for
+  // InlineFaceCapture in-place — same dimensions, no layout shift.
+  // _captureCompleter is how _onCheckAction awaits the capture result;
+  // InlineFaceCapture's onResult callback completes the future and
+  // flips this flag back to false.
+  bool _faceCapturing = false;
+  Completer<FaceCaptureResult>? _captureCompleter;
+
   // GPS distance polling for the GPS Status card. Updates every 60s.
   Timer? _gpsTimer;
   double? _currentDistanceMeters; // null = unknown / outside coverage
@@ -65,6 +73,32 @@ class HomeScreenState extends State<HomeScreen> {
         db: s.clientDb,
         token: s.token,
       );
+
+  /// Set state to render `InlineFaceCapture` in place of the
+  /// `BigCheckButton`, then wait for the inline widget to complete the
+  /// shared completer with its capture result.
+  Future<FaceCaptureResult> _runInlineFaceCapture() {
+    final completer = Completer<FaceCaptureResult>();
+    setState(() {
+      _captureCompleter = completer;
+      _faceCapturing = true;
+    });
+    return completer.future;
+  }
+
+  /// Bridge: InlineFaceCapture finished — flip the swap back to
+  /// BigCheckButton AND resolve the awaiting future so _onCheckAction
+  /// proceeds (to verifyFace + attendance POST).
+  void _handleInlineFaceResult(FaceCaptureResult result) {
+    final completer = _captureCompleter;
+    _captureCompleter = null;
+    if (mounted) {
+      setState(() => _faceCapturing = false);
+    }
+    if (completer != null && !completer.isCompleted) {
+      completer.complete(result);
+    }
+  }
 
   @override
   void initState() {
@@ -191,12 +225,23 @@ class HomeScreenState extends State<HomeScreen> {
     // `enroll` state, tapping it doesn't start a check-in — it routes
     // to the one-time face setup. The button state in build() already
     // reflects this; this is just the action dispatch.
+    //
+    // `== false` (not `!= true`) so the null/loading state is treated
+    // as "not yet known, assume enrolled" — keeps this in sync with
+    // _buttonState() below and matches the optimistic CHECK IN that
+    // the button shows during the brief enrollment-fetch window on
+    // cold start. If the user is in fact not enrolled when they tap
+    // during that window, verifyFace() catches it and returns
+    // FaceVerifyResult.notEnrolled() with a clear message.
     final faceSvc = context.read<FaceRecognitionService>();
     final needsEnrollment = session.featureFaceVerification &&
         !DevConstants.simulateFaceRecognition &&
-        faceSvc.isEnrolled != true;
+        faceSvc.isEnrolled == false;
     if (needsEnrollment) {
-      await Navigator.of(context).push(
+      // Push via root navigator — the HomeShell uses per-tab
+      // navigators, so a local push would leave the bottom nav bar
+      // bleeding through the full-screen camera modal underneath.
+      await Navigator.of(context, rootNavigator: true).push(
         MaterialPageRoute(builder: (_) => const FaceEnrollmentScreen()),
       );
       if (!mounted) return;
@@ -235,14 +280,20 @@ class HomeScreenState extends State<HomeScreen> {
     // which no longer enforces face_verified.
     bool faceVerified = false;
     if (session.featureFaceVerification) {
-      final faceResult = await Navigator.of(context).push<FaceCaptureResult>(
-        MaterialPageRoute(builder: (_) => const FaceCaptureScreen()),
-      );
+      // Silent (B-prime) capture: swap the BigCheckButton in-place
+      // for InlineFaceCapture. Mini preview lives at the top half of
+      // the home screen where the camera lens actually is, so the
+      // user's gaze and the camera angle align. The inline widget
+      // self-closes after 3 failed attempts or its hard timeout —
+      // we surface the message via snackbar and return to the button
+      // state. No auto-fallback to a second camera surface; user
+      // taps CHECK IN again to retry.
+      final faceResult = await _runInlineFaceCapture();
       if (!mounted) return;
-      if (faceResult == null || !faceResult.success) {
+      if (!faceResult.success) {
         setState(() => _acting = false);
-        if (faceResult?.errorMessage != null) {
-          _showError(faceResult!.errorMessage!);
+        if (faceResult.errorMessage != null) {
+          _showError(faceResult.errorMessage!);
         }
         return;
       }
@@ -477,15 +528,19 @@ class HomeScreenState extends State<HomeScreen> {
           _autoClosedBanner(),
         ],
         const SizedBox(height: 28),
-        // Big action button
+        // Big action button OR inline face-capture preview. Same outer
+        // footprint (248dp) so the rest of the page layout doesn't
+        // shift when we swap.
         Center(
-          child: BigCheckButton(
-            checkedIn: s.checkedIn,
-            state: _buttonState(s, session),
-            onPressed: _acting ? null : _onCheckAction,
-            faceEnabled: session.featureFaceVerification,
-            geoEnabled: session.featureGeolocation,
-          ),
+          child: _faceCapturing
+              ? InlineFaceCapture(onResult: _handleInlineFaceResult)
+              : BigCheckButton(
+                  checkedIn: s.checkedIn,
+                  state: _buttonState(s, session),
+                  onPressed: _acting ? null : _onCheckAction,
+                  faceEnabled: session.featureFaceVerification,
+                  geoEnabled: session.featureGeolocation,
+                ),
         ),
         if (_buttonState(s, session) == CheckButtonState.enroll) ...[
           const SizedBox(height: 12),
@@ -797,10 +852,20 @@ class HomeScreenState extends State<HomeScreen> {
     // big button's primary action shifts to "ENROLL FACE" regardless
     // of geofence — they can't check in without enrollment anyway,
     // so showing READY/NOT READY would be misleading.
+    //
+    // `== false` (not `!= true`) so the null state — which the
+    // service holds until refreshEnrolledStatus() completes its
+    // async server fetch — is treated optimistically as "enrolled
+    // until proven otherwise." Without this, the button rendered
+    // ENROLL FACE on the first frame of every cold start (the
+    // postFrame callback that triggers the refresh hasn't fired
+    // yet) and then visibly snapped to CHECK IN seconds later.
+    // The action handler at line 197 uses the matching check so
+    // tap-time logic agrees with what the button shows.
     final faceSvc = context.read<FaceRecognitionService>();
     final needsEnrollment = session.featureFaceVerification &&
         !DevConstants.simulateFaceRecognition &&
-        faceSvc.isEnrolled != true;
+        faceSvc.isEnrolled == false;
     if (needsEnrollment) return CheckButtonState.enroll;
     if (!session.featureGeolocation) return CheckButtonState.ready;
     if (DevConstants.useDevLocation) return CheckButtonState.ready;
