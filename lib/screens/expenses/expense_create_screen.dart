@@ -168,7 +168,10 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
     try {
       // imageQuality:85 keeps receipt photos around 200-500KB while
       // staying readable. Well under the connector's 10MB attachment
-      // cap and gentle on uploads over cellular.
+      // cap and gentle on uploads over cellular. Gallery picks can
+      // still return arbitrary-size library images (4K screenshots,
+      // long-side panoramas), so the post-pick size check is the
+      // actual ceiling.
       final xfile = await ImagePicker().pickImage(
         source: source,
         imageQuality: 85,
@@ -176,6 +179,10 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
       if (xfile == null) return;
       final bytes = await xfile.readAsBytes();
       if (!mounted) return;
+      if (bytes.length > 10 * 1024 * 1024) {
+        setState(() => _error = 'Receipt is too large. Max 10 MB.');
+        return;
+      }
       setState(() {
         _receiptBytes = bytes;
         _receiptName = xfile.name;

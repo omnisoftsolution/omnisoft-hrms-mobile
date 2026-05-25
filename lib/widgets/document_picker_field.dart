@@ -6,6 +6,21 @@ import 'package:image_picker/image_picker.dart';
 import '../core/theme.dart';
 import 'file_viewer.dart';
 
+/// Allowed attachment file types for leave docs / supporting documents.
+///
+/// The whitelist is the mobile UX layer of a two-layer defense — the
+/// connector enforces the same list server-side via magic-byte checks,
+/// so this list ONLY controls what the user sees in the picker and
+/// gets a clean snackbar for if a misbehaving OEM picker ignores the
+/// filter. Direct API calls bypass this entirely; only the server-side
+/// validator stops those.
+const _kAllowedExtensions = ['pdf', 'jpg', 'jpeg', 'png', 'heic', 'heif'];
+
+/// Cap matches the connector's `ir.attachment` size limit. Files
+/// larger than this are rejected client-side with a clean message
+/// rather than blowing up on upload.
+const _kMaxSizeBytes = 10 * 1024 * 1024; // 10 MB
+
 class PickedDocument {
   final String name;
   final String mimetype;
@@ -47,6 +62,9 @@ class DocumentPickerField extends StatelessWidget {
   /// Camera primary path — for paper docs the user wants to snap
   /// right now (handwritten letters, clinic stamps, etc).
   Future<void> _pickFromCamera(BuildContext context) async {
+    // Capture the messenger before any await so we can surface
+    // errors after the async gap without touching `context` again.
+    final messenger = ScaffoldMessenger.of(context);
     try {
       final xfile = await ImagePicker().pickImage(
         source: ImageSource.camera,
@@ -54,6 +72,10 @@ class DocumentPickerField extends StatelessWidget {
       );
       if (xfile == null) return;
       final bytes = await xfile.readAsBytes();
+      if (bytes.length > _kMaxSizeBytes) {
+        _showSnack(messenger, 'Photo is too large. Max 10 MB.');
+        return;
+      }
       final ext = xfile.name.contains('.')
           ? xfile.name.split('.').last
           : 'jpg';
@@ -64,46 +86,62 @@ class DocumentPickerField extends StatelessWidget {
         size: bytes.length,
       ));
     } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Could not capture photo: $e'),
-            backgroundColor: AppTheme.error,
-          ),
-        );
-      }
+      _showSnack(messenger, 'Could not capture photo: $e');
     }
   }
 
   /// Files fallback — for medical PDFs, scanned certs already on
   /// disk, library photos (iOS Files → Photos), anything non-camera.
+  /// Restricted to PDF / JPG / PNG / HEIC via the picker filter +
+  /// a second extension check after pick (some OEM Android pickers
+  /// ignore the `allowedExtensions` filter and return any file).
   Future<void> _pickFromFiles(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
     try {
       final result = await FilePicker.platform.pickFiles(
-        type: FileType.any,
+        type: FileType.custom,
+        allowedExtensions: _kAllowedExtensions,
         allowMultiple: false,
         withData: true,
       );
       if (result == null || result.files.isEmpty) return;
       final f = result.files.single;
       if (f.bytes == null && f.path == null) return;
+
+      // OEM-bypass guard: revalidate the extension. The picker filter
+      // is advisory on some Android builds.
+      final ext = (f.extension ?? '').toLowerCase();
+      if (!_kAllowedExtensions.contains(ext)) {
+        _showSnack(
+          messenger,
+          'Unsupported file type. Allowed: ${_kAllowedExtensions.join(", ").toUpperCase()}.',
+        );
+        return;
+      }
+      if (f.size > _kMaxSizeBytes) {
+        _showSnack(messenger, 'File is too large. Max 10 MB.');
+        return;
+      }
+
       final bytes = f.bytes ?? await File(f.path!).readAsBytes();
       onChanged(PickedDocument(
         name: f.name,
-        mimetype: _guessMimetype(f.extension),
+        mimetype: _guessMimetype(ext),
         dataB64: base64Encode(bytes),
         size: bytes.length,
       ));
     } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Could not pick file: $e'),
-            backgroundColor: AppTheme.error,
-          ),
-        );
-      }
+      _showSnack(messenger, 'Could not pick file: $e');
     }
+  }
+
+  void _showSnack(ScaffoldMessengerState messenger, String message) {
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: AppTheme.error,
+      ),
+    );
   }
 
   String _guessMimetype(String? ext) {
@@ -115,10 +153,9 @@ class DocumentPickerField extends StatelessWidget {
         return 'image/jpeg';
       case 'png':
         return 'image/png';
-      case 'doc':
-        return 'application/msword';
-      case 'docx':
-        return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      case 'heic':
+      case 'heif':
+        return 'image/heic';
       default:
         return 'application/octet-stream';
     }
