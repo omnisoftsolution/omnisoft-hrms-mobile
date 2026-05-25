@@ -28,12 +28,27 @@
 	<true/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
-		<key>NSAllowsArbitraryLoads</key>
+		<!--
+			Release posture: HTTPS only. NSAllowsLocalNetworking permits
+			plain HTTP only against link-local addresses (so a developer
+			running a debug build against a local Odoo at
+			http://localhost:8069 or http://10.0.2.2:8069 still works),
+			without weakening release-build traffic policy. Self-hosted
+			Ollama on a customer LAN goes through the SaaS proxy, never
+			directly from the mobile.
+		-->
+		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.business</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Omni HR needs camera access to capture your face for attendance verification.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Omni HR needs your location for attendance geofence verification.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>Omni HR needs your location for attendance geofence verification.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Omni HR needs photo library access to attach supporting documents to leave requests.</string>
