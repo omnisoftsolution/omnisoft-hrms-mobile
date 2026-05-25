@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Production posture: HTTPS only. No cleartext by default.
+
+  Loopback exception lets Flutter debug builds talk to a dev
+  Odoo on the same machine (the SAAS_URL Dart define points
+  to http://localhost:8069) without weakening the release
+  build's traffic policy.
+
+  Self-hosted Ollama on a customer LAN (e.g. 192.168.x.y:11434)
+  goes through the SaaS proxy. The mobile never reaches it
+  directly, so no 192.168/10.* exception is needed here.
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
