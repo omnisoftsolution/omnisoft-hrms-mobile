@@ -95,6 +95,14 @@ class OmniMobileApi {
     return _post('/logout');
   }
 
+  /// Account deletion request. The connector revokes the mobile
+  /// session and logs the request; full server-side data cleanup is
+  /// handled by a separate backend pass. Idempotent — calling twice
+  /// from a re-logged-in account is safe.
+  Future<Map<String, dynamic>> deleteAccount() async {
+    return _post('/account/delete');
+  }
+
   Future<Map<String, dynamic>> me() async {
     return _post('/me');
   }

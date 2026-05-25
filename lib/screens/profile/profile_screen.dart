@@ -16,6 +16,7 @@ import '../login/company_settings_screen.dart';
 import '../login/login_screen.dart';
 import '../payroll/payslips_screen.dart';
 import '../face_scan/face_enrollment_screen.dart';
+import 'delete_account_screen.dart';
 
 /// Employee profile screen — reached from the avatar in OmniAppBar.
 /// Hero avatar + identity, then face enrollment, payslips (gated by
@@ -77,6 +78,28 @@ class ProfileScreen extends StatelessWidget {
             icon: Icons.logout_rounded,
             variant: PrimaryButtonVariant.danger,
             onPressed: () => _logout(context, session),
+          ),
+          // App Store / Play Store policy: account deletion path
+          // must be reachable from within the app. Kept as a low-key
+          // text button so it doesn't compete with LOGOUT as the
+          // primary "leave this screen" affordance.
+          const SizedBox(height: 8),
+          Center(
+            child: TextButton(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const DeleteAccountScreen(),
+                ),
+              ),
+              child: Text(
+                'Delete my account',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: AppTheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
           ),
         ],
         ),
@@ -689,7 +712,9 @@ class ProfileScreen extends StatelessWidget {
 
   Future<void> _openEnroll(BuildContext context,
       FaceRecognitionService face, SessionService session) async {
-    await Navigator.of(context).push<bool>(
+    // Root navigator so the camera modal isn't stacked inside the
+    // tab navigator (would leave the bottom nav bleeding through).
+    await Navigator.of(context, rootNavigator: true).push<bool>(
       MaterialPageRoute(
         builder: (_) => const FaceEnrollmentScreen(),
       ),
