@@ -9,7 +9,7 @@ enum PrimaryButtonVariant {
   danger,
 }
 
-/// Pill-shaped CTA with the Fluid HR glow shadow. Wraps an
+/// Pill-shaped CTA with the Omni HR glow shadow. Wraps an
 /// `ElevatedButton` so it picks up the global text style + ripple,
 /// but adds the colored ambient shadow that Material's button shadow
 /// API can't produce cleanly.

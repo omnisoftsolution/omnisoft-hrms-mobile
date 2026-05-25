@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-/// Fluid HR design system — see DESIGN.md from the design source folder.
+/// Omni HR design system — see DESIGN.md from the design source folder.
 ///
 /// Color tokens map directly to Material 3 ColorScheme slots so
 /// every Material widget picks up the right shade by default. The

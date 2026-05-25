@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/constants.dart';
 import '../../core/theme.dart';
 import '../../services/saas_service.dart';
@@ -345,6 +346,28 @@ class _CompanySettingsScreenState extends State<CompanySettingsScreen> {
                   ),
                 ),
               const SizedBox(height: 32),
+              // Legal links — required to be discoverable from inside
+              // the app for biometric data handling (Apple) and best
+              // practice for Play Store data-safety disclosures.
+              Text(
+                'Legal',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: AppTheme.onSurfaceVariant,
+                    ),
+              ),
+              const SizedBox(height: 8),
+              _legalLinkTile(
+                icon: Icons.shield_outlined,
+                label: 'Privacy Policy',
+                url: AppConstants.privacyPolicyUrl,
+              ),
+              const SizedBox(height: 8),
+              _legalLinkTile(
+                icon: Icons.delete_outline,
+                label: 'Account Deletion',
+                url: AppConstants.accountDeletionUrl,
+              ),
+              const SizedBox(height: 32),
               Center(
                 child: Text(
                   'App version ${AppConstants.appVersion}',
@@ -360,6 +383,63 @@ class _CompanySettingsScreenState extends State<CompanySettingsScreen> {
         ),
       ),
     );
+  }
+
+  Widget _legalLinkTile({
+    required IconData icon,
+    required String label,
+    required String url,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () => _openExternalUrl(url),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: AppTheme.surfaceContainer,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: AppTheme.onSurfaceVariant),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            Icon(Icons.open_in_new, size: 16, color: AppTheme.onSurfaceVariant),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openExternalUrl(String url) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final uri = Uri.tryParse(url);
+    if (uri == null) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: const Text('Invalid link.'),
+          backgroundColor: AppTheme.error,
+        ),
+      );
+      return;
+    }
+    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!launched) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: const Text("Couldn't open the link."),
+          backgroundColor: AppTheme.error,
+        ),
+      );
+    }
   }
 
   Widget _readOnlyTile(

@@ -107,6 +107,15 @@ class AppConstants {
   static const String appName = 'Omni HR';
   static const String apiVersion = 'v1';
 
+  /// Public-facing legal URLs. Hosted from the omnihr-legal GitHub
+  /// repo via GitHub Pages today; will swap to
+  /// https://omnisoftsolution.com/omnihr/... once the Website-module
+  /// page rewrite is in place. Change in one spot when that happens.
+  static const String privacyPolicyUrl =
+      'https://omnisoftsolution.github.io/omnihr-legal/privacy/';
+  static const String accountDeletionUrl =
+      'https://omnisoftsolution.github.io/omnihr-legal/account-deletion/';
+
   /// Live app version, populated at startup from pubspec.yaml via
   /// package_info_plus. pubspec.yaml is the single source of truth —
   /// DO NOT hardcode here.
