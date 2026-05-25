@@ -67,6 +67,30 @@ class FaceRecognitionService extends ChangeNotifier {
   bool get loading => _loading;
   bool get isSimulated => DevConstants.simulateFaceRecognition;
 
+  /// Run ML Kit quality validation on a freshly-captured image.
+  /// Used by FaceCaptureScreen to auto-confirm a good capture (kills
+  /// the Retake/Confirm step) and auto-retry a bad one. Delegates to
+  /// the quality engine that's always real (ML Kit), regardless of
+  /// whether simulate mode is on for the identity-match step.
+  Future<FaceQualityResult> checkQuality(String imagePath) async {
+    await _ensureEnginesReady();
+    return _qualityEngine.checkQuality(imagePath);
+  }
+
+  /// Passive anti-spoof / liveness check. Same engine instance as
+  /// checkQuality (ML Kit + two TFLite spoof models). Used by
+  /// FaceCaptureScreen between the quality gate and pop-with-success
+  /// so the user gets immediate feedback when a printed photo / phone
+  /// screen is detected.
+  ///
+  /// See [DevConstants.requireLivenessCheck] — when false, the result
+  /// is informational only (callers should NOT block submission). When
+  /// true, callers should block on `available && !isLive`.
+  Future<FaceLivenessResult> checkLiveness(String imagePath) async {
+    await _ensureEnginesReady();
+    return _qualityEngine.checkLiveness(imagePath);
+  }
+
   Future<File> _cacheFile() async {
     final dir = await getApplicationDocumentsDirectory();
     return File('${dir.path}/$_cachedFilename');
@@ -107,12 +131,22 @@ class FaceRecognitionService extends ChangeNotifier {
   /// Upload a captured selfie to Odoo as the enrolled reference.
   /// Caches it locally on success. Throws when the image fails the
   /// face-quality gate (no face / multiple faces / too small / eyes
-  /// closed).
+  /// closed) or the passive liveness gate (printed photo / phone
+  /// screen replay), when liveness enforcement is on.
   Future<void> enrollFace(SessionService session, String imagePath) async {
     await _ensureEnginesReady();
     final quality = await _qualityEngine.checkQuality(imagePath);
     if (!quality.ok) {
       throw FaceQualityException(quality);
+    }
+    // Defense-in-depth — the capture screen also runs this check, but
+    // re-running here means non-camera enrollment paths (e.g. a
+    // future admin-side upload) still get gated.
+    if (DevConstants.requireLivenessCheck) {
+      final liveness = await _qualityEngine.checkLiveness(imagePath);
+      if (liveness.available && !liveness.isLive) {
+        throw FaceLivenessException(liveness);
+      }
     }
     final api = _api(session);
     final bytes = await File(imagePath).readAsBytes();
@@ -189,6 +223,18 @@ class FaceRecognitionService extends ChangeNotifier {
       return FaceVerifyResult.qualityFail(quality);
     }
 
+    // Passive liveness gate — catches printed photos / phone-screen
+    // replays. The capture screen also runs this check (immediate UX
+    // feedback), but re-running here closes the loop for any future
+    // non-camera path. Only blocks when the flag is on AND the model
+    // is available — shadow-mode rollout stays informational.
+    if (DevConstants.requireLivenessCheck) {
+      final liveness = await _qualityEngine.checkLiveness(liveImagePath);
+      if (liveness.available && !liveness.isLive) {
+        return FaceVerifyResult.livenessFail(liveness);
+      }
+    }
+
     final compare =
         await _compareEngine.compare(_localFacePath!, liveImagePath);
     final FaceVerifyResult result;
@@ -255,6 +301,14 @@ class FaceVerifyResult {
         errorMessage: q.friendlyMessage,
       );
 
+  factory FaceVerifyResult.livenessFail(FaceLivenessResult l) =>
+      FaceVerifyResult(
+        ok: false,
+        isError: true,
+        errorMessage: l.errorMessage ??
+            'Live photo check failed. Try again in better light.',
+      );
+
   factory FaceVerifyResult.notEnrolled() => FaceVerifyResult(
         ok: false,
         isError: true,
@@ -276,4 +330,16 @@ class FaceQualityException implements Exception {
   FaceQualityException(this.result);
   @override
   String toString() => result.friendlyMessage;
+}
+
+/// Thrown by enrollFace when the captured selfie fails the passive
+/// anti-spoof check (printed photo / phone-screen replay) while
+/// liveness enforcement is on. UI layer catches and surfaces the
+/// non-accusatory friendly message.
+class FaceLivenessException implements Exception {
+  final FaceLivenessResult result;
+  FaceLivenessException(this.result);
+  @override
+  String toString() =>
+      result.errorMessage ?? 'Live photo verification failed.';
 }

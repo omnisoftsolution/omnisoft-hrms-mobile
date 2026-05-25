@@ -2,10 +2,27 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart'
+    show MethodChannel, PlatformException;
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:image/image.dart' as img;
 import 'package:tflite_flutter/tflite_flutter.dart';
 import '../core/constants.dart';
+import 'face_spoof_detector.dart';
+
+// iOS-only: TFLite via Swift method channel.
+//
+// tflite_flutter's dart:ffi + dlsym path is dead on iOS 26
+// release builds (linker strips the C symbols). Instead we call
+// into a native Swift plugin at ios/Runner/FaceEmbedderPlugin.swift
+// that uses the TensorFlowLiteSwift Swift API directly. The plugin
+// is registered from AppDelegate.swift, which makes its method
+// handler — and therefore the Swift Interpreter usage inside — a
+// live root the linker can't strip. The TFLite C symbols survive.
+//
+// Android continues using the Dart-side tflite_flutter path
+// because it works fine (no static-framework dead-strip issue).
+const _kFaceEmbedChannel = MethodChannel('omnihr/face_embed');
 
 // =====================================================================
 // Engine interface
@@ -42,6 +59,17 @@ abstract class FaceRecognitionEngine {
 
   /// Quality validation only. Real on whatever engine is active.
   Future<FaceQualityResult> checkQuality(String imagePath);
+
+  /// Passive on-device liveness / anti-spoof check. Runs a two-model
+  /// TFLite ensemble over the detected face region to flag printed
+  /// photos and phone-screen replays. See [FaceSpoofDetector] for
+  /// the model contract.
+  ///
+  /// Returns a [FaceLivenessResult] — the `available` flag is false
+  /// when the spoof models couldn't be loaded (e.g. assets missing
+  /// in this build). Caller decides whether to hard-block on
+  /// unavailable; see [DevConstants.requireLivenessCheck].
+  Future<FaceLivenessResult> checkLiveness(String imagePath);
 
   /// Returns a unit-length embedding vector for the face in [imagePath],
   /// or null when the engine doesn't implement embeddings yet.
@@ -117,6 +145,102 @@ class FaceQualityResult {
   }
 }
 
+/// Outcome of a passive liveness check on a single image.
+///
+/// `available` distinguishes "model said spoof" from "we couldn't
+/// run the check at all" (assets missing, native call failed, etc.).
+/// The capture screen + service layer use this to decide whether to
+/// hard-block — see [DevConstants.requireLivenessCheck].
+class FaceLivenessResult {
+  final bool available;
+  final bool isLive;
+  final double? score;
+  final int? elapsedMs;
+  final String? errorMessage;
+
+  /// Diagnostic-only: winning class index from the spoof ensemble's
+  /// summed-softmax argmax. -1 when the check didn't run.
+  final int argmax;
+
+  /// Diagnostic-only: raw softmax outputs of the two spoof models.
+  /// Surfaced in the capture screen's debug overlay so we can see
+  /// what the model actually predicts and figure out the correct
+  /// label mapping (`_liveClassIndex` is assumed = 1 from the Kotlin
+  /// reference but might be different for these model files).
+  final List<double> softmax1;
+  final List<double> softmax2;
+
+  FaceLivenessResult({
+    required this.available,
+    required this.isLive,
+    this.score,
+    this.elapsedMs,
+    this.errorMessage,
+    this.argmax = -1,
+    this.softmax1 = const <double>[],
+    this.softmax2 = const <double>[],
+  });
+
+  factory FaceLivenessResult.live(
+    double score,
+    int elapsedMs, {
+    int argmax = -1,
+    List<double> softmax1 = const <double>[],
+    List<double> softmax2 = const <double>[],
+  }) =>
+      FaceLivenessResult(
+        available: true,
+        isLive: true,
+        score: score,
+        elapsedMs: elapsedMs,
+        argmax: argmax,
+        softmax1: softmax1,
+        softmax2: softmax2,
+      );
+
+  factory FaceLivenessResult.spoof(
+    double score,
+    int elapsedMs, {
+    int argmax = -1,
+    List<double> softmax1 = const <double>[],
+    List<double> softmax2 = const <double>[],
+  }) =>
+      FaceLivenessResult(
+        available: true,
+        isLive: false,
+        score: score,
+        elapsedMs: elapsedMs,
+        argmax: argmax,
+        softmax1: softmax1,
+        softmax2: softmax2,
+        errorMessage:
+            'Live photo check failed. Make sure you’re showing your real '
+            'face (not a photo or a screen) and try again.',
+      );
+
+  factory FaceLivenessResult.unavailable([String? reason]) =>
+      FaceLivenessResult(
+        available: false,
+        isLive: false,
+        errorMessage: reason,
+      );
+
+  /// Compact one-line debug string of the raw model output. Empty
+  /// when no diagnostics are populated (e.g. simulated engine or
+  /// unavailable). Format:
+  ///   argmax=1 score=0.92 ms=187 m1=[0.10,0.79,0.11] m2=[0.05,0.91,0.04]
+  String get debugSummary {
+    if (softmax1.isEmpty && softmax2.isEmpty) return '';
+    String fmt(List<double> v) =>
+        '[${v.map((d) => d.toStringAsFixed(2)).join(",")}]';
+    return 'argmax=$argmax '
+        'score=${score?.toStringAsFixed(2) ?? "?"} '
+        'ms=${elapsedMs ?? "?"} '
+        'm1=${fmt(softmax1)} '
+        'm2=${fmt(softmax2)}';
+  }
+}
+
 class FaceCompareResult {
   /// True only when identity matching ran AND passed the threshold.
   final bool ok;
@@ -184,6 +308,13 @@ class SimulatedFaceRecognitionEngine implements FaceRecognitionEngine {
   }
 
   @override
+  Future<FaceLivenessResult> checkLiveness(String imagePath) async {
+    // Dev mode bypasses the spoof check the same way it bypasses
+    // identity matching — otherwise simulator testing breaks.
+    return FaceLivenessResult.live(1.0, 0);
+  }
+
+  @override
   Future<List<double>?> extractEmbedding(String imagePath) async => null;
 
   @override
@@ -225,6 +356,19 @@ class MLKitFaceRecognitionEngine implements FaceRecognitionEngine {
   _Normalization _norm = _Normalization.minusOneToOne;
   bool _initialized = false;
   bool _embedderTried = false; // avoid spamming load attempts
+  // Passive anti-spoof ensemble — lazily loads the two TFLite models
+  // on first checkLiveness call. iOS routes through the same Swift
+  // method channel as the embedder; Android uses tflite_flutter
+  // directly.
+  final FaceSpoofDetector _spoofDetector = FaceSpoofDetector();
+  // Captured during _ensureEmbedder when the load fails — surfaced to
+  // the UI via compare()'s reason field so testers (especially on iOS
+  // where the issue first surfaced) see what actually went wrong
+  // instead of "not yet wired up".
+  String? _embedderLoadError;
+  // Last per-image extraction failure reason (no face, decode fail, etc.)
+  // — also surfaced to compare()'s reason field.
+  String? _lastExtractError;
 
   @override
   String get name => 'mlkit_face_quality';
@@ -248,13 +392,20 @@ class MLKitFaceRecognitionEngine implements FaceRecognitionEngine {
   }
 
   /// Lazily load the embedding model. Returns null when missing — the
-  /// caller fails closed cleanly, no crash.
+  /// caller fails closed cleanly, no crash. Captures the load error in
+  /// _embedderLoadError so compare() can surface it to the UI.
   Future<Interpreter?> _ensureEmbedder() async {
     if (_embedder != null) return _embedder;
     if (_embedderTried) return null;
     _embedderTried = true;
     try {
-      _embedder = await Interpreter.fromAsset(_modelAsset);
+      // Force pure CPU inference. On iOS, the default options try to
+      // enable the CoreML / Metal delegate; if the model contains ops
+      // the delegate doesn't support, the whole load fails. CPU
+      // inference works for every model variant we ship.
+      final options = InterpreterOptions()..threads = 2;
+      _embedder =
+          await Interpreter.fromAsset(_modelAsset, options: options);
       final inShape = _embedder!.getInputTensor(0).shape;
       final outShape = _embedder!.getOutputTensor(0).shape;
       // Expect [1, H, W, 3] — pull H (= W for the supported models).
@@ -267,11 +418,12 @@ class MLKitFaceRecognitionEngine implements FaceRecognitionEngine {
           : _Normalization.minusOneToOne;
       debugPrint('Face embedder loaded — input=$inShape output=$outShape '
           'inputSize=$_inputSize norm=${_norm.name}');
+      _embedderLoadError = null;
       return _embedder;
     } catch (e) {
-      debugPrint(
-          'Face embedder model not found at $_modelAsset (or load '
-          'failed): $e — falling back to fail-closed identity match');
+      final msg = 'Face match model failed to load: $e';
+      _embedderLoadError = msg;
+      debugPrint('$msg — falling back to fail-closed identity match');
       return null;
     }
   }
@@ -351,10 +503,75 @@ class MLKitFaceRecognitionEngine implements FaceRecognitionEngine {
   }
 
   @override
+  Future<FaceLivenessResult> checkLiveness(String imagePath) async {
+    await initialize();
+    final f = File(imagePath);
+    if (!await f.exists()) {
+      return FaceLivenessResult.unavailable('Image not found.');
+    }
+
+    // Run on the orientation-normalized image so the bounding box we
+    // pass to the spoof detector lines up with the pixels it sees —
+    // same posture as extractEmbedding above.
+    final normalizedPath = await _normalizeOrientation(imagePath);
+    final input = InputImage.fromFilePath(normalizedPath);
+    final faces = await _detector.processImage(input);
+    if (faces.isEmpty || faces.length > 1) {
+      // The quality gate is the right place to surface no-face /
+      // multi-face errors. If we got here something is off — return
+      // unavailable so the caller doesn't hard-block on a likely
+      // false positive.
+      return FaceLivenessResult.unavailable(
+          'Could not isolate a single face for the liveness check.');
+    }
+    final box = faces.first.boundingBox;
+
+    final result = await _spoofDetector.detect(
+      imagePath: normalizedPath,
+      boxLeft: box.left,
+      boxTop: box.top,
+      boxWidth: box.width,
+      boxHeight: box.height,
+    );
+    if (result == null) {
+      return FaceLivenessResult.unavailable(_spoofDetector.loadError);
+    }
+    return result.isLive
+        ? FaceLivenessResult.live(
+            result.score,
+            result.elapsedMs,
+            argmax: result.argmax,
+            softmax1: result.softmax1,
+            softmax2: result.softmax2,
+          )
+        : FaceLivenessResult.spoof(
+            result.score,
+            result.elapsedMs,
+            argmax: result.argmax,
+            softmax1: result.softmax1,
+            softmax2: result.softmax2,
+          );
+  }
+
+  @override
   Future<List<double>?> extractEmbedding(String imagePath) async {
     await initialize();
+    _lastExtractError = null;
+
+    // On iOS the dart:ffi + dlsym path is dead — route to the
+    // native Swift plugin instead. Same MobileFaceNet model, same
+    // preprocessing, same embedding shape. Android falls through
+    // to the existing tflite_flutter path below.
+    if (Platform.isIOS) {
+      return _extractEmbeddingViaNativePlugin(imagePath);
+    }
+
     final embedder = await _ensureEmbedder();
-    if (embedder == null) return null;
+    if (embedder == null) {
+      // _ensureEmbedder already populated _embedderLoadError; compare()
+      // surfaces it. Return null without overwriting.
+      return null;
+    }
 
     // Detect the face so we can crop tightly. Embedding quality
     // collapses if we feed the whole frame (background dominates).
@@ -363,11 +580,24 @@ class MLKitFaceRecognitionEngine implements FaceRecognitionEngine {
     final normalizedPath = await _normalizeOrientation(imagePath);
     final input = InputImage.fromFilePath(normalizedPath);
     final faces = await _detector.processImage(input);
-    if (faces.length != 1) return null;
+    if (faces.isEmpty) {
+      _lastExtractError =
+          'No face detected in the captured image. Make sure '
+          'your face is centered and well lit.';
+      return null;
+    }
+    if (faces.length > 1) {
+      _lastExtractError =
+          'Multiple faces detected. Please retake the photo alone.';
+      return null;
+    }
 
     final raw = await File(normalizedPath).readAsBytes();
     final decoded = img.decodeImage(raw);
-    if (decoded == null) return null;
+    if (decoded == null) {
+      _lastExtractError = 'Could not decode the captured image.';
+      return null;
+    }
 
     // ML Kit's bounding box is in the original image's coordinate
     // space. Inflate by 20% so we keep some hair / chin context
@@ -466,6 +696,65 @@ class MLKitFaceRecognitionEngine implements FaceRecognitionEngine {
     return flat.map((v) => v / norm).toList(growable: false);
   }
 
+  /// iOS-only path. Routes embedding extraction through the native
+  /// Swift plugin (`ios/Runner/FaceEmbedderPlugin.swift`) because
+  /// dart:ffi's dlsym-against-static-framework approach is dead on
+  /// iOS 26 release builds. Same MobileFaceNet model, same
+  /// preprocessing math, same output shape — Android-side and
+  /// iOS-side embeddings remain comparable.
+  Future<List<double>?> _extractEmbeddingViaNativePlugin(
+      String imagePath) async {
+    // Orientation normalization stays in Dart so the bounding-box
+    // coordinates we pass to Swift line up with the pixels Swift
+    // sees in the same file.
+    final normalizedPath = await _normalizeOrientation(imagePath);
+    final faces = await _detector.processImage(
+        InputImage.fromFilePath(normalizedPath));
+    if (faces.isEmpty) {
+      _lastExtractError =
+          'No face detected in the captured image. Make sure '
+          'your face is centered and well lit.';
+      return null;
+    }
+    if (faces.length > 1) {
+      _lastExtractError =
+          'Multiple faces detected. Please retake the photo alone.';
+      return null;
+    }
+    final box = faces.first.boundingBox;
+
+    try {
+      final result = await _kFaceEmbedChannel.invokeMethod<List<Object?>>(
+        'extractEmbedding',
+        {
+          'imagePath': normalizedPath,
+          'left': box.left,
+          'top': box.top,
+          'width': box.width,
+          'height': box.height,
+        },
+      );
+      if (result == null) {
+        _lastExtractError = 'Native face embedder returned null.';
+        return null;
+      }
+      return result.cast<num>().map((e) => e.toDouble()).toList();
+    } on PlatformException catch (e) {
+      // Swift side surfaces error codes like MODEL_LOAD_FAIL,
+      // DECODE_FAIL, INFER_FAIL, ZERO_EMBEDDING. Stash the message
+      // so compare()'s reason field gets it instead of a generic
+      // "not implemented" string.
+      _lastExtractError =
+          'iOS face embedder failed (${e.code}): ${e.message ?? "no detail"}';
+      debugPrint(_lastExtractError);
+      return null;
+    } catch (e) {
+      _lastExtractError = 'iOS face embedder failed: $e';
+      debugPrint(_lastExtractError);
+      return null;
+    }
+  }
+
   @override
   Future<FaceCompareResult> compare(
     String enrolledImagePath,
@@ -473,15 +762,33 @@ class MLKitFaceRecognitionEngine implements FaceRecognitionEngine {
   ) async {
     final enrolled = await extractEmbedding(enrolledImagePath);
     if (enrolled == null) {
-      // Either the model is missing or the enrolled image no longer
-      // contains a recognisable face. Fail closed.
-      return FaceCompareResult.notImplemented();
+      // Surface whatever the engine actually hit. Order matters: model
+      // load failures dominate over per-image failures.
+      final reason = _embedderLoadError ??
+          (_lastExtractError != null
+              ? 'Enrolled face could not be processed: $_lastExtractError '
+                  'Try re-enrolling from Profile.'
+              : null);
+      return FaceCompareResult(
+        ok: false,
+        implemented: false,
+        reason: reason ??
+            'Face match unavailable. Please re-enroll your face from '
+                'Profile, or contact support if the issue persists.',
+      );
     }
     final live = await extractEmbedding(liveImagePath);
     if (live == null) {
       // Live image has no face / multiple faces — quality gate
-      // should have caught this, but be defensive.
-      return FaceCompareResult.mismatch(0.0);
+      // should have caught this, but be defensive. Surface the actual
+      // reason so the user knows what to fix.
+      return FaceCompareResult(
+        ok: false,
+        implemented: true,
+        score: 0.0,
+        reason: _lastExtractError ??
+            'Face not recognized. Please try again.',
+      );
     }
 
     // Cosine similarity = dot product on unit vectors.
@@ -507,6 +814,9 @@ class MLKitFaceRecognitionEngine implements FaceRecognitionEngine {
     _embedder?.close();
     _embedder = null;
     _embedderTried = false;
+    _embedderLoadError = null;
+    _lastExtractError = null;
+    await _spoofDetector.dispose();
   }
 }
 
