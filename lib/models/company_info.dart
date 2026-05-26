@@ -5,6 +5,8 @@ class CompanyInfo {
   final String database;
   final Map<String, bool> features;
   final String minimumAppVersion;
+  final String companyLogoB64;
+  final bool showConnectionDetails;
 
   CompanyInfo({
     required this.companyCode,
@@ -13,6 +15,8 @@ class CompanyInfo {
     required this.database,
     required this.features,
     this.minimumAppVersion = '',
+    this.companyLogoB64 = '',
+    this.showConnectionDetails = false,
   });
 
   factory CompanyInfo.fromJson(Map<String, dynamic> json) {
@@ -27,6 +31,8 @@ class CompanyInfo {
       database: client['database'] ?? '',
       features: features,
       minimumAppVersion: client['minimum_app_version'] ?? '',
+      companyLogoB64: (client['company_logo_b64'] ?? '').toString(),
+      showConnectionDetails: client['show_connection_details'] == true,
     );
   }
 }

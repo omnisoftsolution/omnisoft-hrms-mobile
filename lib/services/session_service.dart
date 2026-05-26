@@ -29,6 +29,9 @@ class SessionService extends ChangeNotifier {
   static const _keyFeatPayroll = 'feature_payroll';
   static const _keyFeatExpenses = 'feature_expenses';
   static const _keyFeatExpenseOcr = 'feature_expense_ocr';
+  static const _keyCompanyName = 'company_name';
+  static const _keyCompanyLogoB64 = 'company_logo_b64';
+  static const _keyShowConnectionDetails = 'show_connection_details';
 
   // Keys: login session (cleared on logout)
   static const _keyAccessToken = 'access_token';
@@ -64,6 +67,9 @@ class SessionService extends ChangeNotifier {
   bool _featurePayroll = false;
   bool _featureExpenses = false;
   bool _featureExpenseOcr = true;
+  String _companyName = '';
+  String _companyLogoB64 = '';
+  bool _showConnectionDetails = false;
 
   String _accessToken = '';
   DateTime? _expiresAt;
@@ -101,6 +107,11 @@ class SessionService extends ChangeNotifier {
   bool get featurePayroll => _featurePayroll;
   bool get featureExpenses => _featureExpenses;
   bool get featureExpenseOcr => _featureExpenseOcr;
+
+  // Company branding (from resolve_company, pre-login)
+  String get companyName => _companyName;
+  String get companyLogoB64 => _companyLogoB64;
+  bool get showConnectionDetails => _showConnectionDetails;
 
   // Auth session
   String get accessToken => _accessToken;
@@ -147,6 +158,10 @@ class SessionService extends ChangeNotifier {
     _featurePayroll = prefs.getBool(_keyFeatPayroll) ?? false;
     _featureExpenses = prefs.getBool(_keyFeatExpenses) ?? false;
     _featureExpenseOcr = prefs.getBool(_keyFeatExpenseOcr) ?? true;
+    _companyName = prefs.getString(_keyCompanyName) ?? '';
+    _companyLogoB64 = prefs.getString(_keyCompanyLogoB64) ?? '';
+    _showConnectionDetails =
+        prefs.getBool(_keyShowConnectionDetails) ?? false;
     _accessToken = prefs.getString(_keyAccessToken) ?? '';
     final exp = prefs.getString(_keyExpiresAt);
     _expiresAt = exp != null && exp.isNotEmpty ? DateTime.tryParse(exp) : null;
@@ -181,11 +196,17 @@ class SessionService extends ChangeNotifier {
     required String clientUrl,
     String clientDb = '',
     Map<String, bool>? features,
+    String companyName = '',
+    String companyLogoB64 = '',
+    bool showConnectionDetails = false,
   }) async {
     _saasUrl = saasUrl;
     _companyCode = companyCode;
     _clientUrl = clientUrl;
     _clientDb = clientDb;
+    _companyName = companyName;
+    _companyLogoB64 = companyLogoB64;
+    _showConnectionDetails = showConnectionDetails;
     if (features != null) {
       // Default to current value when a key is missing — leaves
       // existing flags untouched if SaaS payload is partial.
@@ -214,6 +235,9 @@ class SessionService extends ChangeNotifier {
     await prefs.setBool(_keyFeatPayroll, _featurePayroll);
     await prefs.setBool(_keyFeatExpenses, _featureExpenses);
     await prefs.setBool(_keyFeatExpenseOcr, _featureExpenseOcr);
+    await prefs.setString(_keyCompanyName, _companyName);
+    await prefs.setString(_keyCompanyLogoB64, _companyLogoB64);
+    await prefs.setBool(_keyShowConnectionDetails, _showConnectionDetails);
     notifyListeners();
   }
 
@@ -235,6 +259,9 @@ class SessionService extends ChangeNotifier {
         clientUrl: info.odooUrl,
         clientDb: info.database,
         features: info.features,
+        companyName: info.name,
+        companyLogoB64: info.companyLogoB64,
+        showConnectionDetails: info.showConnectionDetails,
       );
     } catch (_) {
       // Silent — admin / SaaS downtime should never lock a working

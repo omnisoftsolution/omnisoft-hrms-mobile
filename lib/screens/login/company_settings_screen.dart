@@ -7,6 +7,7 @@ import '../../services/saas_service.dart';
 import '../../services/session_service.dart';
 import '../../widgets/labeled_field.dart';
 import '../../widgets/primary_button.dart';
+import 'login_screen.dart';
 
 /// Lets the user re-resolve the company (point at a different SaaS or
 /// switch company codes) without going through the full
@@ -91,20 +92,26 @@ class _CompanySettingsScreenState extends State<CompanySettingsScreen> {
         clientUrl: info.odooUrl,
         clientDb: info.database,
         features: info.features,
+        companyName: info.name,
+        companyLogoB64: info.companyLogoB64,
+        showConnectionDetails: info.showConnectionDetails,
       );
       if (changed) {
         await session.clearSession();
+        if (!mounted) return;
+        Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const LoginScreen()),
+          (_) => false,
+        );
+        return;
       }
 
       if (!mounted) return;
       setState(() {
         _clientUrl = info.odooUrl;
         _clientDb = info.database;
-        _info = changed
-            ? 'Company updated. Sign in with the new company\'s credentials.'
-            : 'Company refreshed.';
+        _info = 'Company refreshed.';
       });
-      // Pop after a brief delay so the user sees the success state.
       await Future.delayed(const Duration(milliseconds: 600));
       if (mounted) Navigator.of(context).pop();
     } catch (e) {

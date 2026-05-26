@@ -45,6 +45,9 @@ class _CompanyCodeScreenState extends State<CompanyCodeScreen> {
         clientUrl: info.odooUrl,
         clientDb: info.database,
         features: info.features,
+        companyName: info.name,
+        companyLogoB64: info.companyLogoB64,
+        showConnectionDetails: info.showConnectionDetails,
       );
 
       if (!mounted) return;

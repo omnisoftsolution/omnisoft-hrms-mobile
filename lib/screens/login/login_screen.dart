@@ -6,6 +6,7 @@ import '../../core/theme.dart';
 import '../../services/device_service.dart';
 import '../../services/omni_mobile_api.dart';
 import '../../services/session_service.dart';
+import 'dart:convert';
 import '../../widgets/brand_logo.dart';
 import '../../widgets/labeled_field.dart';
 import '../../widgets/primary_button.dart';
@@ -168,46 +169,13 @@ class _LoginScreenState extends State<LoginScreen> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       const SizedBox(height: 16),
-                      // Branding block
+                      // Branding block — two modes:
+                      // Clean (default): client company logo + name.
+                      // Debug: Omnisoft logo + company code + URL + DB.
                       Center(
-                        child: Column(
-                          children: [
-                            const BrandLogo.large(),
-                            const SizedBox(height: 24),
-                            Text(
-                              session.companyCode.isNotEmpty
-                                  ? session.companyCode
-                                  : AppConstants.appName,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .displaySmall
-                                  ?.copyWith(color: AppTheme.onSurface),
-                            ),
-                            if (session.clientUrl.isNotEmpty) ...[
-                              const SizedBox(height: 8),
-                              Text(
-                                session.clientUrl,
-                                style: GoogleFonts.inter(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppTheme.primaryContainer,
-                                ),
-                                textAlign: TextAlign.center,
-                              ),
-                            ],
-                            if (session.clientDb.isNotEmpty) ...[
-                              const SizedBox(height: 4),
-                              Text(
-                                session.clientDb,
-                                style: GoogleFonts.firaCode(
-                                  fontSize: 11,
-                                  fontStyle: FontStyle.italic,
-                                  color: AppTheme.outline,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
+                        child: session.showConnectionDetails
+                            ? _debugBranding(session)
+                            : _cleanBranding(session),
                       ),
                       const SizedBox(height: 40),
                       // Form
@@ -298,6 +266,113 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _cleanBranding(SessionService session) {
+    final hasLogo = session.companyLogoB64.isNotEmpty;
+    final name = session.companyName.isNotEmpty
+        ? session.companyName
+        : (session.companyCode.isNotEmpty
+            ? session.companyCode
+            : AppConstants.appName);
+    return Column(
+      children: [
+        if (hasLogo)
+          ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: Image.memory(
+              base64Decode(session.companyLogoB64),
+              width: 120,
+              height: 120,
+              fit: BoxFit.contain,
+              errorBuilder: (_, e, st) => _logoFallback(name),
+            ),
+          )
+        else
+          _logoFallback(name),
+        const SizedBox(height: 16),
+        Text(
+          name,
+          style: GoogleFonts.inter(
+            fontSize: 22,
+            fontWeight: FontWeight.w800,
+            color: AppTheme.onSurface,
+            letterSpacing: -0.3,
+          ),
+          textAlign: TextAlign.center,
+        ),
+      ],
+    );
+  }
+
+  Widget _logoFallback(String name) {
+    final initials = name.isNotEmpty
+        ? name
+            .split(' ')
+            .where((w) => w.isNotEmpty)
+            .take(2)
+            .map((w) => w[0].toUpperCase())
+            .join()
+        : '?';
+    return Container(
+      width: 120,
+      height: 120,
+      decoration: BoxDecoration(
+        color: AppTheme.primaryContainer.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Center(
+        child: Text(
+          initials,
+          style: GoogleFonts.inter(
+            fontSize: 48,
+            fontWeight: FontWeight.w800,
+            color: AppTheme.primary,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _debugBranding(SessionService session) {
+    return Column(
+      children: [
+        const BrandLogo.large(),
+        const SizedBox(height: 24),
+        Text(
+          session.companyCode.isNotEmpty
+              ? session.companyCode
+              : AppConstants.appName,
+          style: Theme.of(context)
+              .textTheme
+              .displaySmall
+              ?.copyWith(color: AppTheme.onSurface),
+        ),
+        if (session.clientUrl.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text(
+            session.clientUrl,
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.primaryContainer,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+        if (session.clientDb.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(
+            session.clientDb,
+            style: GoogleFonts.firaCode(
+              fontSize: 11,
+              fontStyle: FontStyle.italic,
+              color: AppTheme.outline,
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

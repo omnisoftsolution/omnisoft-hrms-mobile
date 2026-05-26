@@ -57,6 +57,9 @@ class _FeatureLockedPaneState extends State<FeatureLockedPane> {
         clientUrl: info.odooUrl,
         clientDb: info.database,
         features: info.features,
+        companyName: info.name,
+        companyLogoB64: info.companyLogoB64,
+        showConnectionDetails: info.showConnectionDetails,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
