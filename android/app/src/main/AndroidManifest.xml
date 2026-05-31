@@ -1,8 +1,32 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.CAMERA"/>
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+
+    <!-- Strip permissions auto-injected by plugins (file_picker,
+         image_picker, camera, open_filex) that the app does not use.
+         Without these removals the merged manifest requests Microphone
+         (RECORD_AUDIO) and Phone (READ_PHONE_STATE), which scare users
+         on the Play listing and contradict the Data safety declaration,
+         and the media permissions trigger Google's Photo & Video
+         Permissions policy review.
+
+         Image receipts use image_picker, which uses the Android system
+         Photo Picker (no READ_MEDIA_IMAGES needed on API 33+, backported
+         below via Play services). Document attachments use file_picker,
+         which uses the Storage Access Framework (no media perms needed).
+         The app never records audio (camera runs enableAudio: false) or
+         picks audio/video. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" tools:node="remove"/>
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" tools:node="remove"/>
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" tools:node="remove"/>
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" tools:node="remove"/>
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" tools:node="remove"/>
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" tools:node="remove"/>
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" tools:node="remove"/>
+
     <uses-feature android:name="android.hardware.camera" android:required="false"/>
     <uses-feature android:name="android.hardware.camera.front" android:required="false"/>
     <application
