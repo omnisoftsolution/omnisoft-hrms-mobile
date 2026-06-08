@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme.dart';
+import '../../core/error_messages.dart';
 import '../../models/leave_type.dart';
 import '../../services/holiday_service.dart';
 import '../../services/omni_mobile_api.dart';
 import '../../services/session_service.dart';
 import '../../widgets/auto_pickers.dart';
+import '../../widgets/error_state_view.dart';
 import '../../widgets/document_picker_field.dart';
 import '../../widgets/feature_locked_pane.dart';
 import '../../widgets/omni_app_bar.dart';
@@ -105,7 +107,7 @@ class LeaveScreenState extends State<LeaveScreen> {
       final session = context.read<SessionService>();
       _types = await _api(session).getLeaveTypes();
     } catch (e) {
-      _error = e.toString();
+      _error = friendlyError(e);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -155,7 +157,15 @@ class LeaveScreenState extends State<LeaveScreen> {
           : _loading
               ? const Center(child: CircularProgressIndicator())
               : _error != null
-                  ? Center(child: Text(_error!))
+                  ? RefreshIndicator(
+                      onRefresh: refresh,
+                      child: ListView(
+                        padding: const EdgeInsets.fromLTRB(20, 80, 20, 24),
+                        children: [
+                          ErrorStateView(message: _error!, onRetry: refresh),
+                        ],
+                      ),
+                    )
                   : RefreshIndicator(
                       onRefresh: refresh,
                       child: _buildList(),
@@ -469,7 +479,9 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
     if (raw.contains('document_required')) {
       return 'A supporting document is required for this leave type.';
     }
-    return raw.replaceFirst(RegExp(r'^Exception: '), '');
+    // Anything else (incl. network/timeout/server) goes through the
+    // shared safe humanizer — never echo the raw exception text.
+    return friendlyError(e);
   }
 
   Widget _timeBox({

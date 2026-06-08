@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/theme.dart';
+import '../../core/error_messages.dart';
 import '../../models/payslip_record.dart';
 import '../../services/omni_mobile_api.dart';
 import '../../services/session_service.dart';
@@ -63,7 +64,7 @@ class PayslipsScreenState extends State<PayslipsScreen> {
       setState(() => _records = list);
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = e.toString());
+      setState(() => _error = friendlyError(e));
     } finally {
       if (mounted) setState(() => _loading = false);
     }

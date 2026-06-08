@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/constants.dart';
 import '../../core/theme.dart';
+import '../../core/error_messages.dart';
 import '../../models/expense_record.dart';
 import '../../services/omni_mobile_api.dart';
 import '../../services/session_service.dart';
@@ -92,6 +93,12 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
   String _paymentMode = 'own_account';
 
   bool _loadingCategories = true;
+  /// Friendly message set when the category fetch itself FAILED (offline,
+  /// server error). Distinct from "loaded fine but the company has zero
+  /// categories" — that case shows the "ask your administrator" hint.
+  /// Kept separate from the form-level _error so a transient load failure
+  /// doesn't look like a submit error.
+  String? _categoryError;
   bool _submitting = false;
   bool _scanning = false;
   String? _error;
@@ -122,6 +129,12 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
 
   Future<void> _loadCategories() async {
     final session = context.read<SessionService>();
+    if (mounted) {
+      setState(() {
+        _loadingCategories = true;
+        _categoryError = null;
+      });
+    }
     try {
       final api = OmniMobileApi(
         baseUrl: session.clientUrl,
@@ -151,7 +164,7 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
       if (!mounted) return;
       setState(() {
         _loadingCategories = false;
-        _error = 'Could not load categories: $e';
+        _categoryError = friendlyError(e);
       });
     }
   }
@@ -191,7 +204,7 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = 'Could not pick a receipt: $e');
+      setState(() => _error = 'Could not attach the receipt. Please try again.');
     }
   }
 
@@ -433,7 +446,7 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
     } on ApiException catch (e) {
       setState(() => _error = _humanize(e.errorCode));
     } catch (e) {
-      setState(() => _error = 'Submit failed: $e');
+      setState(() => _error = friendlyError(e));
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -523,6 +536,32 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
         ),
       );
     }
+    // The fetch FAILED (offline / server error) — say so plainly and
+    // offer Retry. Do NOT show "ask your administrator", which would
+    // wrongly blame configuration for what is really a connection issue.
+    if (_categoryError != null) {
+      return _wrap(
+        label: 'CATEGORY',
+        child: Row(
+          children: [
+            Icon(Icons.error_outline, color: AppTheme.error, size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                _categoryError!,
+                style:
+                    TextStyle(color: AppTheme.onSurfaceVariant, fontSize: 13),
+              ),
+            ),
+            TextButton(
+              onPressed: _loadCategories,
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
+      );
+    }
+    // The fetch SUCCEEDED but the company genuinely has no categories.
     if (_categories.isEmpty) {
       return _wrap(
         label: 'CATEGORY',

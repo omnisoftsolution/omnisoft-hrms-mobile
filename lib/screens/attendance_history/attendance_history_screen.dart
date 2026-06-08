@@ -3,6 +3,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme.dart';
+import '../../core/error_messages.dart';
+import '../../widgets/error_state_view.dart';
 import '../../models/attendance_record.dart';
 import '../../services/omni_mobile_api.dart';
 import '../../services/session_service.dart';
@@ -40,7 +42,7 @@ class AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
       );
       _records = await api.getAttendanceHistory();
     } catch (e) {
-      _error = e.toString();
+      _error = friendlyError(e);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -68,7 +70,15 @@ class AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
       return const Center(child: CircularProgressIndicator());
     }
     if (_error != null) {
-      return Center(child: Text(_error!));
+      return RefreshIndicator(
+        onRefresh: refresh,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(20, 80, 20, 24),
+          children: [
+            ErrorStateView(message: _error!, onRetry: refresh),
+          ],
+        ),
+      );
     }
     return RefreshIndicator(
       onRefresh: refresh,

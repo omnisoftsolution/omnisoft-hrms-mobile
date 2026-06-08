@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme.dart';
+import '../../core/error_messages.dart';
 import '../../models/leave_record.dart';
 import '../../services/omni_mobile_api.dart';
 import '../../services/session_service.dart';
 import '../../services/holiday_service.dart';
 import '../../widgets/auto_pickers.dart';
+import '../../widgets/error_state_view.dart';
 import '../../widgets/document_picker_field.dart';
 import '../../widgets/file_viewer.dart';
 import '../../widgets/range_picker_dialog.dart';
@@ -97,7 +99,7 @@ class LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
       );
       _leaves = await api.getLeaveHistory();
     } catch (e) {
-      _error = e.toString();
+      _error = friendlyError(e);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -197,7 +199,15 @@ class LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
       return const Center(child: CircularProgressIndicator());
     }
     if (_error != null) {
-      return Center(child: Text(_error!));
+      return RefreshIndicator(
+        onRefresh: refresh,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(20, 80, 20, 24),
+          children: [
+            ErrorStateView(message: _error!, onRetry: refresh),
+          ],
+        ),
+      );
     }
     return RefreshIndicator(
       onRefresh: refresh,
@@ -781,7 +791,9 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
     if (raw.contains('document_required')) {
       return 'A supporting document is required for this leave type.';
     }
-    return raw.replaceFirst(RegExp(r'^Exception: '), '');
+    // Anything else (incl. network/timeout/server) goes through the
+    // shared safe humanizer — never echo the raw exception text.
+    return friendlyError(e);
   }
 
   Widget _periodRow({

@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants.dart';
 import '../../core/theme.dart';
+import '../../core/error_messages.dart';
 import '../../services/saas_service.dart';
 import '../../services/session_service.dart';
 import '../../widgets/brand_logo.dart';
@@ -55,7 +56,7 @@ class _CompanyCodeScreenState extends State<CompanyCodeScreen> {
         MaterialPageRoute(builder: (_) => const LoginScreen()),
       );
     } catch (e) {
-      setState(() => _error = e.toString());
+      setState(() => _error = friendlyError(e));
     } finally {
       if (mounted) setState(() => _loading = false);
     }

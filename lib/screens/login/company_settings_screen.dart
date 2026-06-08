@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/constants.dart';
 import '../../core/theme.dart';
+import '../../core/error_messages.dart';
 import '../../services/saas_service.dart';
 import '../../services/session_service.dart';
 import '../../widgets/labeled_field.dart';
@@ -115,7 +116,7 @@ class _CompanySettingsScreenState extends State<CompanySettingsScreen> {
       await Future.delayed(const Duration(milliseconds: 600));
       if (mounted) Navigator.of(context).pop();
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      if (mounted) setState(() => _error = friendlyError(e));
     } finally {
       if (mounted) setState(() => _resolving = false);
     }

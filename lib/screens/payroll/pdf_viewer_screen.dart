@@ -6,6 +6,7 @@ import 'package:flutter_pdfview/flutter_pdfview.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../core/theme.dart';
+import '../../core/error_messages.dart';
 import '../../widgets/file_viewer.dart';
 
 /// Inline PDF viewer used by PayslipsScreen. Decodes a base64 PDF
@@ -67,7 +68,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
       setState(() => _filePath = file.path);
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = e.toString());
+      setState(() => _error = friendlyError(e));
     }
   }
 

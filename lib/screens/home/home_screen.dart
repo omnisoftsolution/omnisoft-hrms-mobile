@@ -16,6 +16,7 @@ import '../../services/location_service.dart';
 import '../../services/omni_mobile_api.dart';
 import '../../services/session_service.dart';
 import '../../widgets/big_check_button.dart';
+import '../../widgets/error_state_view.dart';
 import '../../widgets/feature_locked_pane.dart';
 import '../../widgets/info_card.dart';
 import '../../widgets/omni_app_bar.dart';
@@ -155,7 +156,7 @@ class HomeScreenState extends State<HomeScreen> {
       // changed since the last poll.
       _refreshGpsCard();
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      if (mounted) setState(() => _error = _humanizeApiError(e));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -407,11 +408,25 @@ class HomeScreenState extends State<HomeScreen> {
     if (raw.contains('timeout')) {
       return 'Server is taking too long to respond. Please try again.';
     }
+    if (raw.contains('network_error')) {
+      return 'No internet connection. Check your network and try again.';
+    }
+    if (raw.contains('server_error')) {
+      return 'Something went wrong on our end. Please try again in a moment.';
+    }
     if (raw.contains('invalid_attendance')) {
       return 'Your previous check-in was too long ago. Please contact HR '
           'or open the attendance record in the web app to close it.';
     }
-    return raw.replaceFirst(RegExp(r'^Exception: '), '');
+    // Last-resort fallback. NEVER echo the raw exception text — it can
+    // contain the request URI (and the database name). Only surface a
+    // raw code if it's a short, safe-looking server error token
+    // (snake_case, no spaces/URLs); otherwise show a generic message.
+    final stripped = raw.replaceFirst(RegExp(r'^Exception: '), '').trim();
+    final looksLikeCode =
+        RegExp(r'^[a-z0-9_]{1,40}$').hasMatch(stripped);
+    if (looksLikeCode) return stripped;
+    return 'Something went wrong. Please try again.';
   }
 
   @override
@@ -447,20 +462,7 @@ class HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildError() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          children: [
-            Icon(Icons.error_outline, size: 48, color: AppTheme.error),
-            const SizedBox(height: 12),
-            Text(_error!, textAlign: TextAlign.center),
-            const SizedBox(height: 16),
-            ElevatedButton(onPressed: refresh, child: const Text('Retry')),
-          ],
-        ),
-      ),
-    );
+    return ErrorStateView(message: _error!, onRetry: refresh);
   }
 
   Widget _buildContent(SessionService session) {

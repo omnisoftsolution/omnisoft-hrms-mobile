@@ -43,16 +43,30 @@ class OmniMobileApi {
     // responding cleanly (Android symptom: CHECK OUT button stuck on
     // SCANNING…). 30s is generous enough for cellular + a real
     // geofence/overtime computation on the connector.
-    final response = await http.post(
-      _uri(path),
-      headers: _headers,
-      body: jsonEncode(body ?? {}),
-    ).timeout(
-      const Duration(seconds: 30),
-      onTimeout: () {
-        throw ApiException('timeout');
-      },
-    );
+    final http.Response response;
+    try {
+      response = await http.post(
+        _uri(path),
+        headers: _headers,
+        body: jsonEncode(body ?? {}),
+      ).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {
+          throw ApiException('timeout');
+        },
+      );
+    } on ApiException {
+      // Our own timeout sentinel from onTimeout — re-throw as-is.
+      rethrow;
+    } catch (e) {
+      // Raw network failures (SocketException, http.ClientException,
+      // HandshakeException, etc.) carry the full request URI in their
+      // .toString() — which includes the database name. NEVER let that
+      // reach the UI. Convert to a clean 'network_error' code that
+      // _humanize maps to a friendly "no connection" message. This is
+      // the single chokepoint for every API call in the app.
+      throw ApiException('network_error');
+    }
     Map<String, dynamic> data;
     try {
       data = jsonDecode(response.body) as Map<String, dynamic>;
