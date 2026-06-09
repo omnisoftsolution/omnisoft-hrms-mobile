@@ -439,11 +439,12 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
         if (parsedDate != null) _selectedDate = parsedDate;
         if (matched != null) _selectedCategory = matched;
       });
-      // For a multi-page PDF the amount is the SUM across pages, so nudge
-      // the user to double-check the combined total.
+      // The model reads all pages together and returns one total (the
+      // same receipt split across pages isn't double-counted; separate
+      // receipts are summed). Nudge the user to verify either way.
       final scanMsg = ocr.pagesScanned > 1
-          ? 'Scanned ${ocr.pagesScanned} pages — the amount is the '
-              'combined total. Please review before submitting.'
+          ? 'Scanned ${ocr.pagesScanned} pages. Please check the amount '
+              'before submitting.'
           : 'Receipt scanned. Please review before submitting.';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
