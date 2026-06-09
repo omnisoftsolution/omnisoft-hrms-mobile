@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
@@ -8,6 +9,7 @@ import 'package:provider/provider.dart';
 import '../../core/constants.dart';
 import '../../core/theme.dart';
 import '../../core/error_messages.dart';
+import '../../core/pdf_raster.dart';
 import '../../models/expense_record.dart';
 import '../../services/omni_mobile_api.dart';
 import '../../services/session_service.dart';
@@ -92,6 +94,17 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
   String _receiptMime = 'image/jpeg';
   String _paymentMode = 'own_account';
 
+  /// PDF receipt support. When the attached receipt is a PDF,
+  /// `_receiptBytes` holds the ORIGINAL PDF (uploaded as-is), while these
+  /// hold the locally-rasterized page images used for the preview
+  /// thumbnail and for OCR. `_pdfPages` is empty when the attachment is
+  /// an image, or when a PDF failed to rasterize (then it degrades to a
+  /// file-chip and Scan is hidden, but the PDF still uploads/attaches).
+  bool get _receiptIsPdf => _receiptMime == 'application/pdf';
+  List<Uint8List> _pdfPages = const [];
+  int _pdfPageCount = 0;
+  bool _rasterizingPdf = false;
+
   bool _loadingCategories = true;
   /// Friendly message set when the category fetch itself FAILED (offline,
   /// server error). Distinct from "loaded fine but the company has zero
@@ -170,14 +183,11 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
   }
 
   /// Camera is the primary "Attach receipt" action — receipts are
-  /// usually paper in front of you. Library is the secondary link
-  /// for receipts that arrived via email. Both pipe through the same
-  /// state setter.
-  Future<void> _pickReceiptFromCamera() => _pickReceipt(ImageSource.camera);
-  Future<void> _pickReceiptFromLibrary() =>
-      _pickReceipt(ImageSource.gallery);
+  /// usually paper in front of you. Library is the secondary link for
+  /// receipts that arrived via email, and accepts PDFs as well as images.
+  Future<void> _pickReceiptFromCamera() => _pickReceiptImage(ImageSource.camera);
 
-  Future<void> _pickReceipt(ImageSource source) async {
+  Future<void> _pickReceiptImage(ImageSource source) async {
     try {
       // imageQuality:85 keeps receipt photos around 200-500KB while
       // staying readable. Well under the connector's 10MB attachment
@@ -196,16 +206,84 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
         setState(() => _error = 'Receipt is too large. Max 10 MB.');
         return;
       }
-      setState(() {
-        _receiptBytes = bytes;
-        _receiptName = xfile.name;
-        _receiptMime = _mimeFromName(xfile.name);
-        _error = null;
-      });
+      _applyImageReceipt(bytes, xfile.name);
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = 'Could not attach the receipt. Please try again.');
     }
+  }
+
+  /// "Pick from library" — a file picker that accepts both images and
+  /// PDF. PDF receipts are common when expenses arrive by email.
+  Future<void> _pickReceiptFromLibrary() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['pdf', 'jpg', 'jpeg', 'png', 'heic', 'heif'],
+        withData: true,
+      );
+      if (result == null || result.files.isEmpty) return;
+      final f = result.files.first;
+      final bytes = f.bytes;
+      final name = f.name;
+      if (bytes == null) {
+        if (!mounted) return;
+        setState(() => _error = 'Could not read that file. Please try again.');
+        return;
+      }
+      if (bytes.length > 10 * 1024 * 1024) {
+        if (!mounted) return;
+        setState(() => _error = 'Receipt is too large. Max 10 MB.');
+        return;
+      }
+      final ext = name.toLowerCase().split('.').last;
+      if (ext == 'pdf') {
+        await _applyPdfReceipt(bytes, name);
+      } else {
+        if (!mounted) return;
+        _applyImageReceipt(bytes, name);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = 'Could not attach the receipt. Please try again.');
+    }
+  }
+
+  /// Set an image receipt and clear any PDF state.
+  void _applyImageReceipt(Uint8List bytes, String name) {
+    setState(() {
+      _receiptBytes = bytes;
+      _receiptName = name;
+      _receiptMime = _mimeFromName(name);
+      _pdfPages = const [];
+      _pdfPageCount = 0;
+      _error = null;
+    });
+  }
+
+  /// Set a PDF receipt. The ORIGINAL PDF is what we upload; we also try
+  /// to rasterize its pages for the preview thumbnail and OCR. If
+  /// rasterization fails (encrypted/corrupt PDF, platform hiccup), the
+  /// PDF still attaches and uploads — only the thumbnail and Scan are
+  /// unavailable (the field degrades to a file-chip).
+  Future<void> _applyPdfReceipt(Uint8List pdfBytes, String name) async {
+    setState(() {
+      _receiptBytes = pdfBytes;
+      _receiptName = name;
+      _receiptMime = 'application/pdf';
+      _pdfPages = const [];
+      _pdfPageCount = 0;
+      _error = null;
+      _rasterizingPdf = true;
+    });
+    final count = await PdfRaster.pageCount(pdfBytes);
+    final pages = await PdfRaster.renderPages(pdfBytes);
+    if (!mounted) return;
+    setState(() {
+      _pdfPageCount = count ?? pages.length;
+      _pdfPages = pages;
+      _rasterizingPdf = false;
+    });
   }
 
   String _mimeFromName(String name) {
@@ -217,6 +295,8 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
         return 'image/heic';
       case 'webp':
         return 'image/webp';
+      case 'pdf':
+        return 'application/pdf';
       default:
         return 'image/jpeg';
     }
@@ -303,6 +383,10 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
   /// or null, so we just need to apply what came back.
   Future<void> _scanReceipt() async {
     if (_receiptBytes == null || _scanning) return;
+    // For a PDF receipt we OCR the rasterized page images, not the raw
+    // PDF bytes (the VLM can't read a PDF). If rasterization produced no
+    // pages, Scan isn't offered — but guard anyway.
+    if (_receiptIsPdf && _pdfPages.isEmpty) return;
     final session = context.read<SessionService>();
     setState(() {
       _scanning = true;
@@ -314,10 +398,12 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
         db: session.clientDb,
         token: session.token,
       );
-      final ocr = await api.scanReceipt(
-        bytes: _receiptBytes!,
-        mimetype: _receiptMime,
-      );
+      final ocr = _receiptIsPdf
+          ? await api.scanReceiptPages(pages: _pdfPages)
+          : await api.scanReceipt(
+              bytes: _receiptBytes!,
+              mimetype: _receiptMime,
+            );
       if (!mounted) return;
       // Match the suggested category against the loaded list. If the
       // server's id isn't in our local list (race window where the
@@ -353,11 +439,16 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
         if (parsedDate != null) _selectedDate = parsedDate;
         if (matched != null) _selectedCategory = matched;
       });
+      // For a multi-page PDF the amount is the SUM across pages, so nudge
+      // the user to double-check the combined total.
+      final scanMsg = ocr.pagesScanned > 1
+          ? 'Scanned ${ocr.pagesScanned} pages — the amount is the '
+              'combined total. Please review before submitting.'
+          : 'Receipt scanned. Please review before submitting.';
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content:
-              Text('Receipt scanned. Please review before submitting.'),
-          duration: Duration(seconds: 3),
+        SnackBar(
+          content: Text(scanMsg),
+          duration: const Duration(seconds: 4),
         ),
       );
       if (ocr.amount != null && !ocrAmountValid) {
@@ -770,18 +861,13 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
   /// Attached state: thumbnail + filename / Replace row + full-width
   /// Scan as the next prominent action.
   Widget _buildReceiptAttached() {
+    // Scan is offered only when there's something the VLM can read:
+    // an image, or a PDF we successfully rasterized to page images.
+    final scanReadable = !_receiptIsPdf || _pdfPages.isNotEmpty;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: Image.memory(
-            _receiptBytes!,
-            height: 160,
-            width: double.infinity,
-            fit: BoxFit.cover,
-          ),
-        ),
+        _buildReceiptPreview(),
         const SizedBox(height: 8),
         Row(
           children: [
@@ -797,12 +883,13 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
               ),
             ),
             TextButton(
-              onPressed: _pickReceiptFromCamera,
+              onPressed: _pickReceiptFromLibrary,
               child: const Text('Replace'),
             ),
           ],
         ),
-        if (DevConstants.enableOcrScan &&
+        if (scanReadable &&
+            DevConstants.enableOcrScan &&
             context.watch<SessionService>().featureExpenseOcr) ...[
           const SizedBox(height: 8),
           SizedBox(
@@ -811,6 +898,118 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
           ),
         ],
       ],
+    );
+  }
+
+  /// The preview box, chosen by attachment type:
+  /// - image: the image itself
+  /// - PDF (rasterized): page-1 thumbnail + an "N pages" badge
+  /// - PDF (rasterizing): a spinner placeholder
+  /// - PDF (raster failed): a generic PDF file-chip (still uploads fine)
+  Widget _buildReceiptPreview() {
+    if (!_receiptIsPdf) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Image.memory(
+          _receiptBytes!,
+          height: 160,
+          width: double.infinity,
+          fit: BoxFit.cover,
+        ),
+      );
+    }
+    if (_rasterizingPdf) {
+      return Container(
+        height: 160,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: AppTheme.surfaceContainer,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const CircularProgressIndicator(),
+      );
+    }
+    if (_pdfPages.isNotEmpty) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Stack(
+          children: [
+            Image.memory(
+              _pdfPages.first,
+              height: 160,
+              width: double.infinity,
+              fit: BoxFit.cover,
+              alignment: Alignment.topCenter,
+            ),
+            if (_pdfPageCount > 1)
+              Positioned(
+                right: 8,
+                top: 8,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.6),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.picture_as_pdf_rounded,
+                          size: 14, color: Colors.white),
+                      const SizedBox(width: 4),
+                      Text(
+                        '$_pdfPageCount pages',
+                        style: const TextStyle(
+                            color: Colors.white, fontSize: 11),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      );
+    }
+    // Rasterization failed — show a file-chip. The PDF still uploads.
+    return Container(
+      height: 96,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceContainer,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.picture_as_pdf_rounded,
+              size: 32, color: AppTheme.error),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'PDF attached',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Preview unavailable — the file will still be uploaded.',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: AppTheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 

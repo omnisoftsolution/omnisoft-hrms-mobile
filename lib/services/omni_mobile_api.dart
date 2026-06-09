@@ -424,6 +424,21 @@ class OmniMobileApi {
     return OcrResult.fromJson(result);
   }
 
+  /// Multi-page variant — sends a list of page images (rasterized from a
+  /// PDF receipt). The connector OCRs each page and merges the result,
+  /// counting the whole call as a single OCR attempt. `pages` must be
+  /// non-empty; the connector caps at its own max-pages limit.
+  Future<OcrResult> scanReceiptPages({
+    required List<Uint8List> pages,
+  }) async {
+    final data = await _post('/expense/ocr_scan', {
+      'images_b64': [for (final p in pages) base64Encode(p)],
+      'mimetype': 'image/jpeg',
+    });
+    final result = data['result'] as Map<String, dynamic>? ?? const {};
+    return OcrResult.fromJson(result);
+  }
+
   Future<CalendarInfoResponse> getPublicHolidays() async {
     final data = await _post('/public_holidays');
     final list = data['holidays'] as List<dynamic>;

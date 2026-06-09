@@ -12,6 +12,10 @@ class OcrResult {
   final String suggestedCategoryName;
   final String rawText;
 
+  /// How many pages the server OCR'd. 1 for a photo or single-page PDF;
+  /// >1 when a multi-page PDF was scanned (amount is the summed total).
+  final int pagesScanned;
+
   OcrResult({
     this.description = '',
     this.amount,
@@ -20,6 +24,7 @@ class OcrResult {
     this.suggestedCategoryId,
     this.suggestedCategoryName = '',
     this.rawText = '',
+    this.pagesScanned = 1,
   });
 
   factory OcrResult.fromJson(Map<String, dynamic> json) {
@@ -32,6 +37,7 @@ class OcrResult {
       suggestedCategoryName:
           json['suggested_category_name']?.toString() ?? '',
       rawText: json['raw_text']?.toString() ?? '',
+      pagesScanned: (json['pages_scanned'] as num?)?.toInt() ?? 1,
     );
   }
 }
