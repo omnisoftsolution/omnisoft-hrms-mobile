@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../core/theme.dart';
 import '../../core/error_messages.dart';
 import '../../models/leave_record.dart';
+import '../../models/leave_type.dart';
 import '../../services/omni_mobile_api.dart';
 import '../../services/session_service.dart';
 import '../../services/holiday_service.dart';
@@ -666,14 +667,16 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
 
   Future<void> _pickRange() async {
     final today = DateTime.now();
-    final firstDate = DateTime(today.year, today.month, today.day);
+    final firstDate = backdateFirstDate(null, today);
+    final lastDate = DateTime(today.year, today.month, today.day)
+        .add(const Duration(days: 365));
     final holidays = context.read<HolidayService>();
     if (_isHourly) {
       final picked = await showAutoDatePicker(
         context: context,
         initialDate: _dateFrom.isBefore(firstDate) ? firstDate : _dateFrom,
         firstDate: firstDate,
-        lastDate: firstDate.add(const Duration(days: 365)),
+        lastDate: lastDate,
         helpText: 'Select date',
         holidayName: holidays.holidayName,
         isNonWorkingDay: (d) => !holidays.isWorkingDay(d),
@@ -694,7 +697,7 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
             _dateFrom.isBefore(firstDate) ? firstDate : _dateFrom,
         initialEnd: _dateTo.isBefore(firstDate) ? firstDate : _dateTo,
         firstDate: firstDate,
-        lastDate: firstDate.add(const Duration(days: 365)),
+        lastDate: lastDate,
         holidayName: holidays.holidayName,
         isNonWorkingDay: (d) => !holidays.isWorkingDay(d),
         dayCount: holidays.workingDaysBetween,
@@ -1118,4 +1121,15 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
       ),
     );
   }
+}
+
+/// Earliest selectable start date for [type], from the policy the server
+/// computed. Robust to old servers (backdating defaults off).
+DateTime backdateFirstDate(LeaveType? type, DateTime now) {
+  final midnightToday = DateTime(now.year, now.month, now.day);
+  if (type == null || !type.allowBackdated) return midnightToday;
+  final floor = type.earliestBackdateDate;
+  if (floor != null) return DateTime(floor.year, floor.month, floor.day);
+  // Unlimited: keep the picker bounded, mirroring the forward window.
+  return midnightToday.subtract(const Duration(days: 365));
 }
