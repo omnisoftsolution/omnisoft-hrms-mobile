@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 import '../../core/theme.dart';
 import '../../core/error_messages.dart';
 import '../../models/leave_record.dart';
-import '../../models/leave_type.dart';
 import '../../services/omni_mobile_api.dart';
 import '../../services/session_service.dart';
 import '../../services/holiday_service.dart';
@@ -13,6 +12,7 @@ import '../../widgets/error_state_view.dart';
 import '../../widgets/document_picker_field.dart';
 import '../../widgets/file_viewer.dart';
 import '../../widgets/range_picker_dialog.dart';
+import '../../utils/leave_backdate.dart';
 
 class LeaveHistoryScreen extends StatefulWidget {
   const LeaveHistoryScreen({super.key});
@@ -667,7 +667,7 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
 
   Future<void> _pickRange() async {
     final today = DateTime.now();
-    final firstDate = backdateFirstDate(null, today);
+    final firstDate = backdateFirstDate(widget.record.allowBackdated, widget.record.earliestBackdateDate, today);
     final lastDate = DateTime(today.year, today.month, today.day)
         .add(const Duration(days: 365));
     final holidays = context.read<HolidayService>();
@@ -1123,13 +1123,3 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
   }
 }
 
-/// Earliest selectable start date for [type], from the policy the server
-/// computed. Robust to old servers (backdating defaults off).
-DateTime backdateFirstDate(LeaveType? type, DateTime now) {
-  final midnightToday = DateTime(now.year, now.month, now.day);
-  if (type == null || !type.allowBackdated) return midnightToday;
-  final floor = type.earliestBackdateDate;
-  if (floor != null) return DateTime(floor.year, floor.month, floor.day);
-  // Unlimited: keep the picker bounded, mirroring the forward window.
-  return midnightToday.subtract(const Duration(days: 365));
-}

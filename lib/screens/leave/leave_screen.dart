@@ -15,6 +15,7 @@ import '../../widgets/omni_app_bar.dart';
 import '../../widgets/primary_button.dart';
 import '../../widgets/range_picker_dialog.dart';
 import '../home/home_shell.dart';
+import '../../utils/leave_backdate.dart';
 
 /// Renders the remaining-balance indicator for a leave type. Returns
 /// null when the type carries no balance info (server didn't send the
@@ -355,7 +356,7 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
 
   Future<void> _pickRange() async {
     final today = DateTime.now();
-    final firstDate = backdateFirstDate(widget.leaveType, today);
+    final firstDate = backdateFirstDate(widget.leaveType.allowBackdated, widget.leaveType.earliestBackdateDate, today);
     final lastDate = DateTime(today.year, today.month, today.day)
         .add(const Duration(days: 365));
     final holidays = context.read<HolidayService>();
@@ -934,13 +935,3 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
   }
 }
 
-/// Earliest selectable start date for [type], from the policy the server
-/// computed. Robust to old servers (backdating defaults off).
-DateTime backdateFirstDate(LeaveType? type, DateTime now) {
-  final midnightToday = DateTime(now.year, now.month, now.day);
-  if (type == null || !type.allowBackdated) return midnightToday;
-  final floor = type.earliestBackdateDate;
-  if (floor != null) return DateTime(floor.year, floor.month, floor.day);
-  // Unlimited: keep the picker bounded, mirroring the forward window.
-  return midnightToday.subtract(const Duration(days: 365));
-}
