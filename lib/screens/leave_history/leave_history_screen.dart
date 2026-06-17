@@ -12,6 +12,7 @@ import '../../widgets/error_state_view.dart';
 import '../../widgets/document_picker_field.dart';
 import '../../widgets/file_viewer.dart';
 import '../../widgets/range_picker_dialog.dart';
+import '../../utils/leave_backdate.dart';
 
 class LeaveHistoryScreen extends StatefulWidget {
   const LeaveHistoryScreen({super.key});
@@ -666,14 +667,16 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
 
   Future<void> _pickRange() async {
     final today = DateTime.now();
-    final firstDate = DateTime(today.year, today.month, today.day);
+    final firstDate = backdateFirstDate(widget.record.allowBackdated, widget.record.earliestBackdateDate, today);
+    final lastDate = DateTime(today.year, today.month, today.day)
+        .add(const Duration(days: 365));
     final holidays = context.read<HolidayService>();
     if (_isHourly) {
       final picked = await showAutoDatePicker(
         context: context,
         initialDate: _dateFrom.isBefore(firstDate) ? firstDate : _dateFrom,
         firstDate: firstDate,
-        lastDate: firstDate.add(const Duration(days: 365)),
+        lastDate: lastDate,
         helpText: 'Select date',
         holidayName: holidays.holidayName,
         isNonWorkingDay: (d) => !holidays.isWorkingDay(d),
@@ -694,7 +697,7 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
             _dateFrom.isBefore(firstDate) ? firstDate : _dateFrom,
         initialEnd: _dateTo.isBefore(firstDate) ? firstDate : _dateTo,
         firstDate: firstDate,
-        lastDate: firstDate.add(const Duration(days: 365)),
+        lastDate: lastDate,
         holidayName: holidays.holidayName,
         isNonWorkingDay: (d) => !holidays.isWorkingDay(d),
         dayCount: holidays.workingDaysBetween,
@@ -1119,3 +1122,4 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
     );
   }
 }
+

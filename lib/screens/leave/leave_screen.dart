@@ -15,6 +15,7 @@ import '../../widgets/omni_app_bar.dart';
 import '../../widgets/primary_button.dart';
 import '../../widgets/range_picker_dialog.dart';
 import '../home/home_shell.dart';
+import '../../utils/leave_backdate.dart';
 
 /// Renders the remaining-balance indicator for a leave type. Returns
 /// null when the type carries no balance info (server didn't send the
@@ -355,14 +356,16 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
 
   Future<void> _pickRange() async {
     final today = DateTime.now();
-    final firstDate = DateTime(today.year, today.month, today.day);
+    final firstDate = backdateFirstDate(widget.leaveType.allowBackdated, widget.leaveType.earliestBackdateDate, today);
+    final lastDate = DateTime(today.year, today.month, today.day)
+        .add(const Duration(days: 365));
     final holidays = context.read<HolidayService>();
     if (_isHourly) {
       final picked = await showAutoDatePicker(
         context: context,
         initialDate: _dateFrom,
         firstDate: firstDate,
-        lastDate: firstDate.add(const Duration(days: 365)),
+        lastDate: lastDate,
         helpText: 'Select date',
         holidayName: holidays.holidayName,
         isNonWorkingDay: (d) => !holidays.isWorkingDay(d),
@@ -382,7 +385,7 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
         initialStart: _dateFrom,
         initialEnd: _dateTo,
         firstDate: firstDate,
-        lastDate: firstDate.add(const Duration(days: 365)),
+        lastDate: lastDate,
         holidayName: holidays.holidayName,
         isNonWorkingDay: (d) => !holidays.isWorkingDay(d),
         // Show working-day count in the picker header so it matches
@@ -931,3 +934,4 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
     );
   }
 }
+

@@ -70,5 +70,12 @@ void main() {
         'Something went wrong. Please try again.',
       );
     });
+
+    test('maps backdate_limit_exceeded to a past-date message', () {
+      expect(
+        friendlyError(Exception('backdate_limit_exceeded')),
+        contains('past'),
+      );
+    });
   });
 }

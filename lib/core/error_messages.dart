@@ -70,6 +70,10 @@ String friendlyError(Object e) {
   if (raw.contains('document_required')) {
     return 'A supporting document is required for this leave type.';
   }
+  if (raw.contains('backdate_limit_exceeded')) {
+    return 'This leave type does not allow a start date that far in the '
+        'past. Please choose a later start date.';
+  }
 
   // --- Safe fallback ---
   // Strip a leading "Exception: " then decide whether the remainder is

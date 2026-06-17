@@ -19,6 +19,8 @@ class LeaveRecord {
   final double? hourTo;
   final double numberOfHours;
   final List<LeaveAttachment> attachments;
+  final bool allowBackdated;
+  final DateTime? earliestBackdateDate;
 
   LeaveRecord({
     required this.id,
@@ -41,6 +43,8 @@ class LeaveRecord {
     this.hourTo,
     this.numberOfHours = 0,
     this.attachments = const [],
+    this.allowBackdated = false,
+    this.earliestBackdateDate,
   });
 
   factory LeaveRecord.fromJson(Map<String, dynamic> json) {
@@ -67,6 +71,8 @@ class LeaveRecord {
       attachments: (json['attachments'] as List<dynamic>? ?? [])
           .map((e) => LeaveAttachment.fromJson(e as Map<String, dynamic>))
           .toList(),
+      allowBackdated: _parseBool(json['allow_backdated']),
+      earliestBackdateDate: _parseDate(json['earliest_backdate_date']),
     );
   }
 
@@ -84,6 +90,11 @@ class LeaveRecord {
   }
 
   String get allocationUnit => requestUnit == 'hour' ? 'hours' : 'days';
+
+  static DateTime? _parseDate(dynamic v) {
+    if (v is String && v.isNotEmpty) return DateTime.tryParse(v);
+    return null;
+  }
 
   static bool _parseBool(dynamic v) {
     if (v is bool) return v;
