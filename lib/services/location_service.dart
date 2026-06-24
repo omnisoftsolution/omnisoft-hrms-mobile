@@ -51,6 +51,7 @@ class LocationService {
         longitude: DevConstants.fallbackLongitude,
         accuracy: 5.0,
         isDevFallback: true,
+        isMocked: false,
       );
     }
 
@@ -90,6 +91,7 @@ class LocationService {
         latitude: pos.latitude,
         longitude: pos.longitude,
         accuracy: pos.accuracy,
+        isMocked: pos.isMocked,
       );
     } on TimeoutException catch (_) {
       return LocationResult.failure(

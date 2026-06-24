@@ -17,6 +17,8 @@ class LocationResult {
   final double? accuracy;
   final String? errorMessage;
   final bool isDevFallback;
+  // Android-only: iOS always returns false (Phase 2b/App Attest covers iOS).
+  final bool isMocked;
 
   LocationResult({
     required this.status,
@@ -25,6 +27,7 @@ class LocationResult {
     this.accuracy,
     this.errorMessage,
     this.isDevFallback = false,
+    this.isMocked = false,
   });
 
   bool get isReady => status == LocationStatus.ready;
@@ -34,6 +37,7 @@ class LocationResult {
     required double longitude,
     double? accuracy,
     bool isDevFallback = false,
+    bool isMocked = false,
   }) =>
       LocationResult(
         status: LocationStatus.ready,
@@ -41,6 +45,7 @@ class LocationResult {
         longitude: longitude,
         accuracy: accuracy,
         isDevFallback: isDevFallback,
+        isMocked: isMocked,
       );
 
   factory LocationResult.failure(LocationStatus status, String message) =>
