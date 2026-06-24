@@ -271,6 +271,8 @@ class HomeScreenState extends State<HomeScreen> {
     // check. No permission prompt is triggered either.
     double? latitude;
     double? longitude;
+    bool isMocked = false;
+    double? accuracy;
     if (session.featureGeolocation) {
       final loc = await _locationService.getCurrent();
       if (!mounted) return;
@@ -281,6 +283,8 @@ class HomeScreenState extends State<HomeScreen> {
       }
       latitude = loc.latitude;
       longitude = loc.longitude;
+      isMocked = loc.isMocked;
+      accuracy = loc.accuracy;
 
       // Step 1b — Pre-capture geofence gate. If we can tell from this
       // FRESH fix that the user is outside the office radius, reject now
@@ -369,6 +373,8 @@ class HomeScreenState extends State<HomeScreen> {
           faceVerified: faceVerified,
           deviceId: deviceId,
           devLocation: DevConstants.useDevLocation,
+          isMocked: isMocked,
+          accuracy: accuracy,
         );
       } else {
         final resp = await api.checkIn(
@@ -377,6 +383,8 @@ class HomeScreenState extends State<HomeScreen> {
           faceVerified: faceVerified,
           deviceId: deviceId,
           devLocation: DevConstants.useDevLocation,
+          isMocked: isMocked,
+          accuracy: accuracy,
         );
         // Connector's Phase 1 auto-close echoes back when it had to
         // infer a check-out for a forgotten attendance. Surface as a
