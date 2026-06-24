@@ -340,7 +340,13 @@ class SessionService extends ChangeNotifier {
     _employeeAttendanceApprover = employeeAttendanceApprover;
     _employeeExpenseApprover = employeeExpenseApprover;
     final prefs = await SharedPreferences.getInstance();
-    await _secure.write(key: _keyAccessToken, value: accessToken);
+    try {
+      await _secure.write(key: _keyAccessToken, value: accessToken);
+    } catch (_) {
+      // Secure-storage write failed (exotic OS/Keychain error). The in-memory
+      // token is already set above, so the session is live for this launch.
+      // Proceed — prefs cleanup below must always run.
+    }
     await prefs.remove(_keyAccessToken);
     await prefs.setString(_keyExpiresAt, expiresAt?.toIso8601String() ?? '');
     await prefs.setInt(_keyUserId, userId);
@@ -487,7 +493,12 @@ class SessionService extends ChangeNotifier {
     _employeeAttendanceApprover = '';
     _employeeExpenseApprover = '';
     final prefs = await SharedPreferences.getInstance();
-    await _secure.delete(key: _keyAccessToken);
+    try {
+      await _secure.delete(key: _keyAccessToken);
+    } catch (_) {
+      // Secure-storage delete failed (exotic OS/Keychain error).
+      // Continue — the prefs cleanup chain below must always run.
+    }
     await prefs.remove(_keyAccessToken);
     await prefs.remove(_keyExpiresAt);
     await prefs.remove(_keyUserId);

@@ -36,5 +36,24 @@ void main() {
       await svc.load();
       expect(svc.accessToken, '');
     });
+
+    test('saveSession stores token in secure storage, not plaintext prefs', () async {
+      SharedPreferences.setMockInitialValues({});
+      FlutterSecureStorage.setMockInitialValues({});
+      final svc = SessionService();
+      await svc.load();
+      await svc.saveSession(
+        accessToken: 'NEW-TOKEN',
+        userId: 1,
+        userLogin: 'test@example.com',
+        userName: 'Test User',
+        employeeId: 42,
+        employeeName: 'Test Employee',
+      );
+      const secure = FlutterSecureStorage();
+      expect(await secure.read(key: 'access_token'), 'NEW-TOKEN');
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('access_token'), isNull);
+    });
   });
 }
