@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'saas_service.dart';
@@ -13,6 +14,8 @@ import 'saas_service.dart';
 ///   employeeId, employeeName) is wiped on logout or when the server
 ///   returns invalid_session.
 class SessionService extends ChangeNotifier {
+  final FlutterSecureStorage _secure = const FlutterSecureStorage();
+
   // Keys: SaaS routing (kept across logout)
   static const _keySaasUrl = 'saas_url';
   static const _keyCompanyCode = 'company_code';
@@ -162,7 +165,7 @@ class SessionService extends ChangeNotifier {
     _companyLogoB64 = prefs.getString(_keyCompanyLogoB64) ?? '';
     _showConnectionDetails =
         prefs.getBool(_keyShowConnectionDetails) ?? false;
-    _accessToken = prefs.getString(_keyAccessToken) ?? '';
+    _accessToken = await _readTokenWithMigration(prefs);
     final exp = prefs.getString(_keyExpiresAt);
     _expiresAt = exp != null && exp.isNotEmpty ? DateTime.tryParse(exp) : null;
     _userId = prefs.getInt(_keyUserId) ?? 0;
@@ -188,6 +191,30 @@ class SessionService extends ChangeNotifier {
     _employeeExpenseApprover =
         prefs.getString(_keyEmployeeExpenseApprover) ?? '';
     notifyListeners();
+  }
+
+  /// Reads the bearer token, migrating a legacy SharedPreferences entry
+  /// into secure storage on first run. A failed secure read returns ''
+  /// (treated as logged-out) rather than crashing.
+  Future<String> _readTokenWithMigration(SharedPreferences prefs) async {
+    try {
+      final secureToken = await _secure.read(key: _keyAccessToken);
+      if (secureToken != null && secureToken.isNotEmpty) {
+        return secureToken;
+      }
+      // Migrate a legacy plaintext token, if any, then drop it.
+      final legacy = prefs.getString(_keyAccessToken);
+      if (legacy != null && legacy.isNotEmpty) {
+        await _secure.write(key: _keyAccessToken, value: legacy);
+        await prefs.remove(_keyAccessToken);
+        return legacy;
+      }
+      return '';
+    } catch (_) {
+      // Secure storage unavailable (e.g. device without secure enclave in
+      // tests) — treat as logged-out rather than crashing.
+      return '';
+    }
   }
 
   Future<void> saveCompany({
@@ -313,7 +340,8 @@ class SessionService extends ChangeNotifier {
     _employeeAttendanceApprover = employeeAttendanceApprover;
     _employeeExpenseApprover = employeeExpenseApprover;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_keyAccessToken, accessToken);
+    await _secure.write(key: _keyAccessToken, value: accessToken);
+    await prefs.remove(_keyAccessToken);
     await prefs.setString(_keyExpiresAt, expiresAt?.toIso8601String() ?? '');
     await prefs.setInt(_keyUserId, userId);
     await prefs.setString(_keyUserLogin, userLogin);
@@ -459,6 +487,7 @@ class SessionService extends ChangeNotifier {
     _employeeAttendanceApprover = '';
     _employeeExpenseApprover = '';
     final prefs = await SharedPreferences.getInstance();
+    await _secure.delete(key: _keyAccessToken);
     await prefs.remove(_keyAccessToken);
     await prefs.remove(_keyExpiresAt);
     await prefs.remove(_keyUserId);
