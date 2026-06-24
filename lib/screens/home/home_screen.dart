@@ -192,6 +192,16 @@ class HomeScreenState extends State<HomeScreen> {
       setState(() {
         _currentDistanceMeters = d;
         _gpsCoarseFailed = false;
+        // If the live fix now shows the user inside the radius, drop any
+        // stale "Outside office geofence" banner from an earlier reject.
+        // Without this the red card lingers even after the user moves
+        // back in range or the admin widens the radius — contradicting
+        // the (live) GPS Status card right above it.
+        if (_lastDistance != null &&
+            d <= (s.officeRadiusMeters ?? 200)) {
+          _lastDistance = null;
+          _lastAllowedRadius = null;
+        }
       });
     } catch (_) {
       // ignore — leave the card showing whatever it had before
@@ -271,6 +281,41 @@ class HomeScreenState extends State<HomeScreen> {
       }
       latitude = loc.latitude;
       longitude = loc.longitude;
+
+      // Step 1b — Pre-capture geofence gate. If we can tell from this
+      // FRESH fix that the user is outside the office radius, reject now
+      // — before spending the user's time on a face capture the server
+      // would only reject afterwards. Uses the just-fetched location
+      // (not the up-to-60s-stale _currentDistanceMeters poll value) so
+      // it matches what the server will compute. The server still
+      // enforces the geofence on submit; this is purely a fast-fail.
+      // Skipped under dev-location and when no geofence is configured,
+      // mirroring _buttonState()'s exemptions so the button label and
+      // tap-time behaviour stay in agreement.
+      final s = _status;
+      if (!DevConstants.useDevLocation &&
+          s != null &&
+          s.hasGeofence &&
+          s.officeLatitude != null &&
+          s.officeLongitude != null) {
+        final radius = s.officeRadiusMeters ?? 200;
+        final distance = _haversineMeters(
+          latitude!,
+          longitude!,
+          s.officeLatitude!,
+          s.officeLongitude!,
+        );
+        if (distance > radius) {
+          setState(() {
+            _acting = false;
+            _currentDistanceMeters = distance;
+            _lastDistance = distance;
+            _lastAllowedRadius = radius.toDouble();
+          });
+          _showError('You are outside the allowed office location.');
+          return;
+        }
+      }
     }
 
     // Step 2 — Face capture + on-device verification against the

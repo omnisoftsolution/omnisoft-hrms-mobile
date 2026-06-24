@@ -29,6 +29,14 @@ class _CompanySettingsScreenState extends State<CompanySettingsScreen> {
   String? _error;
   String? _info;
 
+  // The database name is hidden by default — it's an internal detail
+  // most users never need and shouldn't see. Tapping the Client URL
+  // tile 7 times reveals it, a quiet support/diagnostics affordance
+  // mirroring the kiosk app's provisioning screen. Reset whenever the
+  // resolved company changes (re-resolve / clear).
+  int _dbTaps = 0;
+  bool _showDb = false;
+
   @override
   void initState() {
     super.initState();
@@ -112,6 +120,9 @@ class _CompanySettingsScreenState extends State<CompanySettingsScreen> {
         _clientUrl = info.odooUrl;
         _clientDb = info.database;
         _info = 'Company refreshed.';
+        // New routing resolved — re-hide the database name.
+        _dbTaps = 0;
+        _showDb = false;
       });
       await Future.delayed(const Duration(milliseconds: 600));
       if (mounted) Navigator.of(context).pop();
@@ -223,6 +234,16 @@ class _CompanySettingsScreenState extends State<CompanySettingsScreen> {
     );
   }
 
+  /// Reveal the hidden Database tile after 7 taps on the Client URL tile.
+  /// No-op once already shown.
+  void _revealDbTap() {
+    if (_showDb) return;
+    setState(() {
+      _dbTaps++;
+      if (_dbTaps >= 7) _showDb = true;
+    });
+  }
+
   Future<void> _clearCompany() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -297,15 +318,24 @@ class _CompanySettingsScreenState extends State<CompanySettingsScreen> {
                     ),
               ),
               const SizedBox(height: 8),
-              _readOnlyTile(
-                  icon: Icons.public_rounded,
-                  label: 'Client URL',
-                  value: _clientUrl.isEmpty ? '—' : _clientUrl),
-              const SizedBox(height: 8),
-              _readOnlyTile(
-                  icon: Icons.storage_outlined,
-                  label: 'Database',
-                  value: _clientDb.isEmpty ? '—' : _clientDb),
+              // Tapping the Client URL tile 7 times reveals the hidden
+              // Database tile (support/diagnostics affordance). opaque
+              // hit-test so taps anywhere on the tile count.
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _revealDbTap,
+                child: _readOnlyTile(
+                    icon: Icons.public_rounded,
+                    label: 'Client URL',
+                    value: _clientUrl.isEmpty ? '—' : _clientUrl),
+              ),
+              if (_showDb) ...[
+                const SizedBox(height: 8),
+                _readOnlyTile(
+                    icon: Icons.storage_outlined,
+                    label: 'Database',
+                    value: _clientDb.isEmpty ? '—' : _clientDb),
+              ],
               if (_error != null) ...[
                 const SizedBox(height: 16),
                 _banner(_error!, AppTheme.error, Icons.error_outline),
