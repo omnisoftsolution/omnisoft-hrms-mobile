@@ -43,6 +43,17 @@ String friendlyError(Object e) {
   if (raw.contains('outside_geofence')) {
     return 'You are outside the allowed office location.';
   }
+  if (raw.contains('mock_location')) {
+    return 'Check-in blocked: your device appears to be using a fake (mock) '
+        'location. Turn off any fake-GPS or mock location apps and try again.';
+  }
+  if (raw.contains('invalid_coordinates')) {
+    return "We couldn't read a valid location from your device. Make sure "
+        'location is turned on and try again.';
+  }
+  if (raw.contains('device_mismatch')) {
+    return 'This device is not registered to your account. Please contact HR.';
+  }
   if (raw.contains('face_not_verified')) {
     return 'Face verification failed. Please try again.';
   }

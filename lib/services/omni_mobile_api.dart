@@ -11,6 +11,40 @@ import '../models/ocr_result.dart';
 import '../models/payslip_record.dart';
 import '../models/public_holiday.dart';
 
+/// Builds the request body map for attendance check-in/out calls.
+///
+/// This is the single source of truth for attendance request body
+/// construction. Extracted as a top-level function so it can be unit-tested
+/// without HTTP. Both [OmniMobileApi.checkIn] and [OmniMobileApi.checkOut]
+/// delegate to this function.
+///
+/// - [latitude] / [longitude]: omitted (not sent as JSON null) when geo is
+///   off — the connector treats absence of coords as "skip geofence".
+/// - [isMocked]: always sent; true when the GPS fix came from a mocked
+///   provider (emulator or developer tool).
+/// - [accuracy]: omitted when null (GPS accuracy unavailable).
+/// - [devLocation]: when true, appends `_dev_location: true` so the server
+///   bypasses the geofence. Only set via DevConstants.useDevLocation.
+Map<String, dynamic> buildAttendanceBody({
+  double? latitude,
+  double? longitude,
+  bool faceVerified = true,
+  String? deviceId,
+  bool devLocation = false,
+  bool isMocked = false,
+  double? accuracy,
+}) {
+  return {
+    'latitude': ?latitude,
+    'longitude': ?longitude,
+    'face_verified': faceVerified,
+    'device_id': ?deviceId,
+    'is_mocked': isMocked,
+    'location_accuracy': ?accuracy,
+    if (devLocation) '_dev_location': true,
+  };
+}
+
 class OmniMobileApi {
   final String baseUrl;
   final String db;
@@ -158,20 +192,18 @@ class OmniMobileApi {
     bool faceVerified = true,
     String? deviceId,
     bool devLocation = false,
+    bool isMocked = false,
+    double? accuracy,
   }) async {
-    // latitude/longitude are omitted (not sent as JSON null) when the
-    // SaaS geolocation flag is off — the connector treats absence of
-    // coords as "skip geofence". See controllers/main.py check_in.
-    return _post('/attendance/check_in', {
-      'latitude': ?latitude,
-      'longitude': ?longitude,
-      'face_verified': faceVerified,
-      'device_id': ?deviceId,
-      // Server bypasses geofence when this flag is set. Only sent
-      // when DevConstants.useDevLocation is true. Server logs a
-      // warning per call so dev usage is auditable.
-      if (devLocation) '_dev_location': true,
-    });
+    return _post('/attendance/check_in', buildAttendanceBody(
+      latitude: latitude,
+      longitude: longitude,
+      faceVerified: faceVerified,
+      deviceId: deviceId,
+      devLocation: devLocation,
+      isMocked: isMocked,
+      accuracy: accuracy,
+    ));
   }
 
   Future<Map<String, dynamic>> checkOut({
@@ -180,14 +212,18 @@ class OmniMobileApi {
     bool faceVerified = true,
     String? deviceId,
     bool devLocation = false,
+    bool isMocked = false,
+    double? accuracy,
   }) async {
-    return _post('/attendance/check_out', {
-      'latitude': ?latitude,
-      'longitude': ?longitude,
-      'face_verified': faceVerified,
-      'device_id': ?deviceId,
-      if (devLocation) '_dev_location': true,
-    });
+    return _post('/attendance/check_out', buildAttendanceBody(
+      latitude: latitude,
+      longitude: longitude,
+      faceVerified: faceVerified,
+      deviceId: deviceId,
+      devLocation: devLocation,
+      isMocked: isMocked,
+      accuracy: accuracy,
+    ));
   }
 
   Future<List<AttendanceRecord>> getAttendanceHistory() async {

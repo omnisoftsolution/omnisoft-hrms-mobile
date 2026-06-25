@@ -49,6 +49,31 @@ void main() {
       );
     });
 
+    test('maps mock_location to a fake-GPS message (not the raw code)', () {
+      final msg = friendlyError('mock_location');
+      expect(msg, isNot('mock_location'));
+      expect(msg.toLowerCase(), contains('fake'));
+    });
+
+    test('maps mock_location when wrapped in an Exception', () {
+      expect(
+        friendlyError(Exception('mock_location')),
+        isNot(contains('mock_location')),
+      );
+    });
+
+    test('maps invalid_coordinates to a location-read message', () {
+      final msg = friendlyError('invalid_coordinates');
+      expect(msg, isNot('invalid_coordinates'));
+      expect(msg.toLowerCase(), contains('location'));
+    });
+
+    test('maps device_mismatch to a device-not-registered message', () {
+      final msg = friendlyError('device_mismatch');
+      expect(msg, isNot('device_mismatch'));
+      expect(msg.toLowerCase(), contains('device'));
+    });
+
     test('maps session expiry', () {
       expect(friendlyError('invalid_session'), contains('expired'));
     });

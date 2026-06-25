@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants.dart';
 import '../../core/datetime_utils.dart';
+import '../../core/error_messages.dart';
 import '../../core/theme.dart';
 import '../../models/attendance_status.dart';
 import '../../models/auto_close_previous.dart';
@@ -156,7 +157,7 @@ class HomeScreenState extends State<HomeScreen> {
       // changed since the last poll.
       _refreshGpsCard();
     } catch (e) {
-      if (mounted) setState(() => _error = _humanizeApiError(e));
+      if (mounted) setState(() => _error = friendlyError(e));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -271,6 +272,8 @@ class HomeScreenState extends State<HomeScreen> {
     // check. No permission prompt is triggered either.
     double? latitude;
     double? longitude;
+    bool isMocked = false;
+    double? accuracy;
     if (session.featureGeolocation) {
       final loc = await _locationService.getCurrent();
       if (!mounted) return;
@@ -281,6 +284,8 @@ class HomeScreenState extends State<HomeScreen> {
       }
       latitude = loc.latitude;
       longitude = loc.longitude;
+      isMocked = loc.isMocked;
+      accuracy = loc.accuracy;
 
       // Step 1b — Pre-capture geofence gate. If we can tell from this
       // FRESH fix that the user is outside the office radius, reject now
@@ -369,6 +374,8 @@ class HomeScreenState extends State<HomeScreen> {
           faceVerified: faceVerified,
           deviceId: deviceId,
           devLocation: DevConstants.useDevLocation,
+          isMocked: isMocked,
+          accuracy: accuracy,
         );
       } else {
         final resp = await api.checkIn(
@@ -377,6 +384,8 @@ class HomeScreenState extends State<HomeScreen> {
           faceVerified: faceVerified,
           deviceId: deviceId,
           devLocation: DevConstants.useDevLocation,
+          isMocked: isMocked,
+          accuracy: accuracy,
         );
         // Connector's Phase 1 auto-close echoes back when it had to
         // infer a check-out for a forgotten attendance. Surface as a
@@ -414,7 +423,7 @@ class HomeScreenState extends State<HomeScreen> {
             _lastAllowedRadius = e.allowedRadius;
           });
         }
-        _showError(_humanizeApiError(e));
+        _showError(friendlyError(e));
       }
     } finally {
       if (mounted) setState(() => _acting = false);
@@ -425,53 +434,6 @@ class HomeScreenState extends State<HomeScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(msg), backgroundColor: AppTheme.error),
     );
-  }
-
-  String _humanizeApiError(Object e) {
-    final raw = e.toString();
-    if (raw.contains('office_geofence_not_configured')) {
-      return 'No office location is set for your employee. Ask HR to configure the work address.';
-    }
-    if (raw.contains('outside_geofence')) {
-      return 'You are outside the allowed office location.';
-    }
-    if (raw.contains('face_not_verified')) {
-      return 'Face verification failed. Please try again.';
-    }
-    if (raw.contains('mobile_not_enabled')) {
-      return 'Mobile attendance is not enabled for your employee profile.';
-    }
-    if (raw.contains('already_checked_in')) {
-      return 'You are already checked in.';
-    }
-    if (raw.contains('not_checked_in')) {
-      return 'You are not currently checked in.';
-    }
-    if (raw.contains('invalid_session') || raw.contains('invalid_token')) {
-      return 'Your session expired. Please login again.';
-    }
-    if (raw.contains('timeout')) {
-      return 'Server is taking too long to respond. Please try again.';
-    }
-    if (raw.contains('network_error')) {
-      return 'No internet connection. Check your network and try again.';
-    }
-    if (raw.contains('server_error')) {
-      return 'Something went wrong on our end. Please try again in a moment.';
-    }
-    if (raw.contains('invalid_attendance')) {
-      return 'Your previous check-in was too long ago. Please contact HR '
-          'or open the attendance record in the web app to close it.';
-    }
-    // Last-resort fallback. NEVER echo the raw exception text — it can
-    // contain the request URI (and the database name). Only surface a
-    // raw code if it's a short, safe-looking server error token
-    // (snake_case, no spaces/URLs); otherwise show a generic message.
-    final stripped = raw.replaceFirst(RegExp(r'^Exception: '), '').trim();
-    final looksLikeCode =
-        RegExp(r'^[a-z0-9_]{1,40}$').hasMatch(stripped);
-    if (looksLikeCode) return stripped;
-    return 'Something went wrong. Please try again.';
   }
 
   @override
