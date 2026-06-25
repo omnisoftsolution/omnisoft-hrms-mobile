@@ -41,6 +41,24 @@ ASC_AUTH_FLAGS = "-allowProvisioningUpdates " \
 IPA_OUTPUT_DIR  = "../build/ios/fastlane"
 IPA_OUTPUT_NAME = "omnihr.ipa"
 
+# TestFlight "What to Test" notes, attached to every beta upload. Edit
+# this per release. Inlined (not read from a file) so it can't break on a
+# path/cwd surprise during the upload step. TestFlight allows ~4000 chars.
+TESTFLIGHT_CHANGELOG = <<~NOTES.freeze
+  Attendance location integrity + secure sign-in.
+
+  New:
+  - Detects mock/fake-GPS and reports location accuracy on check-in/out (Android; iOS in a later release).
+  - Login token now stored in the iOS Keychain / Android Keystore.
+  - Clearer messages when a check-in is blocked.
+
+  Please test:
+  1. Update from the previous build — you should stay logged in (no re-login). This is the most important check.
+  2. Check in/out inside your office area — works as before.
+  3. Check in outside your office area — clear "outside office location" message.
+  4. (Android) With a mock-location app enabled, check in: if your server has mock enforcement on you'll see a "fake (mock) location" message; otherwise it proceeds and is recorded for review.
+NOTES
+
 platform :ios do
   desc "Build & ship to TestFlight in one shot"
   lane :beta do
@@ -49,6 +67,8 @@ platform :ios do
     archive_and_export
     upload_to_testflight(
       ipa: "#{IPA_OUTPUT_DIR}/#{IPA_OUTPUT_NAME}",
+      # "What to Test" shown to internal testers (see TESTFLIGHT_CHANGELOG).
+      changelog: TESTFLIGHT_CHANGELOG,
       # Don't wait for Apple's processing to finish — uploads land in
       # TestFlight as "Processing" within ~1 min, then become available
       # to testers within ~10. Blocking here just makes fastlane sit

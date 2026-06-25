@@ -1,0 +1,7 @@
+Attendance location integrity + secure sign-in.
+
+- Detects fake/mock GPS and reports location accuracy on clock-in/out (Android), for more trustworthy attendance.
+- Your login is now stored securely in the Android Keystore.
+- Clearer messages when a check-in can't be completed.
+
+Testers: after updating you should stay logged in. Try check-in inside and outside your office area (optionally with a mock-location app enabled).
