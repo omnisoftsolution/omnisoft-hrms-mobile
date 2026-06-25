@@ -24,11 +24,12 @@ platform :android do
       aab: AAB_PATH,
       track: "internal",
       release_status: "completed",
-      # We manage release notes inline (via Play Console UI) rather
-      # than from local files for now — flip these if you want to
-      # ship metadata changes via fastlane too.
+      # Release notes ARE shipped from local files: supply reads
+      # fastlane/metadata/android/<lang>/changelogs/default.txt (edit that
+      # per release). Listing metadata/images/screenshots stay managed in
+      # the Play Console UI, so those remain skipped.
       skip_upload_metadata: true,
-      skip_upload_changelogs: true,
+      skip_upload_changelogs: false,
       skip_upload_images: true,
       skip_upload_screenshots: true,
       # Don't validate against existing tracks — just push the new
