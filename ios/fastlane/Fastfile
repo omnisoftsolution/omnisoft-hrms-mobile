@@ -94,7 +94,17 @@ platform :ios do
   # the upstream 2.12.0 (which can't load our ai_edge_torch-converted
   # spoof models). The script is idempotent.
   def flutter_prebuild
-    sh("cd ../.. && tools/patch_tflite_pod.sh && flutter build ios --release --no-codesign")
+    # Homebrew's fastlane runs under its own Ruby and exports
+    # GEM_HOME/GEM_PATH pointing at that Ruby's gem dir. Those leak into
+    # this `sh` subprocess and break Homebrew CocoaPods — `pod` then looks
+    # for its gems (minitest, activesupport, …) under the wrong Ruby and
+    # raises Gem::MissingSpecError, so flutter reports "CocoaPods not
+    # installed or not in valid state" and skips `pod install`, failing the
+    # build. Strip the gem/bundler env so flutter+pod run in the same clean
+    # environment a normal login shell has (where `flutter doctor` is green).
+    clean_env = 'env -u GEM_HOME -u GEM_PATH -u RUBYOPT -u RUBYLIB ' \
+                '-u BUNDLE_GEMFILE -u BUNDLE_BIN_PATH -u BUNDLE_PATH'
+    sh("cd ../.. && #{clean_env} tools/patch_tflite_pod.sh && #{clean_env} flutter build ios --release --no-codesign")
   end
 
   # Build (archive) + export the IPA in a single xcodebuild
