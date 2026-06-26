@@ -31,11 +31,13 @@ class _CompanySettingsScreenState extends State<CompanySettingsScreen> {
 
   // The database name is hidden by default — it's an internal detail
   // most users never need and shouldn't see. Tapping the Client URL
-  // tile 7 times reveals it, a quiet support/diagnostics affordance
-  // mirroring the kiosk app's provisioning screen. Reset whenever the
-  // resolved company changes (re-resolve / clear).
+  // tile [_kDbRevealTaps] times reveals it, a quiet support/diagnostics
+  // affordance mirroring the kiosk app's provisioning screen. The reveal
+  // is derived purely from the tap count, so resetting _dbTaps (on
+  // re-resolve) re-hides it with no second flag to keep in sync.
+  static const int _kDbRevealTaps = 7;
   int _dbTaps = 0;
-  bool _showDb = false;
+  bool get _showDb => _dbTaps >= _kDbRevealTaps;
 
   @override
   void initState() {
@@ -120,9 +122,9 @@ class _CompanySettingsScreenState extends State<CompanySettingsScreen> {
         _clientUrl = info.odooUrl;
         _clientDb = info.database;
         _info = 'Company refreshed.';
-        // New routing resolved — re-hide the database name.
+        // New routing resolved — re-hide the database name (derived
+        // from the tap count, so zeroing it re-hides the tile).
         _dbTaps = 0;
-        _showDb = false;
       });
       await Future.delayed(const Duration(milliseconds: 600));
       if (mounted) Navigator.of(context).pop();
@@ -238,10 +240,7 @@ class _CompanySettingsScreenState extends State<CompanySettingsScreen> {
   /// No-op once already shown.
   void _revealDbTap() {
     if (_showDb) return;
-    setState(() {
-      _dbTaps++;
-      if (_dbTaps >= 7) _showDb = true;
-    });
+    setState(() => _dbTaps++);
   }
 
   Future<void> _clearCompany() async {

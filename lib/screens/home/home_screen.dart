@@ -198,8 +198,7 @@ class HomeScreenState extends State<HomeScreen> {
         // Without this the red card lingers even after the user moves
         // back in range or the admin widens the radius — contradicting
         // the (live) GPS Status card right above it.
-        if (_lastDistance != null &&
-            d <= (s.officeRadiusMeters ?? 200)) {
+        if (_lastDistance != null && _isInsideRadius(s, d)) {
           _lastDistance = null;
           _lastAllowedRadius = null;
         }
@@ -207,6 +206,21 @@ class HomeScreenState extends State<HomeScreen> {
     } catch (_) {
       // ignore — leave the card showing whatever it had before
     }
+  }
+
+  /// Fallback office radius when the tenant configured a geofence
+  /// (office coords set) but left the radius unset. Matches the
+  /// connector's server-side default (`partner.omni_geofence_radius_
+  /// meters or 200.0`) so the client fast-fail agrees with the server.
+  static const double _defaultRadiusMeters = 200;
+
+  /// True when [distance] (metres from the office) is within the
+  /// geofence radius for [s]. Single source of truth for the
+  /// inside/outside decision used by the pre-capture gate, the button
+  /// state, the GPS card, and the banner auto-clear — keeping them from
+  /// drifting apart.
+  static bool _isInsideRadius(AttendanceStatus s, double distance) {
+    return distance <= (s.officeRadiusMeters ?? _defaultRadiusMeters);
   }
 
   static double _haversineMeters(
@@ -303,21 +317,25 @@ class HomeScreenState extends State<HomeScreen> {
           s.hasGeofence &&
           s.officeLatitude != null &&
           s.officeLongitude != null) {
-        final radius = s.officeRadiusMeters ?? 200;
+        final radius = s.officeRadiusMeters ?? _defaultRadiusMeters;
         final distance = _haversineMeters(
           latitude!,
           longitude!,
           s.officeLatitude!,
           s.officeLongitude!,
         );
-        if (distance > radius) {
+        if (!_isInsideRadius(s, distance)) {
           setState(() {
             _acting = false;
             _currentDistanceMeters = distance;
             _lastDistance = distance;
-            _lastAllowedRadius = radius.toDouble();
+            _lastAllowedRadius = radius;
           });
-          _showError('You are outside the allowed office location.');
+          // Route through the shared humanizer so this fast-fail uses
+          // the same wording as the server-rejection path (which the
+          // user sees if the gate is bypassed) instead of a divergent
+          // hardcoded literal.
+          _showError(friendlyError('outside_geofence'));
           return;
         }
       }
@@ -706,7 +724,7 @@ class HomeScreenState extends State<HomeScreen> {
         value: 'Locating…',
       );
     }
-    final inside = _currentDistanceMeters! <= (s.officeRadiusMeters ?? 200);
+    final inside = _isInsideRadius(s, _currentDistanceMeters!);
     final distLabel = _formatDistance(_currentDistanceMeters!);
     return InfoCard(
       icon: Icons.near_me_rounded,
@@ -880,7 +898,7 @@ class HomeScreenState extends State<HomeScreen> {
     if (DevConstants.useDevLocation) return CheckButtonState.ready;
     if (!s.hasGeofence) return CheckButtonState.ready;
     if (_currentDistanceMeters == null) return CheckButtonState.ready;
-    if (_currentDistanceMeters! > (s.officeRadiusMeters ?? 200)) {
+    if (!_isInsideRadius(s, _currentDistanceMeters!)) {
       return CheckButtonState.disabled;
     }
     return CheckButtonState.ready;
