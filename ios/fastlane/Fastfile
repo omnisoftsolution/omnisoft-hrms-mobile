@@ -85,6 +85,17 @@ platform :ios do
     )
   end
 
+  desc "Upload the already-built IPA to TestFlight (no rebuild)"
+  lane :upload_only do
+    asc_api_key_setup
+    upload_to_testflight(
+      ipa: "#{IPA_OUTPUT_DIR}/#{IPA_OUTPUT_NAME}",
+      changelog: TESTFLIGHT_CHANGELOG,
+      skip_waiting_for_build_processing: true,
+      skip_submission: true,
+    )
+  end
+
   desc "Archive + export IPA only (no upload). Useful for re-trying upload separately."
   lane :archive_only do
     flutter_prebuild
