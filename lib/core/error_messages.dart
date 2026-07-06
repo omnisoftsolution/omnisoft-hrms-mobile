@@ -51,6 +51,10 @@ String friendlyError(Object e) {
     return "We couldn't read a valid location from your device. Make sure "
         'location is turned on and try again.';
   }
+  if (raw.contains('geo_required_missing_coords')) {
+    return 'Location is required for your check-in. Turn on location '
+        'services and try again.';
+  }
   if (raw.contains('device_mismatch')) {
     return 'This device is not registered to your account. Please contact HR.';
   }
