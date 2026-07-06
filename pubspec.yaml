@@ -61,6 +61,12 @@ flutter_launcher_icons:
   # but recognizably Omnisoft, not Flutter's default placeholder.
   # When a higher-res export from design lands, swap this path.
   image_path: "assets/images/omnisoft_logo.png"
+  # iOS uses the dedicated 2026-07 app icon (teal card + phone glyph,
+  # full-bleed 1024, corners NOT pre-rounded — Apple applies the mask).
+  # Android keeps the adaptive logo above until a safe-zone variant of
+  # the new icon exists (its corner glyph would be clipped by round
+  # launcher masks).
+  image_path_ios: "assets/images/app_icon_ios_1024.png"
   # Apple rejects 1024×1024 App Store icons that contain an alpha
   # channel. Strip alpha and composite the swirl onto a white card so
   # the iOS launcher matches the in-app login-screen branding.
