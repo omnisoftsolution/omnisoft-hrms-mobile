@@ -68,6 +68,13 @@ void main() {
       expect(msg.toLowerCase(), contains('location'));
     });
 
+    test('maps geo_required_missing_coords to a location-required message',
+        () {
+      final msg = friendlyError('geo_required_missing_coords');
+      expect(msg, isNot('geo_required_missing_coords'));
+      expect(msg.toLowerCase(), contains('location'));
+    });
+
     test('maps device_mismatch to a device-not-registered message', () {
       final msg = friendlyError('device_mismatch');
       expect(msg, isNot('device_mismatch'));

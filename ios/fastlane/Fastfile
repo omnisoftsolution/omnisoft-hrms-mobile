@@ -45,18 +45,23 @@ IPA_OUTPUT_NAME = "omnihr.ipa"
 # this per release. Inlined (not read from a file) so it can't break on a
 # path/cwd surprise during the upload step. TestFlight allows ~4000 chars.
 TESTFLIGHT_CHANGELOG = <<~NOTES.freeze
-  Attendance location integrity + secure sign-in.
+  Flexible work location.
 
   New:
-  - Detects mock/fake-GPS and reports location accuracy on check-in/out (Android; iOS in a later release).
-  - Login token now stored in the iOS Keychain / Android Keystore.
-  - Clearer messages when a check-in is blocked.
+  - Employees marked "Flexible Work Location" by HR can clock in/out
+    outside the office area. Their GPS location is still recorded and
+    each remote punch is tagged for HR review.
 
   Please test:
-  1. Update from the previous build — you should stay logged in (no re-login). This is the most important check.
-  2. Check in/out inside your office area — works as before.
-  3. Check in outside your office area — clear "outside office location" message.
-  4. (Android) With a mock-location app enabled, check in: if your server has mock enforcement on you'll see a "fake (mock) location" message; otherwise it proceeds and is recorded for review.
+  1. HR: enable Flexible Work Location on a test employee (Employee form,
+     Omnisoft HRMS tab).
+  2. Clock in away from the office - the GPS chip shows "Remote" (not the
+     red "Outside") and the punch succeeds.
+  3. Backend: the attendance row shows Check-In From = Remote and a
+     "Remote Punches" entry appears in the attendance anomaly review list.
+  4. With a fake-GPS app enabled the punch must be REJECTED.
+  5. An employee WITHOUT the flag behaves exactly as before (blocked
+     outside the office area).
 NOTES
 
 platform :ios do
@@ -76,6 +81,17 @@ platform :ios do
       skip_waiting_for_build_processing: true,
       # We're going to internal testers only — never auto-submit for
       # external review.
+      skip_submission: true,
+    )
+  end
+
+  desc "Upload the already-built IPA to TestFlight (no rebuild)"
+  lane :upload_only do
+    asc_api_key_setup
+    upload_to_testflight(
+      ipa: "#{IPA_OUTPUT_DIR}/#{IPA_OUTPUT_NAME}",
+      changelog: TESTFLIGHT_CHANGELOG,
+      skip_waiting_for_build_processing: true,
       skip_submission: true,
     )
   end

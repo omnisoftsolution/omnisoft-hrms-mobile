@@ -308,12 +308,15 @@ class HomeScreenState extends State<HomeScreen> {
       // (not the up-to-60s-stale _currentDistanceMeters poll value) so
       // it matches what the server will compute. The server still
       // enforces the geofence on submit; this is purely a fast-fail.
-      // Skipped under dev-location and when no geofence is configured,
-      // mirroring _buttonState()'s exemptions so the button label and
-      // tap-time behaviour stay in agreement.
+      // Skipped under dev-location, when no geofence is configured,
+      // and for flexible-work-location employees (the server accepts
+      // their remote punches and logs the coordinates), mirroring
+      // _buttonState()'s exemptions so the button label and tap-time
+      // behaviour stay in agreement.
       final s = _status;
       if (!DevConstants.useDevLocation &&
           s != null &&
+          !s.flexibleLocation &&
           s.hasGeofence &&
           s.officeLatitude != null &&
           s.officeLongitude != null) {
@@ -726,6 +729,17 @@ class HomeScreenState extends State<HomeScreen> {
     }
     final inside = _isInsideRadius(s, _currentDistanceMeters!);
     final distLabel = _formatDistance(_currentDistanceMeters!);
+    if (!inside && s.flexibleLocation) {
+      // Outside the fence but allowed to be: neutral, not alarming.
+      return InfoCard(
+        icon: Icons.home_work_rounded,
+        iconColor: AppTheme.outline,
+        label: 'GPS Status',
+        value: 'Remote',
+        suffix: distLabel,
+        suffixColor: AppTheme.outline,
+      );
+    }
     return InfoCard(
       icon: Icons.near_me_rounded,
       iconColor: inside ? const Color(0xFF22C55E) : AppTheme.error,
@@ -896,6 +910,7 @@ class HomeScreenState extends State<HomeScreen> {
     if (needsEnrollment) return CheckButtonState.enroll;
     if (!session.featureGeolocation) return CheckButtonState.ready;
     if (DevConstants.useDevLocation) return CheckButtonState.ready;
+    if (s.flexibleLocation) return CheckButtonState.ready;
     if (!s.hasGeofence) return CheckButtonState.ready;
     if (_currentDistanceMeters == null) return CheckButtonState.ready;
     if (!_isInsideRadius(s, _currentDistanceMeters!)) {

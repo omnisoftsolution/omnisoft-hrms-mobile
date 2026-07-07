@@ -1,7 +1,6 @@
-Attendance location integrity + secure sign-in.
+Flexible work location + new app icon.
 
-- Detects fake/mock GPS and reports location accuracy on clock-in/out (Android), for more trustworthy attendance.
-- Your login is now stored securely in the Android Keystore.
-- Clearer messages when a check-in can't be completed.
+- Employees marked "Flexible Work Location" by HR can clock in/out outside the office area; GPS is still recorded and each remote punch is tagged for HR review.
+- New Omni HR launcher icon.
 
-Testers: after updating you should stay logged in. Try check-in inside and outside your office area (optionally with a mock-location app enabled).
+Testers: with the flag on, clock in away from the office — the GPS chip shows "Remote" (not red "Outside") and the punch succeeds. With a fake-GPS app enabled the punch must be REJECTED. Check the new icon on round and square launchers.

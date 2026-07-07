@@ -14,6 +14,11 @@ class AttendanceStatus {
   final double? officeRadiusMeters;
   final String? geofenceSource;
 
+  /// True when HR marked this employee as flexible work location — the
+  /// server accepts punches outside the office geofence (logging the
+  /// coordinates), so the client must not fast-fail or grey the button.
+  final bool flexibleLocation;
+
   AttendanceStatus({
     required this.checkedIn,
     this.currentCheckInTime,
@@ -25,6 +30,7 @@ class AttendanceStatus {
     this.officeLongitude,
     this.officeRadiusMeters,
     this.geofenceSource,
+    this.flexibleLocation = false,
   });
 
   bool get hasGeofence =>
@@ -43,6 +49,7 @@ class AttendanceStatus {
       officeRadiusMeters:
           (json['office_radius_meters'] as num?)?.toDouble(),
       geofenceSource: json['geofence_source']?.toString(),
+      flexibleLocation: json['flexible_location'] == true,
     );
   }
 }

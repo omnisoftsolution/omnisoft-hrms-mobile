@@ -1,7 +1,7 @@
 name: omni_hr
 description: Omni HR — Mobile attendance and leave management
 publish_to: 'none'
-version: 1.19.0+67
+version: 1.20.0+70
 
 environment:
   sdk: ^3.11.0
@@ -53,14 +53,19 @@ dev_dependencies:
   # the source to regenerate iOS + Android icons.
   flutter_launcher_icons: ^0.14.4
 
+# ⚠️ The generator corrupts ios/Runner.xcodeproj/project.pbxproj
+# (ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS) — snapshot
+# and restore the pbxproj around a run when only Android sources changed.
 flutter_launcher_icons:
   ios: true
   android: true
-  # Source is the in-app Omnisoft brand mark (450×450). The generator
-  # upscales it to 1024×1024 for the App Store icon — slightly soft
-  # but recognizably Omnisoft, not Flutter's default placeholder.
-  # When a higher-res export from design lands, swap this path.
-  image_path: "assets/images/omnisoft_logo.png"
+  # Android (legacy + adaptive foreground): safe-zone build of the iOS art
+  # below — mark scaled into the adaptive-icon 66dp safe circle on white
+  # (generated from app_icon_ios_1024.png; see git log for the recipe).
+  image_path_android: "assets/images/app_icon_android_1024.png"
+  # iOS uses the dedicated 2026-07 app icon (swirl + phone glyph,
+  # full-bleed 1024, corners NOT pre-rounded — Apple applies the mask).
+  image_path_ios: "assets/images/app_icon_ios_1024.png"
   # Apple rejects 1024×1024 App Store icons that contain an alpha
   # channel. Strip alpha and composite the swirl onto a white card so
   # the iOS launcher matches the in-app login-screen branding.
@@ -69,7 +74,7 @@ flutter_launcher_icons:
   # Android adaptive icon (covers C2 from the Wave 1 review — modern
   # Android 8+ launchers expect this).
   adaptive_icon_background: "#ffffff"
-  adaptive_icon_foreground: "assets/images/omnisoft_logo.png"
+  adaptive_icon_foreground: "assets/images/app_icon_android_1024.png"
 
 flutter:
   uses-material-design: true
