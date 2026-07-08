@@ -12,6 +12,7 @@ import '../../services/omni_mobile_api.dart';
 import '../../services/session_service.dart';
 import '../../widgets/employee_avatar.dart';
 import '../../widgets/primary_button.dart';
+import '../../widgets/security_privacy_card.dart';
 import '../login/company_settings_screen.dart';
 import '../login/login_screen.dart';
 import '../payroll/payslips_screen.dart';
@@ -72,6 +73,11 @@ class ProfileScreen extends StatelessWidget {
             const SizedBox(height: 16),
             _faceCard(context, face, session),
           ],
+          const SizedBox(height: 16),
+          SecurityPrivacyCard(
+            login: session.userLogin,
+            displayName: session.employeeName,
+          ),
           const SizedBox(height: 32),
           PrimaryButton(
             label: 'LOGOUT',
