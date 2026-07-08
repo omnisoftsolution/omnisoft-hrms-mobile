@@ -1,7 +1,6 @@
 import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:local_auth/error_codes.dart' as auth_error;
 
@@ -77,15 +76,6 @@ class BiometricAuthService extends ChangeNotifier {
   BiometricAuthService({BiometricGate? gate}) : _gate = gate ?? LocalAuthGate();
 
   final BiometricGate _gate;
-  final FlutterSecureStorage _secure = const FlutterSecureStorage();
-
-  // Secure (Keystore/Keychain)
-  static const _sLogin = 'biometric_login';
-  static const _sPassword = 'biometric_password';
-  // Non-secret (SharedPreferences)
-  static const _kEnabled = 'biometric_enabled';
-  static const _kOptInDismissed = 'biometric_optin_dismissed';
-  static const _kDisplayName = 'biometric_display_name';
 
   Future<bool> isDeviceCapable() => _gate.isAvailable();
 
