@@ -16,6 +16,11 @@ import 'saas_service.dart';
 class SessionService extends ChangeNotifier {
   final FlutterSecureStorage _secure = const FlutterSecureStorage();
 
+  /// Fired on explicit logout only (NOT involuntary clearSession).
+  /// main() wires this to BiometricAuthService.disable so a deliberate
+  /// sign-out also forgets the biometric credential.
+  void Function()? onLogout;
+
   // Keys: SaaS routing (kept across logout)
   static const _keySaasUrl = 'saas_url';
   static const _keyCompanyCode = 'company_code';
@@ -535,6 +540,7 @@ class SessionService extends ChangeNotifier {
     await prefs.remove(_keyCompanyCode);
     await prefs.remove(_keyClientUrl);
     await prefs.remove(_keyClientDb);
+    onLogout?.call();
     notifyListeners();
   }
 }
