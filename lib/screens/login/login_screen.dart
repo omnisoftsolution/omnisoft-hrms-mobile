@@ -4,10 +4,12 @@ import 'package:provider/provider.dart';
 import '../../core/constants.dart';
 import '../../core/theme.dart';
 import '../../core/error_messages.dart';
+import '../../services/biometric_auth_service.dart';
 import '../../services/device_service.dart';
 import '../../services/omni_mobile_api.dart';
 import '../../services/session_service.dart';
 import 'dart:convert';
+import '../../widgets/biometric_optin_sheet.dart';
 import '../../widgets/brand_logo.dart';
 import '../../widgets/labeled_field.dart';
 import '../../widgets/primary_button.dart';
@@ -49,6 +51,11 @@ class _LoginScreenState extends State<LoginScreen> {
       setState(() => _error = 'Enter your email and password.');
       return;
     }
+    await _performLogin(loginText, password);
+  }
+
+  /// Shared login path for both the password form and biometric replay.
+  Future<void> _performLogin(String loginText, String password) async {
     setState(() {
       _submitting = true;
       _error = null;
@@ -87,12 +94,10 @@ class _LoginScreenState extends State<LoginScreen> {
         employeeManager: employee['manager_name']?.toString() ?? '',
         employeeWorkEmail: employee['work_email']?.toString() ?? '',
         employeeWorkPhone: employee['work_phone']?.toString() ?? '',
-        employeeCompanyName:
-            employee['company_name']?.toString() ?? '',
+        employeeCompanyName: employee['company_name']?.toString() ?? '',
         employeeCompanyLogoB64:
             employee['company_logo_b64']?.toString() ?? '',
-        employeeHrApprover:
-            employee['hr_approver_name']?.toString() ?? '',
+        employeeHrApprover: employee['hr_approver_name']?.toString() ?? '',
         employeeTimeOffApprover:
             employee['time_off_approver_name']?.toString() ?? '',
         employeeAttendanceApprover:
@@ -100,6 +105,9 @@ class _LoginScreenState extends State<LoginScreen> {
         employeeExpenseApprover:
             employee['expense_approver_name']?.toString() ?? '',
       );
+      if (!mounted) return;
+      await _maybeOfferBiometricOptIn(loginText, password,
+          employee['name']?.toString() ?? '');
       if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => const HomeShell()),
@@ -112,6 +120,32 @@ class _LoginScreenState extends State<LoginScreen> {
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
+  }
+
+  /// Offer to enable biometric login once, right after a successful
+  /// manual login, when the device is capable, it is not already
+  /// enabled, and the user has not dismissed the offer before.
+  Future<void> _maybeOfferBiometricOptIn(
+      String loginText, String password, String displayName) async {
+    final bio = context.read<BiometricAuthService>();
+    if (bio.isEnabled) return;
+    if (await bio.hasDismissedOptIn()) return;
+    if (!await bio.isDeviceCapable()) return;
+    final kind = await bio.deviceBiometricKind();
+    if (!mounted) return;
+    await showBiometricOptInSheet(
+      context,
+      kind: kind,
+      onEnable: () async {
+        final ok = await bio.enable(
+            login: loginText, password: password, displayName: displayName);
+        if (ok && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('${biometricLabel(kind)} login enabled')));
+        }
+      },
+      onNotNow: () => bio.markOptInDismissed(),
+    );
   }
 
   String _humanize(ApiException e) {
