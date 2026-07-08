@@ -5,10 +5,12 @@ import '../../core/constants.dart';
 import '../../core/theme.dart';
 import '../../core/error_messages.dart';
 import '../../services/biometric_auth_service.dart';
+import '../../services/biometric_types.dart';
 import '../../services/device_service.dart';
 import '../../services/omni_mobile_api.dart';
 import '../../services/session_service.dart';
 import 'dart:convert';
+import '../../widgets/biometric_login_panel.dart';
 import '../../widgets/biometric_optin_sheet.dart';
 import '../../widgets/brand_logo.dart';
 import '../../widgets/labeled_field.dart';
@@ -36,6 +38,50 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _obscurePassword = true;
   bool _submitting = false;
   String? _error;
+  bool _capable = false;
+  bool _bioResolved = false;
+  bool _forcePassword = false; // user tapped "Use password instead"
+  BiometricKind _bioKind = BiometricKind.none;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolveBiometric();
+  }
+
+  Future<void> _resolveBiometric() async {
+    final bio = context.read<BiometricAuthService>();
+    final capable = bio.isEnabled ? await bio.isDeviceCapable() : false;
+    final kind = capable ? await bio.deviceBiometricKind() : BiometricKind.none;
+    if (!mounted) return;
+    setState(() {
+      _capable = capable;
+      _bioKind = kind;
+      _bioResolved = true;
+    });
+    // Auto-prompt once the panel is shown.
+    if (_capable && !_forcePassword) {
+      _biometricLogin();
+    }
+  }
+
+  Future<void> _biometricLogin() async {
+    final bio = context.read<BiometricAuthService>();
+    final res = await bio.authenticateAndRetrieve();
+    if (!mounted) return;
+    if (res.outcome == BiometricAuthOutcome.success && res.credential != null) {
+      await _performLogin(res.credential!.login, res.credential!.password);
+      return;
+    }
+    if (res.outcome == BiometricAuthOutcome.lockedOut) {
+      setState(() {
+        _forcePassword = true;
+        _error = 'Too many attempts — please log in with your password.';
+      });
+    }
+    // canceled / failed / unavailable: stay on the panel; user can retry
+    // or tap "Use password instead".
+  }
 
   @override
   void dispose() {
@@ -114,7 +160,21 @@ class _LoginScreenState extends State<LoginScreen> {
         (_) => false,
       );
     } on ApiException catch (e) {
-      setState(() => _error = _humanize(e));
+      if (!mounted) return;
+      if (e.errorCode == 'invalid_credentials' &&
+          context.read<BiometricAuthService>().isEnabled) {
+        await context.read<BiometricAuthService>().disable();
+        if (mounted) {
+          setState(() {
+            _forcePassword = true;
+            _capable = false;
+            _error =
+                'Your password has changed — please log in with your password.';
+          });
+        }
+      } else {
+        setState(() => _error = _humanize(e));
+      }
     } catch (e) {
       setState(() => _error = friendlyError(e));
     } finally {
@@ -174,6 +234,22 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final session = context.watch<SessionService>();
+    if (_bioResolved && _capable && !_forcePassword) {
+      final bio = context.read<BiometricAuthService>();
+      return Scaffold(
+        body: SafeArea(
+          child: BiometricLoginPanel(
+            kind: _bioKind,
+            greetingName: bio.displayName,
+            companyName: session.companyName,
+            companyLogoB64: session.companyLogoB64,
+            busy: _submitting,
+            onBiometric: _biometricLogin,
+            onUsePassword: () => setState(() => _forcePassword = true),
+          ),
+        ),
+      );
+    }
     return Scaffold(
       appBar: AppBar(
         title: const Text('Sign In'),
