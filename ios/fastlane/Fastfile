@@ -45,19 +45,20 @@ IPA_OUTPUT_NAME = "omnihr.ipa"
 # this per release. Inlined (not read from a file) so it can't break on a
 # path/cwd surprise during the upload step. TestFlight allows ~4000 chars.
 TESTFLIGHT_CHANGELOG = <<~NOTES.freeze
-  Biometric login.
+  Biometric login — settings moved to Profile.
 
-  New:
-  - Log back in with Face ID / fingerprint instead of typing your password
-    when your session expires.
-  - Turn it on when prompted after signing in, or under Settings.
+  Changed:
+  - The Face ID / fingerprint login toggle now lives on your Profile, in a
+    new "Security & Privacy" card (it used to be under the gear icon /
+    Company Settings). The Privacy Policy link moved there too.
 
   Please test:
-  1. Sign in, enable biometric login when asked.
-  2. Force a re-login (wait for session expiry) and confirm the Face ID /
-     fingerprint button signs you in.
-  3. Use password instead — biometric prompt should not appear.
-  4. Verify: explicit Log out clears the credential.
+  1. Open Profile — you should see a "Security & Privacy" card with the
+     Face ID / fingerprint login toggle and a Privacy Policy link.
+  2. Turn it on (enter your password once) and confirm it enables.
+  3. Open the gear icon (Company Settings) — it should NO LONGER show the
+     biometric switch, including on the login screen before you sign in.
+  4. Force a re-login and confirm Face ID / fingerprint signs you in.
 NOTES
 
 platform :ios do
