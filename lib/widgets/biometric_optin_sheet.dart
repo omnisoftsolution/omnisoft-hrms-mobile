@@ -75,15 +75,16 @@ class BiometricOptInSheet extends StatelessWidget {
   }
 }
 
-/// Shows [BiometricOptInSheet] as a modal bottom sheet. Both callbacks
-/// close the sheet first, then run.
-Future<void> showBiometricOptInSheet(
+/// Shows [BiometricOptInSheet] as a modal bottom sheet and returns the
+/// user's choice: true (enable), false (not now), or null (dismissed by
+/// tapping the barrier). The caller is responsible for awaiting this and
+/// then performing the enable/dismiss work itself, so it can run before
+/// any subsequent navigation.
+Future<bool?> showBiometricOptInSheet(
   BuildContext context, {
   required BiometricKind kind,
-  required VoidCallback onEnable,
-  required VoidCallback onNotNow,
 }) {
-  return showModalBottomSheet<void>(
+  return showModalBottomSheet<bool>(
     context: context,
     isScrollControlled: true,
     backgroundColor: AppTheme.surfaceContainerLowest,
@@ -92,14 +93,8 @@ Future<void> showBiometricOptInSheet(
     ),
     builder: (ctx) => BiometricOptInSheet(
       kind: kind,
-      onEnable: () {
-        Navigator.of(ctx).pop();
-        onEnable();
-      },
-      onNotNow: () {
-        Navigator.of(ctx).pop();
-        onNotNow();
-      },
+      onEnable: () => Navigator.of(ctx).pop(true),
+      onNotNow: () => Navigator.of(ctx).pop(false),
     ),
   );
 }

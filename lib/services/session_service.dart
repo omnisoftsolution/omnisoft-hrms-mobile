@@ -527,6 +527,17 @@ class SessionService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Deliberate, user-initiated sign-out: wipe the login session AND fire
+  /// [onLogout] so a chosen sign-out also forgets the biometric credential.
+  /// Use this for Log out / Delete account / forced re-login on company
+  /// change. Do NOT use it for involuntary session expiry (that stays
+  /// clearSession(), which keeps the biometric credential — the case
+  /// biometric login exists to serve).
+  Future<void> signOut() async {
+    await clearSession();
+    onLogout?.call();
+  }
+
   /// Full reset (clears SaaS routing too). Used when the user wants to
   /// switch companies entirely.
   Future<void> logout() async {

@@ -698,7 +698,7 @@ class ProfileScreen extends StatelessWidget {
     } catch (_) {
       // ignored — local clear runs regardless
     }
-    await session.clearSession();
+    await session.signOut();
     if (context.mounted) {
       // Root navigator: tear down the entire HomeShell (including all
       // tab Navigators and the persistent bottom nav). The tab-scoped

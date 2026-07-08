@@ -72,7 +72,7 @@ class _DeleteAccountScreenState extends State<DeleteAccountScreen> {
       // wiped yet. The user can no longer use this device's app to
       // reach their account.
       await face.clearLocalCache();
-      await session.clearSession();
+      await session.signOut();
       if (!mounted) return;
       messenger.showSnackBar(
         SnackBar(

@@ -126,7 +126,7 @@ class _CompanySettingsScreenState extends State<CompanySettingsScreen> {
         showConnectionDetails: info.showConnectionDetails,
       );
       if (changed) {
-        await session.clearSession();
+        await session.signOut();
         if (!mounted) return;
         Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
           MaterialPageRoute(builder: (_) => const LoginScreen()),

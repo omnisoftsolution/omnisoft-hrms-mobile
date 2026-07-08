@@ -197,19 +197,18 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!await bio.isDeviceCapable()) return;
     final kind = await bio.deviceBiometricKind();
     if (!mounted) return;
-    await showBiometricOptInSheet(
-      context,
-      kind: kind,
-      onEnable: () async {
-        final ok = await bio.enable(
-            login: loginText, password: password, displayName: displayName);
-        if (ok && mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text('${biometricLabel(kind)} login enabled')));
-        }
-      },
-      onNotNow: () => bio.markOptInDismissed(),
-    );
+    final choice = await showBiometricOptInSheet(context, kind: kind);
+    if (!mounted) return;
+    if (choice == true) {
+      final ok = await bio.enable(
+          login: loginText, password: password, displayName: displayName);
+      if (ok && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('${biometricLabel(kind)} login enabled')));
+      }
+    } else if (choice == false) {
+      await bio.markOptInDismissed();
+    }
   }
 
   String _humanize(ApiException e) {

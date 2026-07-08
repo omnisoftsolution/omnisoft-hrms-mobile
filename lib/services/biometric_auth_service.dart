@@ -153,7 +153,7 @@ class BiometricAuthService extends ChangeNotifier {
     }
     final login = await _secure.read(key: _sLogin);
     final password = await _secure.read(key: _sPassword);
-    if (login == null || login.isEmpty || password == null) {
+    if (login == null || login.isEmpty || password == null || password.isEmpty) {
       return const BiometricAuthResult(BiometricAuthOutcome.failed);
     }
     return BiometricAuthResult(
