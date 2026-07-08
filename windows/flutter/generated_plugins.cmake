@@ -4,7 +4,9 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   file_selector_windows
+  flutter_secure_storage_windows
   geolocator_windows
+  local_auth_windows
   pdfx
   url_launcher_windows
 )
