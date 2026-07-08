@@ -45,23 +45,19 @@ IPA_OUTPUT_NAME = "omnihr.ipa"
 # this per release. Inlined (not read from a file) so it can't break on a
 # path/cwd surprise during the upload step. TestFlight allows ~4000 chars.
 TESTFLIGHT_CHANGELOG = <<~NOTES.freeze
-  Flexible work location.
+  Biometric login.
 
   New:
-  - Employees marked "Flexible Work Location" by HR can clock in/out
-    outside the office area. Their GPS location is still recorded and
-    each remote punch is tagged for HR review.
+  - Log back in with Face ID / fingerprint instead of typing your password
+    when your session expires.
+  - Turn it on when prompted after signing in, or under Settings.
 
   Please test:
-  1. HR: enable Flexible Work Location on a test employee (Employee form,
-     Omnisoft HRMS tab).
-  2. Clock in away from the office - the GPS chip shows "Remote" (not the
-     red "Outside") and the punch succeeds.
-  3. Backend: the attendance row shows Check-In From = Remote and a
-     "Remote Punches" entry appears in the attendance anomaly review list.
-  4. With a fake-GPS app enabled the punch must be REJECTED.
-  5. An employee WITHOUT the flag behaves exactly as before (blocked
-     outside the office area).
+  1. Sign in, enable biometric login when asked.
+  2. Force a re-login (wait for session expiry) and confirm the Face ID /
+     fingerprint button signs you in.
+  3. Use password instead — biometric prompt should not appear.
+  4. Verify: explicit Log out clears the credential.
 NOTES
 
 platform :ios do

@@ -46,6 +46,8 @@
 	<string>public.app-category.business</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Omni HR needs camera access to capture your face for attendance verification.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Use Face ID to log in to Omni HR.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Omni HR needs your location for attendance geofence verification.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>

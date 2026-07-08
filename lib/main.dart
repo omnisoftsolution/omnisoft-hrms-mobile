@@ -7,6 +7,7 @@ import 'services/holiday_service.dart';
 import 'services/notification_service.dart';
 import 'services/omni_mobile_api.dart';
 import 'services/session_service.dart';
+import 'services/biometric_auth_service.dart';
 import 'screens/company_code/company_code_screen.dart';
 import 'screens/home/home_shell.dart';
 import 'screens/login/login_screen.dart';
@@ -17,19 +18,29 @@ void main() async {
   final session = SessionService();
   await session.load();
 
+  final biometric = BiometricAuthService();
+  await biometric.load();
+
+  // A deliberate sign-out also forgets the biometric credential.
+  session.onLogout = () {
+    biometric.disable();
+  };
+
   // When any /api/v1 call returns invalid_session, wipe the local
   // auth session so the top-level Consumer below re-renders to the
-  // Login screen. SaaS routing (company code) is preserved.
+  // Login screen. SaaS routing (company code) is preserved. Biometric
+  // credential is intentionally KEPT — this is the case it exists for.
   OmniMobileApi.onInvalidSession = () {
     session.clearSession();
   };
 
-  runApp(OmniHrApp(session: session));
+  runApp(OmniHrApp(session: session, biometric: biometric));
 }
 
 class OmniHrApp extends StatefulWidget {
   final SessionService session;
-  const OmniHrApp({super.key, required this.session});
+  final BiometricAuthService biometric;
+  const OmniHrApp({super.key, required this.session, required this.biometric});
 
   @override
   State<OmniHrApp> createState() => _OmniHrAppState();
@@ -122,6 +133,7 @@ class _OmniHrAppState extends State<OmniHrApp> with WidgetsBindingObserver {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider.value(value: widget.session),
+        ChangeNotifierProvider.value(value: widget.biometric),
         ChangeNotifierProvider(create: (_) => HolidayService()),
         ChangeNotifierProvider(create: (_) => FaceRecognitionService()),
         ChangeNotifierProvider(create: (_) => NotificationService()),

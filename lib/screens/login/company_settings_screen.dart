@@ -4,8 +4,11 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/constants.dart';
 import '../../core/theme.dart';
 import '../../core/error_messages.dart';
+import '../../services/biometric_auth_service.dart';
+import '../../services/biometric_types.dart';
 import '../../services/saas_service.dart';
 import '../../services/session_service.dart';
+import '../../widgets/biometric_optin_sheet.dart' show biometricLabel;
 import '../../widgets/labeled_field.dart';
 import '../../widgets/primary_button.dart';
 import 'login_screen.dart';
@@ -39,6 +42,9 @@ class _CompanySettingsScreenState extends State<CompanySettingsScreen> {
   int _dbTaps = 0;
   bool get _showDb => _dbTaps >= _kDbRevealTaps;
 
+  bool _bioCapable = false;
+  BiometricKind _bioKind = BiometricKind.none;
+
   @override
   void initState() {
     super.initState();
@@ -47,6 +53,18 @@ class _CompanySettingsScreenState extends State<CompanySettingsScreen> {
     _codeController = TextEditingController(text: s.companyCode);
     _clientUrl = s.clientUrl;
     _clientDb = s.clientDb;
+    _resolveBio();
+  }
+
+  Future<void> _resolveBio() async {
+    final bio = context.read<BiometricAuthService>();
+    final capable = await bio.isDeviceCapable();
+    final kind = capable ? await bio.deviceBiometricKind() : BiometricKind.none;
+    if (!mounted) return;
+    setState(() {
+      _bioCapable = capable;
+      _bioKind = kind;
+    });
   }
 
   @override
@@ -108,7 +126,7 @@ class _CompanySettingsScreenState extends State<CompanySettingsScreen> {
         showConnectionDetails: info.showConnectionDetails,
       );
       if (changed) {
-        await session.clearSession();
+        await session.signOut();
         if (!mounted) return;
         Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
           MaterialPageRoute(builder: (_) => const LoginScreen()),
@@ -273,6 +291,49 @@ class _CompanySettingsScreenState extends State<CompanySettingsScreen> {
     if (mounted) Navigator.of(context).pop();
   }
 
+  Future<void> _toggleBiometric(bool on) async {
+    final bio = context.read<BiometricAuthService>();
+    if (!on) {
+      await bio.disable();
+      return;
+    }
+    final session = context.read<SessionService>();
+    final password = await _promptPassword();
+    if (password == null || password.isEmpty) return;
+    final ok = await bio.enable(
+      login: session.userLogin,
+      password: password,
+      displayName: session.employeeName,
+    );
+    if (ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('${biometricLabel(_bioKind)} login enabled')));
+    }
+  }
+
+  Future<String?> _promptPassword() async {
+    final controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Confirm your password'),
+        content: TextField(
+          controller: controller,
+          obscureText: true,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Password'),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, controller.text),
+              child: const Text('Confirm')),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     // Watch (not read) so the Clear branch reacts to session changes —
@@ -382,6 +443,24 @@ class _CompanySettingsScreenState extends State<CompanySettingsScreen> {
                     ),
                   ),
                 ),
+              if (_bioCapable) ...[
+                const SizedBox(height: 32),
+                Text(
+                  'Security',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: AppTheme.onSurfaceVariant,
+                      ),
+                ),
+                const SizedBox(height: 8),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text('${biometricLabel(_bioKind)} login'),
+                  subtitle: Text(
+                      'Log in with ${biometricLabel(_bioKind)} when your session expires.'),
+                  value: context.watch<BiometricAuthService>().isEnabled,
+                  onChanged: (on) => _toggleBiometric(on),
+                ),
+              ],
               const SizedBox(height: 32),
               // Legal links — required to be discoverable from inside
               // the app for biometric data handling (Apple) and best

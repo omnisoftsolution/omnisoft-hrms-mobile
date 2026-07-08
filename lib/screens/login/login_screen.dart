@@ -4,10 +4,14 @@ import 'package:provider/provider.dart';
 import '../../core/constants.dart';
 import '../../core/theme.dart';
 import '../../core/error_messages.dart';
+import '../../services/biometric_auth_service.dart';
+import '../../services/biometric_types.dart';
 import '../../services/device_service.dart';
 import '../../services/omni_mobile_api.dart';
 import '../../services/session_service.dart';
 import 'dart:convert';
+import '../../widgets/biometric_login_panel.dart';
+import '../../widgets/biometric_optin_sheet.dart';
 import '../../widgets/brand_logo.dart';
 import '../../widgets/labeled_field.dart';
 import '../../widgets/primary_button.dart';
@@ -34,6 +38,51 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _obscurePassword = true;
   bool _submitting = false;
   String? _error;
+  bool _capable = false;
+  bool _bioResolved = false;
+  bool _forcePassword = false; // user tapped "Use password instead"
+  BiometricKind _bioKind = BiometricKind.none;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolveBiometric();
+  }
+
+  Future<void> _resolveBiometric() async {
+    final bio = context.read<BiometricAuthService>();
+    final capable = bio.isEnabled ? await bio.isDeviceCapable() : false;
+    final kind = capable ? await bio.deviceBiometricKind() : BiometricKind.none;
+    if (!mounted) return;
+    setState(() {
+      _capable = capable;
+      _bioKind = kind;
+      _bioResolved = true;
+    });
+    // Auto-prompt once the panel is shown.
+    if (_capable && !_forcePassword) {
+      _biometricLogin();
+    }
+  }
+
+  Future<void> _biometricLogin() async {
+    final bio = context.read<BiometricAuthService>();
+    final res = await bio.authenticateAndRetrieve();
+    if (!mounted) return;
+    if (res.outcome == BiometricAuthOutcome.success && res.credential != null) {
+      await _performLogin(res.credential!.login, res.credential!.password,
+          fromBiometric: true);
+      return;
+    }
+    if (res.outcome == BiometricAuthOutcome.lockedOut) {
+      setState(() {
+        _forcePassword = true;
+        _error = 'Too many attempts — please log in with your password.';
+      });
+    }
+    // canceled / failed / unavailable: stay on the panel; user can retry
+    // or tap "Use password instead".
+  }
 
   @override
   void dispose() {
@@ -49,6 +98,12 @@ class _LoginScreenState extends State<LoginScreen> {
       setState(() => _error = 'Enter your email and password.');
       return;
     }
+    await _performLogin(loginText, password);
+  }
+
+  /// Shared login path for both the password form and biometric replay.
+  Future<void> _performLogin(String loginText, String password,
+      {bool fromBiometric = false}) async {
     setState(() {
       _submitting = true;
       _error = null;
@@ -87,12 +142,10 @@ class _LoginScreenState extends State<LoginScreen> {
         employeeManager: employee['manager_name']?.toString() ?? '',
         employeeWorkEmail: employee['work_email']?.toString() ?? '',
         employeeWorkPhone: employee['work_phone']?.toString() ?? '',
-        employeeCompanyName:
-            employee['company_name']?.toString() ?? '',
+        employeeCompanyName: employee['company_name']?.toString() ?? '',
         employeeCompanyLogoB64:
             employee['company_logo_b64']?.toString() ?? '',
-        employeeHrApprover:
-            employee['hr_approver_name']?.toString() ?? '',
+        employeeHrApprover: employee['hr_approver_name']?.toString() ?? '',
         employeeTimeOffApprover:
             employee['time_off_approver_name']?.toString() ?? '',
         employeeAttendanceApprover:
@@ -101,16 +154,60 @@ class _LoginScreenState extends State<LoginScreen> {
             employee['expense_approver_name']?.toString() ?? '',
       );
       if (!mounted) return;
+      await _maybeOfferBiometricOptIn(loginText, password,
+          employee['name']?.toString() ?? '');
+      if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => const HomeShell()),
         (_) => false,
       );
     } on ApiException catch (e) {
-      setState(() => _error = _humanize(e));
+      if (!mounted) return;
+      final bio = context.read<BiometricAuthService>();
+      if (e.errorCode == 'invalid_credentials' &&
+          fromBiometric &&
+          bio.isEnabled) {
+        await bio.disable();
+        if (mounted) {
+          setState(() {
+            _forcePassword = true;
+            _capable = false;
+            _error =
+                'Your password has changed — please log in with your password.';
+          });
+        }
+      } else {
+        setState(() => _error = _humanize(e));
+      }
     } catch (e) {
       setState(() => _error = friendlyError(e));
     } finally {
       if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  /// Offer to enable biometric login once, right after a successful
+  /// manual login, when the device is capable, it is not already
+  /// enabled, and the user has not dismissed the offer before.
+  Future<void> _maybeOfferBiometricOptIn(
+      String loginText, String password, String displayName) async {
+    final bio = context.read<BiometricAuthService>();
+    if (bio.isEnabled) return;
+    if (await bio.hasDismissedOptIn()) return;
+    if (!await bio.isDeviceCapable()) return;
+    final kind = await bio.deviceBiometricKind();
+    if (!mounted) return;
+    final choice = await showBiometricOptInSheet(context, kind: kind);
+    if (!mounted) return;
+    if (choice == true) {
+      final ok = await bio.enable(
+          login: loginText, password: password, displayName: displayName);
+      if (ok && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('${biometricLabel(kind)} login enabled')));
+      }
+    } else if (choice == false) {
+      await bio.markOptInDismissed();
     }
   }
 
@@ -140,6 +237,22 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final session = context.watch<SessionService>();
+    if (_bioResolved && _capable && !_forcePassword) {
+      final bio = context.read<BiometricAuthService>();
+      return Scaffold(
+        body: SafeArea(
+          child: BiometricLoginPanel(
+            kind: _bioKind,
+            greetingName: bio.displayName,
+            companyName: session.companyName,
+            companyLogoB64: session.companyLogoB64,
+            busy: _submitting,
+            onBiometric: _biometricLogin,
+            onUsePassword: () => setState(() => _forcePassword = true),
+          ),
+        ),
+      );
+    }
     return Scaffold(
       appBar: AppBar(
         title: const Text('Sign In'),

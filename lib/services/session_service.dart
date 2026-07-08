@@ -16,6 +16,11 @@ import 'saas_service.dart';
 class SessionService extends ChangeNotifier {
   final FlutterSecureStorage _secure = const FlutterSecureStorage();
 
+  /// Fired on explicit logout only (NOT involuntary clearSession).
+  /// main() wires this to BiometricAuthService.disable so a deliberate
+  /// sign-out also forgets the biometric credential.
+  void Function()? onLogout;
+
   // Keys: SaaS routing (kept across logout)
   static const _keySaasUrl = 'saas_url';
   static const _keyCompanyCode = 'company_code';
@@ -522,6 +527,17 @@ class SessionService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Deliberate, user-initiated sign-out: wipe the login session AND fire
+  /// [onLogout] so a chosen sign-out also forgets the biometric credential.
+  /// Use this for Log out / Delete account / forced re-login on company
+  /// change. Do NOT use it for involuntary session expiry (that stays
+  /// clearSession(), which keeps the biometric credential — the case
+  /// biometric login exists to serve).
+  Future<void> signOut() async {
+    await clearSession();
+    onLogout?.call();
+  }
+
   /// Full reset (clears SaaS routing too). Used when the user wants to
   /// switch companies entirely.
   Future<void> logout() async {
@@ -535,6 +551,7 @@ class SessionService extends ChangeNotifier {
     await prefs.remove(_keyCompanyCode);
     await prefs.remove(_keyClientUrl);
     await prefs.remove(_keyClientDb);
+    onLogout?.call();
     notifyListeners();
   }
 }
