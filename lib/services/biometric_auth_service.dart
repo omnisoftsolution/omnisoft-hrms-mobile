@@ -1,8 +1,10 @@
 import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:local_auth/error_codes.dart' as auth_error;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'biometric_types.dart';
 
@@ -76,11 +78,77 @@ class BiometricAuthService extends ChangeNotifier {
   BiometricAuthService({BiometricGate? gate}) : _gate = gate ?? LocalAuthGate();
 
   final BiometricGate _gate;
+  final FlutterSecureStorage _secure = const FlutterSecureStorage();
+
+  static const _sLogin = 'biometric_login';
+  static const _sPassword = 'biometric_password';
+  static const _kEnabled = 'biometric_enabled';
+  static const _kOptInDismissed = 'biometric_optin_dismissed';
+  static const _kDisplayName = 'biometric_display_name';
 
   Future<bool> isDeviceCapable() => _gate.isAvailable();
 
   Future<BiometricKind> deviceBiometricKind() async {
     final types = await _gate.enrolledTypes();
     return biometricKindFor(Platform.isIOS, types);
+  }
+
+  bool _enabled = false;
+  String _displayName = '';
+
+  bool get isEnabled => _enabled;
+  String get displayName => _displayName;
+
+  Future<void> load() async {
+    final prefs = await SharedPreferences.getInstance();
+    _enabled = prefs.getBool(_kEnabled) ?? false;
+    _displayName = prefs.getString(_kDisplayName) ?? '';
+    notifyListeners();
+  }
+
+  Future<bool> enable({
+    required String login,
+    required String password,
+    String? displayName,
+  }) async {
+    final outcome = await _gate
+        .authenticate('Confirm your identity to enable biometric login');
+    if (outcome != BiometricAuthOutcome.success) return false;
+    await _secure.write(key: _sLogin, value: login);
+    await _secure.write(key: _sPassword, value: password);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kEnabled, true);
+    if (displayName != null && displayName.isNotEmpty) {
+      await prefs.setString(_kDisplayName, displayName);
+      _displayName = displayName;
+    }
+    _enabled = true;
+    notifyListeners();
+    return true;
+  }
+
+  Future<void> disable() async {
+    try {
+      await _secure.delete(key: _sLogin);
+      await _secure.delete(key: _sPassword);
+    } catch (_) {
+      // Continue — prefs cleanup below must always run.
+    }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_kEnabled);
+    await prefs.remove(_kDisplayName);
+    _enabled = false;
+    _displayName = '';
+    notifyListeners();
+  }
+
+  Future<bool> hasDismissedOptIn() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_kOptInDismissed) ?? false;
+  }
+
+  Future<void> markOptInDismissed() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kOptInDismissed, true);
   }
 }

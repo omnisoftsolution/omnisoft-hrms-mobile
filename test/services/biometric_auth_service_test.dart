@@ -55,4 +55,68 @@ void main() {
       expect(await svc.deviceBiometricKind(), BiometricKind.fingerprint);
     });
   });
+
+  group('enable / disable', () {
+    test('enable stores creds + flag + display name on prompt success',
+        () async {
+      final svc = BiometricAuthService(
+          gate: FakeBiometricGate(nextOutcome: BiometricAuthOutcome.success));
+      await svc.load();
+      final ok = await svc.enable(
+          login: 'budi@acme.sg', password: 'pw123', displayName: 'Budi');
+      expect(ok, isTrue);
+      expect(svc.isEnabled, isTrue);
+      expect(svc.displayName, 'Budi');
+      const secure = FlutterSecureStorage();
+      expect(await secure.read(key: 'biometric_login'), 'budi@acme.sg');
+      expect(await secure.read(key: 'biometric_password'), 'pw123');
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool('biometric_enabled'), isTrue);
+      expect(prefs.getString('biometric_display_name'), 'Budi');
+    });
+
+    test('enable stores nothing when the prompt is cancelled', () async {
+      final svc = BiometricAuthService(
+          gate: FakeBiometricGate(nextOutcome: BiometricAuthOutcome.canceled));
+      await svc.load();
+      final ok = await svc.enable(login: 'a@b.c', password: 'pw');
+      expect(ok, isFalse);
+      expect(svc.isEnabled, isFalse);
+      const secure = FlutterSecureStorage();
+      expect(await secure.read(key: 'biometric_login'), isNull);
+    });
+
+    test('disable clears creds + flag + display name', () async {
+      final svc =
+          BiometricAuthService(gate: FakeBiometricGate());
+      await svc.load();
+      await svc.enable(login: 'a@b.c', password: 'pw', displayName: 'A');
+      await svc.disable();
+      expect(svc.isEnabled, isFalse);
+      expect(svc.displayName, '');
+      const secure = FlutterSecureStorage();
+      expect(await secure.read(key: 'biometric_login'), isNull);
+      expect(await secure.read(key: 'biometric_password'), isNull);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool('biometric_enabled'), anyOf(isFalse, isNull));
+    });
+
+    test('load reflects a previously enabled state', () async {
+      SharedPreferences.setMockInitialValues({
+        'biometric_enabled': true,
+        'biometric_display_name': 'Sarah',
+      });
+      final svc = BiometricAuthService(gate: FakeBiometricGate());
+      await svc.load();
+      expect(svc.isEnabled, isTrue);
+      expect(svc.displayName, 'Sarah');
+    });
+
+    test('opt-in dismissal persists', () async {
+      final svc = BiometricAuthService(gate: FakeBiometricGate());
+      expect(await svc.hasDismissedOptIn(), isFalse);
+      await svc.markOptInDismissed();
+      expect(await svc.hasDismissedOptIn(), isTrue);
+    });
+  });
 }
