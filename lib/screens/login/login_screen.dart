@@ -70,7 +70,8 @@ class _LoginScreenState extends State<LoginScreen> {
     final res = await bio.authenticateAndRetrieve();
     if (!mounted) return;
     if (res.outcome == BiometricAuthOutcome.success && res.credential != null) {
-      await _performLogin(res.credential!.login, res.credential!.password);
+      await _performLogin(res.credential!.login, res.credential!.password,
+          fromBiometric: true);
       return;
     }
     if (res.outcome == BiometricAuthOutcome.lockedOut) {
@@ -101,7 +102,8 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   /// Shared login path for both the password form and biometric replay.
-  Future<void> _performLogin(String loginText, String password) async {
+  Future<void> _performLogin(String loginText, String password,
+      {bool fromBiometric = false}) async {
     setState(() {
       _submitting = true;
       _error = null;
@@ -161,9 +163,11 @@ class _LoginScreenState extends State<LoginScreen> {
       );
     } on ApiException catch (e) {
       if (!mounted) return;
+      final bio = context.read<BiometricAuthService>();
       if (e.errorCode == 'invalid_credentials' &&
-          context.read<BiometricAuthService>().isEnabled) {
-        await context.read<BiometricAuthService>().disable();
+          fromBiometric &&
+          bio.isEnabled) {
+        await bio.disable();
         if (mounted) {
           setState(() {
             _forcePassword = true;
