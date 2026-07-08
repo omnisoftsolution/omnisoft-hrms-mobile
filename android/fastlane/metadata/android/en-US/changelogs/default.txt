@@ -1,6 +1,6 @@
-Flexible work location + new app icon.
+Biometric login.
 
-- Employees marked "Flexible Work Location" by HR can clock in/out outside the office area; GPS is still recorded and each remote punch is tagged for HR review.
-- New Omni HR launcher icon.
+- Log back in with Face ID / fingerprint instead of typing your password when your session expires.
+- Turn it on when prompted after signing in, or under Settings.
 
-Testers: with the flag on, clock in away from the office — the GPS chip shows "Remote" (not red "Outside") and the punch succeeds. With a fake-GPS app enabled the punch must be REJECTED. Check the new icon on round and square launchers.
+Testers: sign in, enable biometric login when asked, then force a re-login (log out is a full sign-out and clears it; or wait for expiry) and confirm the Face ID / fingerprint button signs you in.
