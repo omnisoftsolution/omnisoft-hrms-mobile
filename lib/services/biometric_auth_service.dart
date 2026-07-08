@@ -142,6 +142,24 @@ class BiometricAuthService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Show the biometric prompt and, on success, return the stored
+  /// credential. Returns a non-success outcome (with null credential)
+  /// on cancel / lockout / unavailable / missing-secret.
+  Future<BiometricAuthResult> authenticateAndRetrieve() async {
+    final outcome =
+        await _gate.authenticate('Log in to Omni HR');
+    if (outcome != BiometricAuthOutcome.success) {
+      return BiometricAuthResult(outcome);
+    }
+    final login = await _secure.read(key: _sLogin);
+    final password = await _secure.read(key: _sPassword);
+    if (login == null || login.isEmpty || password == null) {
+      return const BiometricAuthResult(BiometricAuthOutcome.failed);
+    }
+    return BiometricAuthResult(
+        BiometricAuthOutcome.success, BiometricCredential(login, password));
+  }
+
   Future<bool> hasDismissedOptIn() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(_kOptInDismissed) ?? false;

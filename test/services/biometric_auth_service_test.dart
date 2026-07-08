@@ -119,4 +119,47 @@ void main() {
       expect(await svc.hasDismissedOptIn(), isTrue);
     });
   });
+
+  group('authenticateAndRetrieve', () {
+    test('success returns the stored credential', () async {
+      final gate = FakeBiometricGate(nextOutcome: BiometricAuthOutcome.success);
+      final svc = BiometricAuthService(gate: gate);
+      await svc.load();
+      await svc.enable(login: 'budi@acme.sg', password: 'pw123');
+      final res = await svc.authenticateAndRetrieve();
+      expect(res.outcome, BiometricAuthOutcome.success);
+      expect(res.credential!.login, 'budi@acme.sg');
+      expect(res.credential!.password, 'pw123');
+    });
+
+    test('cancel returns canceled + no credential', () async {
+      final gate = FakeBiometricGate();
+      final svc = BiometricAuthService(gate: gate);
+      await svc.load();
+      await svc.enable(login: 'a@b.c', password: 'pw');
+      gate.nextOutcome = BiometricAuthOutcome.canceled;
+      final res = await svc.authenticateAndRetrieve();
+      expect(res.outcome, BiometricAuthOutcome.canceled);
+      expect(res.credential, isNull);
+    });
+
+    test('lockedOut propagates', () async {
+      final gate = FakeBiometricGate();
+      final svc = BiometricAuthService(gate: gate);
+      await svc.load();
+      await svc.enable(login: 'a@b.c', password: 'pw');
+      gate.nextOutcome = BiometricAuthOutcome.lockedOut;
+      final res = await svc.authenticateAndRetrieve();
+      expect(res.outcome, BiometricAuthOutcome.lockedOut);
+    });
+
+    test('missing stored credential after a passed prompt → failed', () async {
+      final gate = FakeBiometricGate(nextOutcome: BiometricAuthOutcome.success);
+      final svc = BiometricAuthService(gate: gate);
+      await svc.load(); // never enabled → no secret stored
+      final res = await svc.authenticateAndRetrieve();
+      expect(res.outcome, BiometricAuthOutcome.failed);
+      expect(res.credential, isNull);
+    });
+  });
 }
