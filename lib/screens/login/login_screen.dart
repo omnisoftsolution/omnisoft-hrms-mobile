@@ -123,40 +123,9 @@ class _LoginScreenState extends State<LoginScreen> {
         deviceId: deviceId,
         appVersion: AppConstants.appVersion,
       );
-      final user = res['user'] as Map<String, dynamic>? ?? {};
-      final employee = res['employee'] as Map<String, dynamic>? ?? {};
-      final expiresAtStr = res['expires_at']?.toString() ?? '';
-      await session.saveSession(
-        accessToken: res['access_token']?.toString() ?? '',
-        expiresAt: expiresAtStr.isNotEmpty
-            ? DateTime.tryParse(expiresAtStr)
-            : null,
-        userId: (user['id'] as num?)?.toInt() ?? 0,
-        userLogin: user['login']?.toString() ?? '',
-        userName: user['name']?.toString() ?? '',
-        employeeId: (employee['id'] as num?)?.toInt() ?? 0,
-        employeeName: employee['name']?.toString() ?? '',
-        employeeAvatarB64: employee['avatar_b64']?.toString() ?? '',
-        employeeJobTitle: employee['job_title']?.toString() ?? '',
-        employeeJobPosition: employee['job_position']?.toString() ?? '',
-        employeeDepartment: employee['department_name']?.toString() ?? '',
-        employeeManager: employee['manager_name']?.toString() ?? '',
-        employeeWorkEmail: employee['work_email']?.toString() ?? '',
-        employeeWorkPhone: employee['work_phone']?.toString() ?? '',
-        employeeCompanyName: employee['company_name']?.toString() ?? '',
-        employeeCompanyLogoB64:
-            employee['company_logo_b64']?.toString() ?? '',
-        employeeHrApprover: employee['hr_approver_name']?.toString() ?? '',
-        employeeTimeOffApprover:
-            employee['time_off_approver_name']?.toString() ?? '',
-        employeeAttendanceApprover:
-            employee['attendance_approver_name']?.toString() ?? '',
-        employeeExpenseApprover:
-            employee['expense_approver_name']?.toString() ?? '',
-      );
+      await session.saveLoginResponse(res);
       if (!mounted) return;
-      await _maybeOfferBiometricOptIn(loginText, password,
-          employee['name']?.toString() ?? '');
+      await _maybeOfferBiometricOptIn(loginText, password, session.employeeName);
       if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => const HomeShell()),
