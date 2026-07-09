@@ -81,8 +81,8 @@ class _LoginScreenState extends State<LoginScreen> {
         _error = 'Too many attempts — please log in with your password.';
       });
     }
-    // canceled / failed / unavailable: stay on the panel; user can retry
-    // or tap "Use password instead".
+    // canceled / failed / unavailable: stay on the login screen — the
+    // password form and the Face ID button both remain available to retry.
   }
 
   @override
