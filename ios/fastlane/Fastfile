@@ -45,20 +45,22 @@ IPA_OUTPUT_NAME = "omnihr.ipa"
 # this per release. Inlined (not read from a file) so it can't break on a
 # path/cwd surprise during the upload step. TestFlight allows ~4000 chars.
 TESTFLIGHT_CHANGELOG = <<~NOTES.freeze
-  Biometric login — settings moved to Profile.
+  Face ID / Touch ID sign-in on the login screen.
 
-  Changed:
-  - The Face ID / fingerprint login toggle now lives on your Profile, in a
-    new "Security & Privacy" card (it used to be under the gear icon /
-    Company Settings). The Privacy Policy link moved there too.
+  New:
+  - Your Face ID login is now remembered across Log out. After you log out,
+    the login screen shows a "Sign in with Face ID / Touch ID" button under
+    SIGN IN, so you can sign back in without typing your password.
+  - Face ID also prompts automatically when you return to the app.
 
   Please test:
-  1. Open Profile — you should see a "Security & Privacy" card with the
-     Face ID / fingerprint login toggle and a Privacy Policy link.
-  2. Turn it on (enter your password once) and confirm it enables.
-  3. Open the gear icon (Company Settings) — it should NO LONGER show the
-     biometric switch, including on the login screen before you sign in.
-  4. Force a re-login and confirm Face ID / fingerprint signs you in.
+  1. Enable Face ID login (Profile > Security & Privacy).
+  2. Tap Log out. On the login screen you should see a "Sign in with Face ID"
+     button under SIGN IN, and NO automatic Face ID popup right after logout.
+  3. Tap that button (or close and reopen the app) to sign in with Face ID.
+  4. Delete account still requires your password (no Face ID button).
+
+  Also in this build: the Security & Privacy card on Profile (from build 73).
 NOTES
 
 platform :ios do
