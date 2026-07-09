@@ -26,15 +26,26 @@ class FakeBiometricGate implements BiometricGate {
   Future<BiometricAuthOutcome> authenticate(String reason) async => nextOutcome;
 }
 
-Widget _host(BiometricAuthService svc) => MaterialApp(
+Widget _host(BiometricAuthService svc, {PasswordVerifier? verify}) => MaterialApp(
       home: Scaffold(
         body: ChangeNotifierProvider<BiometricAuthService>.value(
           value: svc,
-          child: const SecurityPrivacyCard(
-              login: 'budi@acme.sg', displayName: 'Budi'),
+          child: SecurityPrivacyCard(
+            login: 'budi@acme.sg',
+            displayName: 'Budi',
+            verifyPassword: verify ?? (_) async => PasswordCheck.ok,
+          ),
         ),
       ),
     );
+
+Future<void> _tapToggleAndConfirm(WidgetTester tester) async {
+  await tester.tap(find.byType(SwitchListTile));
+  await tester.pumpAndSettle();
+  await tester.enterText(find.byType(TextField), 'whatever');
+  await tester.tap(find.text('Confirm'));
+  await tester.pumpAndSettle();
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -84,5 +95,38 @@ void main() {
     await tester.tap(find.byType(SwitchListTile)); // on -> off
     await tester.pumpAndSettle();
     expect(svc.isEnabled, isFalse);
+  });
+
+  testWidgets('wrong password: shows error, does NOT enable', (tester) async {
+    final svc = BiometricAuthService(gate: FakeBiometricGate(available: true));
+    await svc.load();
+    await tester.pumpWidget(
+        _host(svc, verify: (_) async => PasswordCheck.wrongPassword));
+    await tester.pumpAndSettle();
+    await _tapToggleAndConfirm(tester);
+    expect(find.textContaining('Incorrect password'), findsOneWidget);
+    expect(svc.isEnabled, isFalse);
+  });
+
+  testWidgets('network error: shows error, does NOT enable', (tester) async {
+    final svc = BiometricAuthService(gate: FakeBiometricGate(available: true));
+    await svc.load();
+    await tester.pumpWidget(
+        _host(svc, verify: (_) async => PasswordCheck.error));
+    await tester.pumpAndSettle();
+    await _tapToggleAndConfirm(tester);
+    expect(find.textContaining("Couldn't verify"), findsOneWidget);
+    expect(svc.isEnabled, isFalse);
+  });
+
+  testWidgets('correct password: enables + shows confirmation', (tester) async {
+    final svc = BiometricAuthService(gate: FakeBiometricGate(available: true));
+    await svc.load();
+    await tester.pumpWidget(
+        _host(svc, verify: (_) async => PasswordCheck.ok));
+    await tester.pumpAndSettle();
+    await _tapToggleAndConfirm(tester);
+    expect(svc.isEnabled, isTrue);
+    expect(find.textContaining('login enabled'), findsOneWidget);
   });
 }

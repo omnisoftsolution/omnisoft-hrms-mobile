@@ -9,6 +9,7 @@ import '../../core/datetime_utils.dart';
 import '../../core/theme.dart';
 import '../../services/face_recognition_service.dart';
 import '../../services/omni_mobile_api.dart';
+import '../../services/device_service.dart';
 import '../../services/session_service.dart';
 import '../../widgets/employee_avatar.dart';
 import '../../widgets/primary_button.dart';
@@ -77,6 +78,30 @@ class ProfileScreen extends StatelessWidget {
           SecurityPrivacyCard(
             login: session.userLogin,
             displayName: session.employeeName,
+            verifyPassword: (password) async {
+              final api = OmniMobileApi(
+                baseUrl: session.clientUrl,
+                db: session.clientDb,
+                token: '',
+              );
+              final deviceId = await DeviceService().getDeviceId();
+              try {
+                final res = await api.login(
+                  login: session.userLogin,
+                  password: password,
+                  deviceId: deviceId,
+                  appVersion: AppConstants.appVersion,
+                );
+                await session.saveLoginResponse(res);
+                return PasswordCheck.ok;
+              } on ApiException catch (e) {
+                return e.errorCode == 'invalid_credentials'
+                    ? PasswordCheck.wrongPassword
+                    : PasswordCheck.error;
+              } catch (_) {
+                return PasswordCheck.error;
+              }
+            },
           ),
           const SizedBox(height: 32),
           PrimaryButton(

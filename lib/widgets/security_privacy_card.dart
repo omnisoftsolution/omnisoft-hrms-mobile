@@ -8,6 +8,14 @@ import '../services/biometric_auth_service.dart';
 import '../services/biometric_types.dart';
 import 'biometric_optin_sheet.dart' show biometricLabel;
 
+/// Outcome of verifying the signed-in user's password against the server
+/// before enabling biometric login.
+enum PasswordCheck { ok, wrongPassword, error }
+
+/// Verifies [password] for the signed-in user against the server. Returns
+/// [PasswordCheck.ok] only when the server accepts it.
+typedef PasswordVerifier = Future<PasswordCheck> Function(String password);
+
 /// Profile → "Security & Privacy" card. Hosts the biometric-login toggle
 /// (only when the device is biometric-capable) and the Privacy Policy link.
 /// [login] and [displayName] come from the signed-in SessionService at the
@@ -18,10 +26,12 @@ class SecurityPrivacyCard extends StatefulWidget {
     super.key,
     required this.login,
     required this.displayName,
+    required this.verifyPassword,
   });
 
   final String login;
   final String displayName;
+  final PasswordVerifier verifyPassword;
 
   @override
   State<SecurityPrivacyCard> createState() => _SecurityPrivacyCardState();
@@ -30,6 +40,7 @@ class SecurityPrivacyCard extends StatefulWidget {
 class _SecurityPrivacyCardState extends State<SecurityPrivacyCard> {
   bool _bioCapable = false;
   BiometricKind _bioKind = BiometricKind.none;
+  bool _busy = false;
 
   @override
   void initState() {
@@ -56,13 +67,33 @@ class _SecurityPrivacyCardState extends State<SecurityPrivacyCard> {
     }
     final password = await _promptPassword();
     if (password == null || password.isEmpty) return;
+    if (!mounted) return;
+
+    setState(() => _busy = true);
+    final messenger = ScaffoldMessenger.of(context);
+    final check = await widget.verifyPassword(password);
+    if (!mounted) return;
+
+    if (check != PasswordCheck.ok) {
+      setState(() => _busy = false);
+      messenger.showSnackBar(SnackBar(
+        content: Text(check == PasswordCheck.wrongPassword
+            ? 'Incorrect password — ${biometricLabel(_bioKind)} not enabled.'
+            : "Couldn't verify — check your connection."),
+        backgroundColor: AppTheme.error,
+      ));
+      return;
+    }
+
     final ok = await bio.enable(
       login: widget.login,
       password: password,
       displayName: widget.displayName,
     );
-    if (ok && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (ok) {
+      messenger.showSnackBar(SnackBar(
           content: Text('${biometricLabel(_bioKind)} login enabled')));
     }
   }
@@ -132,7 +163,7 @@ class _SecurityPrivacyCardState extends State<SecurityPrivacyCard> {
                 subtitle: Text('Log in with ${biometricLabel(_bioKind)} '
                     'when your session expires.'),
                 value: context.watch<BiometricAuthService>().isEnabled,
-                onChanged: _toggleBiometric,
+                onChanged: _busy ? null : _toggleBiometric,
               ),
             ],
             const SizedBox(height: 12),
