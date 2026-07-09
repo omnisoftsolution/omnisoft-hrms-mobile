@@ -704,13 +704,19 @@ class ProfileScreen extends StatelessWidget {
     } catch (_) {
       // ignored — local clear runs regardless
     }
-    await session.signOut();
+    // clearSession (not signOut) so a deliberate Log out ends the session
+    // but KEEPS the biometric credential — the user can sign back in with
+    // Face ID. Delete account / company-change still use signOut().
+    await session.clearSession();
     if (context.mounted) {
       // Root navigator: tear down the entire HomeShell (including all
       // tab Navigators and the persistent bottom nav). The tab-scoped
       // Navigator.of(context) here would only clear this tab's stack.
+      // autoPromptBiometric: false so we don't immediately re-prompt the
+      // user into the session they just left — the button is still there.
       Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        MaterialPageRoute(
+            builder: (_) => const LoginScreen(autoPromptBiometric: false)),
         (_) => false,
       );
     }
