@@ -10,7 +10,6 @@ import '../../services/device_service.dart';
 import '../../services/omni_mobile_api.dart';
 import '../../services/session_service.dart';
 import 'dart:convert';
-import '../../widgets/biometric_login_panel.dart';
 import '../../widgets/biometric_optin_sheet.dart';
 import '../../widgets/brand_logo.dart';
 import '../../widgets/labeled_field.dart';
@@ -24,7 +23,11 @@ import 'company_settings_screen.dart';
 /// employee details to SessionService. The top-level Consumer in
 /// OmniHrApp then renders HomeShell.
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  /// Whether to automatically show the biometric prompt on open (when a
+  /// credential is stored). Set to false right after a manual Log out so
+  /// the user isn't immediately re-prompted into what they just left.
+  final bool autoPromptBiometric;
+  const LoginScreen({super.key, this.autoPromptBiometric = true});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -40,7 +43,6 @@ class _LoginScreenState extends State<LoginScreen> {
   String? _error;
   bool _capable = false;
   bool _bioResolved = false;
-  bool _forcePassword = false; // user tapped "Use password instead"
   BiometricKind _bioKind = BiometricKind.none;
 
   @override
@@ -59,8 +61,8 @@ class _LoginScreenState extends State<LoginScreen> {
       _bioKind = kind;
       _bioResolved = true;
     });
-    // Auto-prompt once the panel is shown.
-    if (_capable && !_forcePassword) {
+    // Auto-prompt once, unless suppressed (e.g. right after a manual logout).
+    if (_capable && widget.autoPromptBiometric) {
       _biometricLogin();
     }
   }
@@ -76,7 +78,6 @@ class _LoginScreenState extends State<LoginScreen> {
     }
     if (res.outcome == BiometricAuthOutcome.lockedOut) {
       setState(() {
-        _forcePassword = true;
         _error = 'Too many attempts — please log in with your password.';
       });
     }
@@ -170,7 +171,6 @@ class _LoginScreenState extends State<LoginScreen> {
         await bio.disable();
         if (mounted) {
           setState(() {
-            _forcePassword = true;
             _capable = false;
             _error =
                 'Your password has changed — please log in with your password.';
@@ -237,22 +237,6 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final session = context.watch<SessionService>();
-    if (_bioResolved && _capable && !_forcePassword) {
-      final bio = context.read<BiometricAuthService>();
-      return Scaffold(
-        body: SafeArea(
-          child: BiometricLoginPanel(
-            kind: _bioKind,
-            greetingName: bio.displayName,
-            companyName: session.companyName,
-            companyLogoB64: session.companyLogoB64,
-            busy: _submitting,
-            onBiometric: _biometricLogin,
-            onUsePassword: () => setState(() => _forcePassword = true),
-          ),
-        ),
-      );
-    }
     return Scaffold(
       appBar: AppBar(
         title: const Text('Sign In'),
@@ -332,6 +316,30 @@ class _LoginScreenState extends State<LoginScreen> {
                         loading: _submitting,
                         onPressed: _submitting ? null : _login,
                       ),
+                      if (_bioResolved && _capable) ...[
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: _submitting ? null : _biometricLogin,
+                            icon: Icon(_bioKind == BiometricKind.faceId ||
+                                    _bioKind == BiometricKind.face
+                                ? Icons.face
+                                : Icons.fingerprint),
+                            label: Text(
+                                'Sign in with ${biometricLabel(_bioKind)}'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppTheme.primary,
+                              side: BorderSide(
+                                  color:
+                                      AppTheme.primary.withValues(alpha: 0.5)),
+                              shape: const StadiumBorder(),
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 14),
+                            ),
+                          ),
+                        ),
+                      ],
                       // Push the footer to the bottom of the safe area.
                       const Spacer(),
                       const SizedBox(height: 24),
