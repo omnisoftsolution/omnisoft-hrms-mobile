@@ -10,7 +10,7 @@ import 'biometric_optin_sheet.dart' show biometricLabel;
 
 /// Outcome of verifying the signed-in user's password against the server
 /// before enabling biometric login.
-enum PasswordCheck { ok, wrongPassword, error }
+enum PasswordCheck { ok, wrongPassword, rateLimited, error }
 
 /// Verifies [password] for the signed-in user against the server. Returns
 /// [PasswordCheck.ok] only when the server accepts it.
@@ -41,11 +41,18 @@ class _SecurityPrivacyCardState extends State<SecurityPrivacyCard> {
   bool _bioCapable = false;
   BiometricKind _bioKind = BiometricKind.none;
   bool _busy = false;
+  final TextEditingController _passwordController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _resolveBio();
+  }
+
+  @override
+  void dispose() {
+    _passwordController.dispose();
+    super.dispose();
   }
 
   Future<void> _resolveBio() async {
@@ -76,12 +83,15 @@ class _SecurityPrivacyCardState extends State<SecurityPrivacyCard> {
 
     if (check != PasswordCheck.ok) {
       setState(() => _busy = false);
-      messenger.showSnackBar(SnackBar(
-        content: Text(check == PasswordCheck.wrongPassword
-            ? 'Incorrect password — ${biometricLabel(_bioKind)} not enabled.'
-            : "Couldn't verify — check your connection."),
-        backgroundColor: AppTheme.error,
-      ));
+      final message = switch (check) {
+        PasswordCheck.wrongPassword =>
+          'Incorrect password — ${biometricLabel(_bioKind)} not enabled.',
+        PasswordCheck.rateLimited =>
+          'Too many attempts — please try again in a few minutes.',
+        _ => "Couldn't verify — check your connection.",
+      };
+      messenger.showSnackBar(
+          SnackBar(content: Text(message), backgroundColor: AppTheme.error));
       return;
     }
 
@@ -92,20 +102,24 @@ class _SecurityPrivacyCardState extends State<SecurityPrivacyCard> {
     );
     if (!mounted) return;
     setState(() => _busy = false);
-    if (ok) {
-      messenger.showSnackBar(SnackBar(
-          content: Text('${biometricLabel(_bioKind)} login enabled')));
-    }
+    messenger.showSnackBar(ok
+        ? SnackBar(
+            content: Text('${biometricLabel(_bioKind)} login enabled'))
+        : SnackBar(
+            content: Text(
+                "Couldn't enable ${biometricLabel(_bioKind)} — please try again."),
+            backgroundColor: AppTheme.error,
+          ));
   }
 
   Future<String?> _promptPassword() async {
-    final controller = TextEditingController();
+    _passwordController.clear();
     return showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Confirm your password'),
         content: TextField(
-          controller: controller,
+          controller: _passwordController,
           obscureText: true,
           autofocus: true,
           decoration: const InputDecoration(labelText: 'Password'),
@@ -114,7 +128,7 @@ class _SecurityPrivacyCardState extends State<SecurityPrivacyCard> {
           TextButton(
               onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           TextButton(
-              onPressed: () => Navigator.pop(ctx, controller.text),
+              onPressed: () => Navigator.pop(ctx, _passwordController.text),
               child: const Text('Confirm')),
         ],
       ),

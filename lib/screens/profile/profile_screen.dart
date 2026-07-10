@@ -95,9 +95,11 @@ class ProfileScreen extends StatelessWidget {
                 await session.saveLoginResponse(res);
                 return PasswordCheck.ok;
               } on ApiException catch (e) {
-                return e.errorCode == 'invalid_credentials'
-                    ? PasswordCheck.wrongPassword
-                    : PasswordCheck.error;
+                return switch (e.errorCode) {
+                  'invalid_credentials' => PasswordCheck.wrongPassword,
+                  'rate_limit_exceeded' => PasswordCheck.rateLimited,
+                  _ => PasswordCheck.error,
+                };
               } catch (_) {
                 return PasswordCheck.error;
               }

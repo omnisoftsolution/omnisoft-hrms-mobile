@@ -129,4 +129,48 @@ void main() {
     expect(svc.isEnabled, isTrue);
     expect(find.textContaining('login enabled'), findsOneWidget);
   });
+
+  testWidgets('rate limited: shows too-many-attempts, does NOT enable',
+      (tester) async {
+    final svc = BiometricAuthService(gate: FakeBiometricGate(available: true));
+    await svc.load();
+    await tester.pumpWidget(
+        _host(svc, verify: (_) async => PasswordCheck.rateLimited));
+    await tester.pumpAndSettle();
+    await _tapToggleAndConfirm(tester);
+    expect(find.textContaining('Too many attempts'), findsOneWidget);
+    expect(svc.isEnabled, isFalse);
+  });
+
+  testWidgets('verified but biometric confirm canceled: shows could-not-enable',
+      (tester) async {
+    final svc = BiometricAuthService(
+        gate: FakeBiometricGate(
+            available: true, nextOutcome: BiometricAuthOutcome.canceled));
+    await svc.load();
+    await tester.pumpWidget(
+        _host(svc, verify: (_) async => PasswordCheck.ok));
+    await tester.pumpAndSettle();
+    await _tapToggleAndConfirm(tester);
+    expect(svc.isEnabled, isFalse);
+    expect(find.textContaining("Couldn't enable"), findsOneWidget);
+  });
+
+  testWidgets('cancelled password dialog: verifier not called, not enabled',
+      (tester) async {
+    var verifyCalls = 0;
+    final svc = BiometricAuthService(gate: FakeBiometricGate(available: true));
+    await svc.load();
+    await tester.pumpWidget(_host(svc, verify: (_) async {
+      verifyCalls++;
+      return PasswordCheck.ok;
+    }));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(SwitchListTile));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(verifyCalls, 0);
+    expect(svc.isEnabled, isFalse);
+  });
 }
