@@ -301,6 +301,41 @@ class SessionService extends ChangeNotifier {
     }
   }
 
+  /// Persist a `/login` response. Extracts the token/user/employee fields
+  /// from [res] and forwards them to [saveSession]. Shared by the login
+  /// screen and the Security & Privacy card's password re-verification.
+  Future<void> saveLoginResponse(Map<String, dynamic> res) async {
+    final user = res['user'] as Map<String, dynamic>? ?? {};
+    final employee = res['employee'] as Map<String, dynamic>? ?? {};
+    final expiresAtStr = res['expires_at']?.toString() ?? '';
+    await saveSession(
+      accessToken: res['access_token']?.toString() ?? '',
+      expiresAt:
+          expiresAtStr.isNotEmpty ? DateTime.tryParse(expiresAtStr) : null,
+      userId: (user['id'] as num?)?.toInt() ?? 0,
+      userLogin: user['login']?.toString() ?? '',
+      userName: user['name']?.toString() ?? '',
+      employeeId: (employee['id'] as num?)?.toInt() ?? 0,
+      employeeName: employee['name']?.toString() ?? '',
+      employeeAvatarB64: employee['avatar_b64']?.toString() ?? '',
+      employeeJobTitle: employee['job_title']?.toString() ?? '',
+      employeeJobPosition: employee['job_position']?.toString() ?? '',
+      employeeDepartment: employee['department_name']?.toString() ?? '',
+      employeeManager: employee['manager_name']?.toString() ?? '',
+      employeeWorkEmail: employee['work_email']?.toString() ?? '',
+      employeeWorkPhone: employee['work_phone']?.toString() ?? '',
+      employeeCompanyName: employee['company_name']?.toString() ?? '',
+      employeeCompanyLogoB64: employee['company_logo_b64']?.toString() ?? '',
+      employeeHrApprover: employee['hr_approver_name']?.toString() ?? '',
+      employeeTimeOffApprover:
+          employee['time_off_approver_name']?.toString() ?? '',
+      employeeAttendanceApprover:
+          employee['attendance_approver_name']?.toString() ?? '',
+      employeeExpenseApprover:
+          employee['expense_approver_name']?.toString() ?? '',
+    );
+  }
+
   /// Persist everything returned by /login in one call.
   Future<void> saveSession({
     required String accessToken,

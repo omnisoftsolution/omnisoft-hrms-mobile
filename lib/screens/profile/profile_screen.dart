@@ -9,9 +9,11 @@ import '../../core/datetime_utils.dart';
 import '../../core/theme.dart';
 import '../../services/face_recognition_service.dart';
 import '../../services/omni_mobile_api.dart';
+import '../../services/device_service.dart';
 import '../../services/session_service.dart';
 import '../../widgets/employee_avatar.dart';
 import '../../widgets/primary_button.dart';
+import '../../widgets/security_privacy_card.dart';
 import '../login/company_settings_screen.dart';
 import '../login/login_screen.dart';
 import '../payroll/payslips_screen.dart';
@@ -72,6 +74,35 @@ class ProfileScreen extends StatelessWidget {
             const SizedBox(height: 16),
             _faceCard(context, face, session),
           ],
+          const SizedBox(height: 16),
+          SecurityPrivacyCard(
+            login: session.userLogin,
+            displayName: session.employeeName,
+            verifyPassword: (password) async {
+              final api = OmniMobileApi(
+                baseUrl: session.clientUrl,
+                db: session.clientDb,
+                token: '',
+              );
+              final deviceId = await DeviceService().getDeviceId();
+              try {
+                final res = await api.login(
+                  login: session.userLogin,
+                  password: password,
+                  deviceId: deviceId,
+                  appVersion: AppConstants.appVersion,
+                );
+                await session.saveLoginResponse(res);
+                return PasswordCheck.ok;
+              } on ApiException catch (e) {
+                return e.errorCode == 'invalid_credentials'
+                    ? PasswordCheck.wrongPassword
+                    : PasswordCheck.error;
+              } catch (_) {
+                return PasswordCheck.error;
+              }
+            },
+          ),
           const SizedBox(height: 32),
           PrimaryButton(
             label: 'LOGOUT',
@@ -698,11 +729,16 @@ class ProfileScreen extends StatelessWidget {
     } catch (_) {
       // ignored — local clear runs regardless
     }
-    await session.signOut();
+    // clearSession (not signOut) so a deliberate Log out ends the session
+    // but KEEPS the biometric credential — the user can sign back in with
+    // Face ID. Delete account / company-change still use signOut().
+    await session.clearSession();
     if (context.mounted) {
       // Root navigator: tear down the entire HomeShell (including all
       // tab Navigators and the persistent bottom nav). The tab-scoped
       // Navigator.of(context) here would only clear this tab's stack.
+      // The Face ID button is still available on the login screen; the
+      // credential is kept, so the user can sign back in with Face ID.
       Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => const LoginScreen()),
         (_) => false,

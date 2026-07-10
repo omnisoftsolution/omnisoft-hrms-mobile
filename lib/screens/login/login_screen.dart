@@ -10,7 +10,6 @@ import '../../services/device_service.dart';
 import '../../services/omni_mobile_api.dart';
 import '../../services/session_service.dart';
 import 'dart:convert';
-import '../../widgets/biometric_login_panel.dart';
 import '../../widgets/biometric_optin_sheet.dart';
 import '../../widgets/brand_logo.dart';
 import '../../widgets/labeled_field.dart';
@@ -40,7 +39,6 @@ class _LoginScreenState extends State<LoginScreen> {
   String? _error;
   bool _capable = false;
   bool _bioResolved = false;
-  bool _forcePassword = false; // user tapped "Use password instead"
   BiometricKind _bioKind = BiometricKind.none;
 
   @override
@@ -59,10 +57,6 @@ class _LoginScreenState extends State<LoginScreen> {
       _bioKind = kind;
       _bioResolved = true;
     });
-    // Auto-prompt once the panel is shown.
-    if (_capable && !_forcePassword) {
-      _biometricLogin();
-    }
   }
 
   Future<void> _biometricLogin() async {
@@ -76,12 +70,11 @@ class _LoginScreenState extends State<LoginScreen> {
     }
     if (res.outcome == BiometricAuthOutcome.lockedOut) {
       setState(() {
-        _forcePassword = true;
         _error = 'Too many attempts — please log in with your password.';
       });
     }
-    // canceled / failed / unavailable: stay on the panel; user can retry
-    // or tap "Use password instead".
+    // canceled / failed / unavailable: stay on the login screen — the
+    // password form and the Face ID button both remain available to retry.
   }
 
   @override
@@ -122,40 +115,9 @@ class _LoginScreenState extends State<LoginScreen> {
         deviceId: deviceId,
         appVersion: AppConstants.appVersion,
       );
-      final user = res['user'] as Map<String, dynamic>? ?? {};
-      final employee = res['employee'] as Map<String, dynamic>? ?? {};
-      final expiresAtStr = res['expires_at']?.toString() ?? '';
-      await session.saveSession(
-        accessToken: res['access_token']?.toString() ?? '',
-        expiresAt: expiresAtStr.isNotEmpty
-            ? DateTime.tryParse(expiresAtStr)
-            : null,
-        userId: (user['id'] as num?)?.toInt() ?? 0,
-        userLogin: user['login']?.toString() ?? '',
-        userName: user['name']?.toString() ?? '',
-        employeeId: (employee['id'] as num?)?.toInt() ?? 0,
-        employeeName: employee['name']?.toString() ?? '',
-        employeeAvatarB64: employee['avatar_b64']?.toString() ?? '',
-        employeeJobTitle: employee['job_title']?.toString() ?? '',
-        employeeJobPosition: employee['job_position']?.toString() ?? '',
-        employeeDepartment: employee['department_name']?.toString() ?? '',
-        employeeManager: employee['manager_name']?.toString() ?? '',
-        employeeWorkEmail: employee['work_email']?.toString() ?? '',
-        employeeWorkPhone: employee['work_phone']?.toString() ?? '',
-        employeeCompanyName: employee['company_name']?.toString() ?? '',
-        employeeCompanyLogoB64:
-            employee['company_logo_b64']?.toString() ?? '',
-        employeeHrApprover: employee['hr_approver_name']?.toString() ?? '',
-        employeeTimeOffApprover:
-            employee['time_off_approver_name']?.toString() ?? '',
-        employeeAttendanceApprover:
-            employee['attendance_approver_name']?.toString() ?? '',
-        employeeExpenseApprover:
-            employee['expense_approver_name']?.toString() ?? '',
-      );
+      await session.saveLoginResponse(res);
       if (!mounted) return;
-      await _maybeOfferBiometricOptIn(loginText, password,
-          employee['name']?.toString() ?? '');
+      await _maybeOfferBiometricOptIn(loginText, password, session.employeeName);
       if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => const HomeShell()),
@@ -170,7 +132,6 @@ class _LoginScreenState extends State<LoginScreen> {
         await bio.disable();
         if (mounted) {
           setState(() {
-            _forcePassword = true;
             _capable = false;
             _error =
                 'Your password has changed — please log in with your password.';
@@ -237,22 +198,6 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final session = context.watch<SessionService>();
-    if (_bioResolved && _capable && !_forcePassword) {
-      final bio = context.read<BiometricAuthService>();
-      return Scaffold(
-        body: SafeArea(
-          child: BiometricLoginPanel(
-            kind: _bioKind,
-            greetingName: bio.displayName,
-            companyName: session.companyName,
-            companyLogoB64: session.companyLogoB64,
-            busy: _submitting,
-            onBiometric: _biometricLogin,
-            onUsePassword: () => setState(() => _forcePassword = true),
-          ),
-        ),
-      );
-    }
     return Scaffold(
       appBar: AppBar(
         title: const Text('Sign In'),
@@ -332,6 +277,30 @@ class _LoginScreenState extends State<LoginScreen> {
                         loading: _submitting,
                         onPressed: _submitting ? null : _login,
                       ),
+                      if (_bioResolved && _capable) ...[
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: _submitting ? null : _biometricLogin,
+                            icon: Icon(_bioKind == BiometricKind.faceId ||
+                                    _bioKind == BiometricKind.face
+                                ? Icons.face
+                                : Icons.fingerprint),
+                            label: Text(
+                                'Sign in with ${biometricLabel(_bioKind)}'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppTheme.primary,
+                              side: BorderSide(
+                                  color:
+                                      AppTheme.primary.withValues(alpha: 0.5)),
+                              shape: const StadiumBorder(),
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 14),
+                            ),
+                          ),
+                        ),
+                      ],
                       // Push the footer to the bottom of the safe area.
                       const Spacer(),
                       const SizedBox(height: 24),

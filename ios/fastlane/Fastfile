@@ -45,19 +45,27 @@ IPA_OUTPUT_NAME = "omnihr.ipa"
 # this per release. Inlined (not read from a file) so it can't break on a
 # path/cwd surprise during the upload step. TestFlight allows ~4000 chars.
 TESTFLIGHT_CHANGELOG = <<~NOTES.freeze
-  Biometric login.
+  Face ID / Touch ID sign-in improvements.
 
   New:
-  - Log back in with Face ID / fingerprint instead of typing your password
-    when your session expires.
-  - Turn it on when prompted after signing in, or under Settings.
+  - Enabling Face ID now checks your password with the server first. If you
+    type the wrong password, it is refused ("Incorrect password") and Face ID
+    is NOT enabled. Previously a wrong password could be saved and then cause a
+    "wrong password" error the next time you signed in with Face ID.
+  - Face ID sign-in is now button-only: after you log out, tap the
+    "Sign in with Face ID / Touch ID" button under SIGN IN. There is no
+    automatic Face ID popup when the app opens.
 
   Please test:
-  1. Sign in, enable biometric login when asked.
-  2. Force a re-login (wait for session expiry) and confirm the Face ID /
-     fingerprint button signs you in.
-  3. Use password instead — biometric prompt should not appear.
-  4. Verify: explicit Log out clears the credential.
+  1. Profile > Security & Privacy: turn Face ID on and type a WRONG password.
+     You should see "Incorrect password" and the switch stays off.
+  2. Turn it on again with the CORRECT password. It should enable.
+  3. Tap Log out. The login screen should NOT auto-prompt; you should see the
+     "Sign in with Face ID" button under SIGN IN. Tap it to sign in.
+  4. Delete account still requires your password.
+
+  Also in this build: the Security & Privacy card on Profile and the Face ID
+  button on the login screen (from builds 73 and 75).
 NOTES
 
 platform :ios do
