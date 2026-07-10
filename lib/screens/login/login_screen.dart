@@ -277,7 +277,9 @@ class _LoginScreenState extends State<LoginScreen> {
                         loading: _submitting,
                         onPressed: _submitting ? null : _login,
                       ),
-                      if (_bioResolved && _capable) ...[
+                      if (_bioResolved &&
+                          _capable &&
+                          context.watch<BiometricAuthService>().isEnabled) ...[
                         const SizedBox(height: 12),
                         SizedBox(
                           width: double.infinity,

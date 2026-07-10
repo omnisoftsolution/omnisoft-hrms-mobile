@@ -85,4 +85,16 @@ void main() {
     await tester.pumpAndSettle();
     expect(gate.authCalls, 1);
   });
+
+  testWidgets('button hides when biometric is disabled after render',
+      (tester) async {
+    final gate = FakeBiometricGate(available: true);
+    final bio = await _loadedBio(gate);
+    await tester.pumpWidget(_host(bio));
+    await tester.pumpAndSettle();
+    expect(find.text('Sign in with fingerprint'), findsOneWidget);
+    await bio.disable();
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Sign in with'), findsNothing);
+  });
 }
