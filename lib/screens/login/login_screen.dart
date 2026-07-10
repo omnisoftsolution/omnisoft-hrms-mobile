@@ -23,11 +23,7 @@ import 'company_settings_screen.dart';
 /// employee details to SessionService. The top-level Consumer in
 /// OmniHrApp then renders HomeShell.
 class LoginScreen extends StatefulWidget {
-  /// Whether to automatically show the biometric prompt on open (when a
-  /// credential is stored). Set to false right after a manual Log out so
-  /// the user isn't immediately re-prompted into what they just left.
-  final bool autoPromptBiometric;
-  const LoginScreen({super.key, this.autoPromptBiometric = true});
+  const LoginScreen({super.key});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -61,10 +57,6 @@ class _LoginScreenState extends State<LoginScreen> {
       _bioKind = kind;
       _bioResolved = true;
     });
-    // Auto-prompt once, unless suppressed (e.g. right after a manual logout).
-    if (_capable && widget.autoPromptBiometric) {
-      _biometricLogin();
-    }
   }
 
   Future<void> _biometricLogin() async {

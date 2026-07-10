@@ -32,12 +32,12 @@ class FakeBiometricGate implements BiometricGate {
   }
 }
 
-Widget _host(BiometricAuthService bio, {required bool autoPrompt}) => MultiProvider(
+Widget _host(BiometricAuthService bio) => MultiProvider(
       providers: [
         ChangeNotifierProvider<SessionService>.value(value: SessionService()),
         ChangeNotifierProvider<BiometricAuthService>.value(value: bio),
       ],
-      child: MaterialApp(home: LoginScreen(autoPromptBiometric: autoPrompt)),
+      child: const MaterialApp(home: LoginScreen()),
     );
 
 Future<BiometricAuthService> _loadedBio(FakeBiometricGate gate) async {
@@ -55,10 +55,10 @@ void main() {
   });
 
   testWidgets('shows the Face ID button when a credential is stored + capable, '
-      'and does not auto-prompt when suppressed', (tester) async {
+      'and never auto-prompts', (tester) async {
     final gate = FakeBiometricGate(available: true);
     final bio = await _loadedBio(gate);
-    await tester.pumpWidget(_host(bio, autoPrompt: false));
+    await tester.pumpWidget(_host(bio));
     await tester.pumpAndSettle();
     expect(find.text('Sign in with fingerprint'), findsOneWidget);
     expect(gate.authCalls, 0);
@@ -69,25 +69,15 @@ void main() {
     SharedPreferences.setMockInitialValues({}); // biometric_enabled absent
     final gate = FakeBiometricGate(available: true);
     final bio = await _loadedBio(gate);
-    await tester.pumpWidget(_host(bio, autoPrompt: false));
+    await tester.pumpWidget(_host(bio));
     await tester.pumpAndSettle();
     expect(find.textContaining('Sign in with'), findsNothing);
   });
 
-  testWidgets('auto-prompts biometric on open when autoPromptBiometric is true',
-      (tester) async {
+  testWidgets('tapping the button triggers biometric', (tester) async {
     final gate = FakeBiometricGate(available: true);
     final bio = await _loadedBio(gate);
-    await tester.pumpWidget(_host(bio, autoPrompt: true));
-    await tester.pumpAndSettle();
-    expect(gate.authCalls, 1);
-  });
-
-  testWidgets('does not auto-prompt when suppressed, but tapping the button does',
-      (tester) async {
-    final gate = FakeBiometricGate(available: true);
-    final bio = await _loadedBio(gate);
-    await tester.pumpWidget(_host(bio, autoPrompt: false));
+    await tester.pumpWidget(_host(bio));
     await tester.pumpAndSettle();
     expect(gate.authCalls, 0);
     await tester.ensureVisible(find.text('Sign in with fingerprint'));

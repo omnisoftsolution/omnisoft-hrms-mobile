@@ -737,11 +737,10 @@ class ProfileScreen extends StatelessWidget {
       // Root navigator: tear down the entire HomeShell (including all
       // tab Navigators and the persistent bottom nav). The tab-scoped
       // Navigator.of(context) here would only clear this tab's stack.
-      // autoPromptBiometric: false so we don't immediately re-prompt the
-      // user into the session they just left — the button is still there.
+      // The Face ID button is still available on the login screen; the
+      // credential is kept, so the user can sign back in with Face ID.
       Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
-        MaterialPageRoute(
-            builder: (_) => const LoginScreen(autoPromptBiometric: false)),
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
         (_) => false,
       );
     }
