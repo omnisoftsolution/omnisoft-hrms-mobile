@@ -45,22 +45,27 @@ IPA_OUTPUT_NAME = "omnihr.ipa"
 # this per release. Inlined (not read from a file) so it can't break on a
 # path/cwd surprise during the upload step. TestFlight allows ~4000 chars.
 TESTFLIGHT_CHANGELOG = <<~NOTES.freeze
-  Face ID / Touch ID sign-in on the login screen.
+  Face ID / Touch ID sign-in improvements.
 
   New:
-  - Your Face ID login is now remembered across Log out. After you log out,
-    the login screen shows a "Sign in with Face ID / Touch ID" button under
-    SIGN IN, so you can sign back in without typing your password.
-  - Face ID also prompts automatically when you return to the app.
+  - Enabling Face ID now checks your password with the server first. If you
+    type the wrong password, it is refused ("Incorrect password") and Face ID
+    is NOT enabled. Previously a wrong password could be saved and then cause a
+    "wrong password" error the next time you signed in with Face ID.
+  - Face ID sign-in is now button-only: after you log out, tap the
+    "Sign in with Face ID / Touch ID" button under SIGN IN. There is no
+    automatic Face ID popup when the app opens.
 
   Please test:
-  1. Enable Face ID login (Profile > Security & Privacy).
-  2. Tap Log out. On the login screen you should see a "Sign in with Face ID"
-     button under SIGN IN, and NO automatic Face ID popup right after logout.
-  3. Tap that button (or close and reopen the app) to sign in with Face ID.
-  4. Delete account still requires your password (no Face ID button).
+  1. Profile > Security & Privacy: turn Face ID on and type a WRONG password.
+     You should see "Incorrect password" and the switch stays off.
+  2. Turn it on again with the CORRECT password. It should enable.
+  3. Tap Log out. The login screen should NOT auto-prompt; you should see the
+     "Sign in with Face ID" button under SIGN IN. Tap it to sign in.
+  4. Delete account still requires your password.
 
-  Also in this build: the Security & Privacy card on Profile (from build 73).
+  Also in this build: the Security & Privacy card on Profile and the Face ID
+  button on the login screen (from builds 73 and 75).
 NOTES
 
 platform :ios do
