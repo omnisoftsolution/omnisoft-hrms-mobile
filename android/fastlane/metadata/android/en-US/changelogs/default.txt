@@ -1,7 +1,7 @@
 Fingerprint / Face sign-in.
 
 - Turn it on under Profile > Security & Privacy. When enabling, your password is now checked with the server first — a wrong password is refused.
-- After you log out, tap the "Sign in with fingerprint" button on the login screen to sign back in without typing your password (no automatic popup).
+- After you log out, tap the "Sign in with fingerprint" button on the login screen to sign back in (no automatic popup).
 - Delete account still requires your password.
 
-Testers: enable it with a WRONG password (should be refused), then the correct one, then log out and sign back in with the button.
+Testers: enable with a WRONG password (should be refused), then the correct one, then log out and sign back in with the button.
