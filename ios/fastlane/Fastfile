@@ -45,27 +45,24 @@ IPA_OUTPUT_NAME = "omnihr.ipa"
 # this per release. Inlined (not read from a file) so it can't break on a
 # path/cwd surprise during the upload step. TestFlight allows ~4000 chars.
 TESTFLIGHT_CHANGELOG = <<~NOTES.freeze
-  Face ID / Touch ID sign-in improvements.
+  Face ID / Touch ID sign-in — polish.
 
-  New:
-  - Enabling Face ID now checks your password with the server first. If you
-    type the wrong password, it is refused ("Incorrect password") and Face ID
-    is NOT enabled. Previously a wrong password could be saved and then cause a
-    "wrong password" error the next time you signed in with Face ID.
-  - Face ID sign-in is now button-only: after you log out, tap the
-    "Sign in with Face ID / Touch ID" button under SIGN IN. There is no
-    automatic Face ID popup when the app opens.
+  Refined in this build:
+  - Clearer messages when enabling Face ID doesn't go through: "Too many
+    attempts" if you retried the password too often, and "Couldn't enable…"
+    if you cancel the Face ID prompt (instead of nothing happening).
+  - The "Sign in with Face ID" button now correctly disappears after you
+    delete your account (the saved sign-in is cleared).
 
   Please test:
-  1. Profile > Security & Privacy: turn Face ID on and type a WRONG password.
-     You should see "Incorrect password" and the switch stays off.
-  2. Turn it on again with the CORRECT password. It should enable.
-  3. Tap Log out. The login screen should NOT auto-prompt; you should see the
-     "Sign in with Face ID" button under SIGN IN. Tap it to sign in.
-  4. Delete account still requires your password.
+  1. Profile > Security & Privacy: turn Face ID on with a WRONG password
+     ("Incorrect password", stays off), then the CORRECT one (enables).
+  2. Tap Log out. No automatic popup; tap the "Sign in with Face ID" button
+     under SIGN IN to sign in.
+  3. Delete account still requires your password.
 
-  Also in this build: the Security & Privacy card on Profile and the Face ID
-  button on the login screen (from builds 73 and 75).
+  Includes everything from builds 73/75/77 (Security & Privacy card, Face ID
+  login button, password checked before enabling).
 NOTES
 
 platform :ios do
