@@ -109,5 +109,16 @@ void main() {
         contains('past'),
       );
     });
+
+    test('wifi gate codes map to actionable messages', () {
+      expect(friendlyError('wifi_required_missing'),
+          contains('office Wi-Fi'));
+      expect(friendlyError('wifi_not_recognized'),
+          contains('not recognized'));
+      expect(friendlyError('wifi_bssid_mismatch'),
+          contains('not recognized'));
+      expect(friendlyError('egress_ip_mismatch'),
+          contains('office network'));
+    });
   });
 }

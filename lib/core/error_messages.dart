@@ -58,6 +58,19 @@ String friendlyError(Object e) {
   if (raw.contains('device_mismatch')) {
     return 'This device is not registered to your account. Please contact HR.';
   }
+  if (raw.contains('wifi_required_missing')) {
+    return 'Connect to the office Wi-Fi network to check in. Make sure '
+        'Wi-Fi is on and Location is enabled.';
+  }
+  if (raw.contains('wifi_not_recognized') ||
+      raw.contains('wifi_bssid_mismatch')) {
+    return 'This Wi-Fi network is not recognized as your office network. '
+        'Connect to the office Wi-Fi and try again.';
+  }
+  if (raw.contains('egress_ip_mismatch')) {
+    return 'Your connection does not appear to come from the office '
+        'network. Connect to the office Wi-Fi and try again.';
+  }
   if (raw.contains('face_not_verified')) {
     return 'Face verification failed. Please try again.';
   }
