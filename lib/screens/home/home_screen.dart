@@ -8,14 +8,17 @@ import '../../core/constants.dart';
 import '../../core/datetime_utils.dart';
 import '../../core/error_messages.dart';
 import '../../core/theme.dart';
+import '../../core/wifi_gate.dart';
 import '../../models/attendance_status.dart';
 import '../../models/auto_close_previous.dart';
 import '../../models/face_capture_result.dart';
+import '../../models/wifi_info_result.dart';
 import '../../services/device_service.dart';
 import '../../services/face_recognition_service.dart';
 import '../../services/location_service.dart';
 import '../../services/omni_mobile_api.dart';
 import '../../services/session_service.dart';
+import '../../services/wifi_info_service.dart';
 import '../../widgets/big_check_button.dart';
 import '../../widgets/error_state_view.dart';
 import '../../widgets/feature_locked_pane.dart';
@@ -44,6 +47,10 @@ class HomeScreenState extends State<HomeScreen> {
   // successful check-in/out. null when not applicable.
   double? _lastDistance;
   double? _lastAllowedRadius;
+  // Most recent Wi-Fi sample (punch-time capture or the periodic
+  // poll below). null until first sampled — treated as "unknown,
+  // don't block" everywhere it's consulted.
+  WifiInfoResult? _lastWifi;
   // Set when the connector's Phase 1 forgotten-check-out guard had
   // to auto-close a stale attendance during this check-in. Renders
   // a yellow banner card; cleared on dismiss or next successful
@@ -51,6 +58,7 @@ class HomeScreenState extends State<HomeScreen> {
   AutoClosePrevious? _autoClosedPrevious;
   final _locationService = LocationService();
   final _deviceService = DeviceService();
+  final WifiInfoService _wifiInfoService = WifiInfoService();
 
   // Live ticking for the Current Time card. Updates every 30s — we
   // only render HH:MM so per-second precision is wasted.
@@ -169,6 +177,16 @@ class HomeScreenState extends State<HomeScreen> {
   /// so we never request location permission for a feature the
   /// company has disabled.
   Future<void> _refreshGpsCard() async {
+    if (!mounted) return;
+    // Piggyback the Wi-Fi sample on this same 60s poll rather than a
+    // second timer. Independent of the geolocation flag — a company
+    // can require Wi-Fi without requiring geofencing — so this check
+    // lives before the featureGeolocation early-return below.
+    if (_status?.wifiRequired == true) {
+      final wifi = await _wifiInfoService.getCurrent();
+      if (!mounted) return;
+      setState(() => _lastWifi = wifi);
+    }
     if (!mounted) return;
     final session = context.read<SessionService>();
     if (!session.featureGeolocation) return;
@@ -344,6 +362,28 @@ class HomeScreenState extends State<HomeScreen> {
       }
     }
 
+    // Step 1c — Wi-Fi network gate (spec 2026-08-03). Capture is
+    // opportunistic on every punch (free signals for the server's
+    // anomaly log); the fast-fail only fires when the status endpoint
+    // says this office requires Wi-Fi. Same philosophy as Step 1b:
+    // reject before spending the user's time on a face capture, with
+    // the exact wording the server would use. Exemptions (flexible
+    // employees, dev bypass, gate unconfigured) live inside
+    // wifiPreCheckErrorCode so they cannot drift from the tests.
+    final wifiInfo = await _wifiInfoService.getCurrent();
+    if (!mounted) return;
+    setState(() => _lastWifi = wifiInfo);
+    final wifiFail = wifiPreCheckErrorCode(
+      status: _status,
+      wifi: wifiInfo,
+      devLocation: DevConstants.useDevLocation,
+    );
+    if (wifiFail != null) {
+      setState(() => _acting = false);
+      _showError(friendlyError(wifiFail));
+      return;
+    }
+
     // Step 2 — Face capture + on-device verification against the
     // employee's enrolled face. Gated on the SaaS face_verification
     // flag: when the company has face verification disabled, the
@@ -397,6 +437,8 @@ class HomeScreenState extends State<HomeScreen> {
           devLocation: DevConstants.useDevLocation,
           isMocked: isMocked,
           accuracy: accuracy,
+          wifiSsid: wifiInfo.ssid,
+          wifiBssid: wifiInfo.bssid,
         );
       } else {
         final resp = await api.checkIn(
@@ -407,6 +449,8 @@ class HomeScreenState extends State<HomeScreen> {
           devLocation: DevConstants.useDevLocation,
           isMocked: isMocked,
           accuracy: accuracy,
+          wifiSsid: wifiInfo.ssid,
+          wifiBssid: wifiInfo.bssid,
         );
         // Connector's Phase 1 auto-close echoes back when it had to
         // infer a check-out for a forgotten attendance. Surface as a
@@ -553,6 +597,10 @@ class HomeScreenState extends State<HomeScreen> {
             ],
           ),
         ),
+        if (s.wifiRequired) ...[
+          const SizedBox(height: 12),
+          Row(children: [Expanded(child: _wifiCard())]),
+        ],
         if (_autoClosedPrevious != null) ...[
           const SizedBox(height: 16),
           _autoClosedBanner(),
@@ -755,6 +803,41 @@ class HomeScreenState extends State<HomeScreen> {
     return '${(m / 1000).toStringAsFixed(1)}km';
   }
 
+  /// Wi-Fi gate status chip — only rendered when the office requires
+  /// Wi-Fi (`_status.wifiRequired`). Same InfoCard idiom as _gpsCard:
+  /// neutral (outline) before the first sample, green once the
+  /// connected network matches an expected SSID, red otherwise — so
+  /// this can never disagree with the tap-time gate in
+  /// wifiPreCheckErrorCode, which drives the same three outcomes.
+  Widget _wifiCard() {
+    // Wi-Fi gate chip state (only when the office requires Wi-Fi).
+    final wifi = _lastWifi;
+    final String wifiValue;
+    final bool wifiOk;
+    if (wifi == null) {
+      wifiValue = 'Wi-Fi'; // not yet sampled — neutral
+      wifiOk = true;
+    } else if (!wifi.isReady) {
+      wifiValue = 'Not connected';
+      wifiOk = false;
+    } else if (_status!.expectedSsids.contains(wifi.ssid)) {
+      wifiValue = 'Office Wi-Fi';
+      wifiOk = true;
+    } else {
+      wifiValue = 'Wrong network';
+      wifiOk = false;
+    }
+    final confirmed = wifi != null && wifi.isReady && wifiOk;
+    return InfoCard(
+      icon: wifiOk ? Icons.wifi_rounded : Icons.wifi_off_rounded,
+      iconColor: !wifiOk
+          ? AppTheme.error
+          : (confirmed ? const Color(0xFF22C55E) : AppTheme.outline),
+      label: 'Wi-Fi',
+      value: wifiValue,
+    );
+  }
+
   Widget _statusCard(AttendanceStatus s) {
     final accent =
         s.checkedIn ? AppTheme.primary : AppTheme.onSurfaceVariant;
@@ -908,6 +991,20 @@ class HomeScreenState extends State<HomeScreen> {
         !DevConstants.simulateFaceRecognition &&
         faceSvc.isEnrolled == false;
     if (needsEnrollment) return CheckButtonState.enroll;
+    // Wi-Fi gate — independent of the geolocation flag below (a
+    // company can require Wi-Fi without requiring geofencing), so
+    // this is checked before that chain rather than folded into it.
+    // `_lastWifi == null` (not yet sampled) falls through instead of
+    // disabling — never block on an unsampled state; the tap-time
+    // capture in _onCheckAction is the actual gate either way.
+    if (_lastWifi != null &&
+        wifiPreCheckErrorCode(
+                status: _status,
+                wifi: _lastWifi!,
+                devLocation: DevConstants.useDevLocation) !=
+            null) {
+      return CheckButtonState.disabled;
+    }
     if (!session.featureGeolocation) return CheckButtonState.ready;
     if (DevConstants.useDevLocation) return CheckButtonState.ready;
     if (s.flexibleLocation) return CheckButtonState.ready;
