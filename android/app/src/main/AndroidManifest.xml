@@ -28,6 +28,14 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" tools:node="remove"/>
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" tools:node="remove"/>
 
+    <!-- Attendance network gate (spec 2026-08-03): reading the connected
+         SSID/BSSID needs ACCESS_WIFI_STATE + ACCESS_NETWORK_STATE plus the
+         already-granted fine location. Declared here deliberately — see the
+         Play Data-safety note below; location is already justified for the
+         geofence and the same justification covers Wi-Fi network identity. -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+
     <uses-feature android:name="android.hardware.camera" android:required="false"/>
     <uses-feature android:name="android.hardware.camera.front" android:required="false"/>
     <application
