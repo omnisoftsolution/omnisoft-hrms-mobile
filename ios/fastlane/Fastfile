@@ -45,24 +45,25 @@ IPA_OUTPUT_NAME = "omnihr.ipa"
 # this per release. Inlined (not read from a file) so it can't break on a
 # path/cwd surprise during the upload step. TestFlight allows ~4000 chars.
 TESTFLIGHT_CHANGELOG = <<~NOTES.freeze
-  Face ID / Touch ID sign-in — polish.
+  Office Wi-Fi check-in + easier hourly leave.
 
-  Refined in this build:
-  - Clearer messages when enabling Face ID doesn't go through: "Too many
-    attempts" if you retried the password too often, and "Couldn't enable…"
-    if you cancel the Face ID prompt (instead of nothing happening).
-  - The "Sign in with Face ID" button now correctly disappears after you
-    delete your account (the saved sign-in is cleared).
+  New in this build:
+  - Check-in can verify you're on the office Wi-Fi when your company
+    enables it. A small Wi-Fi icon next to the GPS status shows green on
+    the office network. Grant precise location when asked — iOS needs it
+    to read the Wi-Fi name.
+  - Leave types counted in hours now support full-day requests: pick a
+    date range like any other leave, no time pickers. "Specific hours"
+    mode is still there for partial days.
+  - Hour-based leave balances show the day equivalent ("112h (14d)
+    left") and now match what HR sees in Odoo.
 
   Please test:
-  1. Profile > Security & Privacy: turn Face ID on with a WRONG password
-     ("Incorrect password", stays off), then the CORRECT one (enables).
-  2. Tap Log out. No automatic popup; tap the "Sign in with Face ID" button
-     under SIGN IN to sign in.
-  3. Delete account still requires your password.
-
-  Includes everything from builds 73/75/77 (Security & Privacy card, Face ID
-  login button, password checked before enabling).
+  1. Leave > an hourly leave type: apply 2 full days (Full day(s) mode),
+     check the confirmation shows the range and "2d (16h)".
+  2. Switch to Specific hours and apply a 2-hour block on one date.
+  3. If your office has Wi-Fi verification on: check in on office Wi-Fi
+     (allowed) and on cellular (blocked with a clear message).
 NOTES
 
 platform :ios do

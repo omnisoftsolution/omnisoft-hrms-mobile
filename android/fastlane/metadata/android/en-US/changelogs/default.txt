@@ -1,6 +1,1 @@
-Fingerprint / Face sign-in — polish.
-
-- Clearer messages when enabling doesn't go through: "Too many attempts" if you retried too often, and "Couldn't enable…" if you cancel the fingerprint prompt.
-- The "Sign in with fingerprint" button now disappears after you delete your account.
-
-Testers: enable with a WRONG password (refused), then the correct one, log out and sign back in with the button.
+Office Wi-Fi check-in verification (a Wi-Fi icon next to GPS status shows green on the office network; allow precise location) and easier hourly leave: full-day requests now use a simple date range, while specific-hours mode remains for partial days. Hour-based balances show the day equivalent (e.g. 112h (14d) left) and now match HR records.
