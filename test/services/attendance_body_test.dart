@@ -38,5 +38,20 @@ void main() {
           latitude: 1.3, longitude: 103.8, devLocation: true);
       expect(body['_dev_location'], isTrue);
     });
+
+    test('includes wifi fields when present, omits when null', () {
+      final body = buildAttendanceBody(
+          latitude: 1.3,
+          longitude: 103.8,
+          isMocked: false,
+          wifiSsid: 'Office-WiFi',
+          wifiBssid: '01:02:03:04:05:06');
+      expect(body['wifi_ssid'], 'Office-WiFi');
+      expect(body['wifi_bssid'], '01:02:03:04:05:06');
+
+      final without = buildAttendanceBody(isMocked: false);
+      expect(without.containsKey('wifi_ssid'), isFalse);
+      expect(without.containsKey('wifi_bssid'), isFalse);
+    });
   });
 }

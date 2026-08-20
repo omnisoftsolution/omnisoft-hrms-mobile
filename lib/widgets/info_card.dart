@@ -12,6 +12,8 @@ class InfoCard extends StatelessWidget {
   final String value;
   final String? suffix;
   final Color? suffixColor;
+  final IconData? secondaryIcon;
+  final Color? secondaryIconColor;
 
   const InfoCard({
     super.key,
@@ -21,6 +23,8 @@ class InfoCard extends StatelessWidget {
     required this.value,
     this.suffix,
     this.suffixColor,
+    this.secondaryIcon,
+    this.secondaryIconColor,
   });
 
   @override
@@ -36,7 +40,17 @@ class InfoCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 22, color: iconColor ?? AppTheme.primary),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 22, color: iconColor ?? AppTheme.primary),
+              if (secondaryIcon != null) ...[
+                const SizedBox(width: 8),
+                Icon(secondaryIcon, size: 22,
+                    color: secondaryIconColor ?? AppTheme.outline),
+              ],
+            ],
+          ),
           const SizedBox(height: 12),
           Text(
             label,

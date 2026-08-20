@@ -25,6 +25,8 @@ import '../models/public_holiday.dart';
 /// - [accuracy]: omitted when null (GPS accuracy unavailable).
 /// - [devLocation]: when true, appends `_dev_location: true` so the server
 ///   bypasses the geofence. Only set via DevConstants.useDevLocation.
+/// - [wifiSsid] / [wifiBssid]: omitted when null, following the same
+///   pattern as [latitude] and [accuracy].
 Map<String, dynamic> buildAttendanceBody({
   double? latitude,
   double? longitude,
@@ -33,6 +35,8 @@ Map<String, dynamic> buildAttendanceBody({
   bool devLocation = false,
   bool isMocked = false,
   double? accuracy,
+  String? wifiSsid,
+  String? wifiBssid,
 }) {
   return {
     'latitude': ?latitude,
@@ -41,6 +45,8 @@ Map<String, dynamic> buildAttendanceBody({
     'device_id': ?deviceId,
     'is_mocked': isMocked,
     'location_accuracy': ?accuracy,
+    'wifi_ssid': ?wifiSsid,
+    'wifi_bssid': ?wifiBssid,
     if (devLocation) '_dev_location': true,
   };
 }
@@ -194,6 +200,8 @@ class OmniMobileApi {
     bool devLocation = false,
     bool isMocked = false,
     double? accuracy,
+    String? wifiSsid,
+    String? wifiBssid,
   }) async {
     return _post('/attendance/check_in', buildAttendanceBody(
       latitude: latitude,
@@ -203,6 +211,8 @@ class OmniMobileApi {
       devLocation: devLocation,
       isMocked: isMocked,
       accuracy: accuracy,
+      wifiSsid: wifiSsid,
+      wifiBssid: wifiBssid,
     ));
   }
 
@@ -214,6 +224,8 @@ class OmniMobileApi {
     bool devLocation = false,
     bool isMocked = false,
     double? accuracy,
+    String? wifiSsid,
+    String? wifiBssid,
   }) async {
     return _post('/attendance/check_out', buildAttendanceBody(
       latitude: latitude,
@@ -223,6 +235,8 @@ class OmniMobileApi {
       devLocation: devLocation,
       isMocked: isMocked,
       accuracy: accuracy,
+      wifiSsid: wifiSsid,
+      wifiBssid: wifiBssid,
     ));
   }
 

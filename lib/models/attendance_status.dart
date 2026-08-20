@@ -19,6 +19,12 @@ class AttendanceStatus {
   /// coordinates), so the client must not fast-fail or grey the button.
   final bool flexibleLocation;
 
+  /// Attendance network gate (spec 2026-08-03): when [wifiRequired],
+  /// the client pre-checks the connected SSID against [expectedSsids]
+  /// before face capture. Server verdict stays authoritative.
+  final bool wifiRequired;
+  final List<String> expectedSsids;
+
   AttendanceStatus({
     required this.checkedIn,
     this.currentCheckInTime,
@@ -31,12 +37,18 @@ class AttendanceStatus {
     this.officeRadiusMeters,
     this.geofenceSource,
     this.flexibleLocation = false,
+    this.wifiRequired = false,
+    this.expectedSsids = const [],
   });
 
   bool get hasGeofence =>
       officeLatitude != null && officeLongitude != null;
 
   factory AttendanceStatus.fromJson(Map<String, dynamic> json) {
+    final gate = json['network_gate'];
+    final gateMap =
+        gate is Map<String, dynamic> ? gate : const <String, dynamic>{};
+
     return AttendanceStatus(
       checkedIn: json['checked_in'] == true,
       currentCheckInTime: json['current_check_in_time']?.toString(),
@@ -50,6 +62,10 @@ class AttendanceStatus {
           (json['office_radius_meters'] as num?)?.toDouble(),
       geofenceSource: json['geofence_source']?.toString(),
       flexibleLocation: json['flexible_location'] == true,
+      wifiRequired: gateMap['wifi_required'] == true,
+      expectedSsids: (gateMap['expected_ssids'] as List<dynamic>? ?? const [])
+          .map((e) => e.toString())
+          .toList(),
     );
   }
 }

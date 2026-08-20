@@ -24,6 +24,21 @@ Android + iOS employee app for Omni HR (version in pubspec.yaml). Backend = Odoo
   fallback so `flutter run --release` still works. iOS bundle com.omnisoftsolution.omnihr; Android appId
   com.omnisoft.omnihr (Gradle namespace stays com.omnisoft.omni_hr — do not "fix").
 
+## Wi-Fi egress gate (attendance, spec 2026-08-03)
+- Android: `ACCESS_WIFI_STATE` + `ACCESS_NETWORK_STATE` in AndroidManifest.xml (with existing
+  ACCESS_FINE_LOCATION) let the plugin read the connected SSID/BSSID for office-network verification.
+- iOS: `ios/Runner/Runner.entitlements` sets `com.apple.developer.networking.wifi-info` (Access Wi-Fi
+  Information) and is wired via `CODE_SIGN_ENTITLEMENTS` on all three Runner build configs in
+  project.pbxproj. **Willy gate:** the App ID `com.omnisoftsolution.omnihr` (team 5PBHZ3JDAD) needs
+  "Access Wi-Fi Information" enabled in the Apple Developer portal before this entitlement takes effect
+  on device — automatic signing regenerates the provisioning profile on the next Xcode/fastlane build.
+- No new PrivacyInfo.xcprivacy entry: Wi-Fi info has no dedicated NSPrivacyAccessedAPICategory; the
+  precise-location declaration already covers the geofence and this feature reuses it.
+- Play Console Data-safety: confirm the existing location-purpose text also covers office-network
+  verification for attendance (Willy gate, not automatable).
+- Device test caveat: check whether iPhone actually returns a BSSID (iOS 26 reality — Apple has
+  progressively restricted this even with the entitlement).
+
 ## Build footgun — ALREADY FIXED, do not remove
 Flutter 3.44 + tflite_flutter "Inconsistent JVM Target" (`:tflite_flutter:compileReleaseKotlin`) is fixed on
 master (f82a8db): android/gradle.properties sets `kotlin.jvm.target.validation.mode=warning`, and the JDK is

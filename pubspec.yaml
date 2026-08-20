@@ -36,6 +36,7 @@ dependencies:
   # reproducible across machines on different Xcode versions.
   camera_avfoundation: 0.9.18+9
   device_info_plus: ^11.5.0
+  network_info_plus: ^7.0.0
   package_info_plus: ^9.0.1
   url_launcher: ^6.3.1
   local_auth: ^2.3.0
