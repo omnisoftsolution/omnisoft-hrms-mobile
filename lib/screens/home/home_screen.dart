@@ -597,10 +597,6 @@ class HomeScreenState extends State<HomeScreen> {
             ],
           ),
         ),
-        if (s.wifiRequired) ...[
-          const SizedBox(height: 12),
-          Row(children: [Expanded(child: _wifiCard())]),
-        ],
         if (_autoClosedPrevious != null) ...[
           const SizedBox(height: 16),
           _autoClosedBanner(),
@@ -741,6 +737,27 @@ class HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _gpsCard(AttendanceStatus s) {
+    // Wi-Fi gate indicator beside the GPS arrow (replaces the old
+    // full-width Wi-Fi card). Derived from the same inputs as the
+    // tap-time pre-check so the two can never disagree; hidden for
+    // every pre-check exemption (gate off, flexible location, dev).
+    final ind = wifiIndicator(
+      status: s,
+      wifi: _lastWifi,
+      devLocation: DevConstants.useDevLocation,
+    );
+    IconData? wifiIcon;
+    Color? wifiColor;
+    if (ind == WifiIndicator.pending) {
+      wifiIcon = Icons.wifi_rounded;
+      wifiColor = AppTheme.outline;
+    } else if (ind == WifiIndicator.ok) {
+      wifiIcon = Icons.wifi_rounded;
+      wifiColor = const Color(0xFF22C55E);
+    } else if (ind == WifiIndicator.bad) {
+      wifiIcon = Icons.wifi_off_rounded;
+      wifiColor = AppTheme.error;
+    }
     if (DevConstants.useDevLocation) {
       return InfoCard(
         icon: Icons.developer_mode,
@@ -757,6 +774,8 @@ class HomeScreenState extends State<HomeScreen> {
         iconColor: AppTheme.outline,
         label: 'GPS Status',
         value: 'No office',
+        secondaryIcon: wifiIcon,
+        secondaryIconColor: wifiColor,
       );
     }
     if (_gpsCoarseFailed && _currentDistanceMeters == null) {
@@ -765,6 +784,8 @@ class HomeScreenState extends State<HomeScreen> {
         iconColor: AppTheme.error,
         label: 'GPS Status',
         value: 'Unavailable',
+        secondaryIcon: wifiIcon,
+        secondaryIconColor: wifiColor,
       );
     }
     if (_currentDistanceMeters == null) {
@@ -773,6 +794,8 @@ class HomeScreenState extends State<HomeScreen> {
         iconColor: AppTheme.outline,
         label: 'GPS Status',
         value: 'Locating…',
+        secondaryIcon: wifiIcon,
+        secondaryIconColor: wifiColor,
       );
     }
     final inside = _isInsideRadius(s, _currentDistanceMeters!);
@@ -786,6 +809,8 @@ class HomeScreenState extends State<HomeScreen> {
         value: 'Remote',
         suffix: distLabel,
         suffixColor: AppTheme.outline,
+        secondaryIcon: wifiIcon,
+        secondaryIconColor: wifiColor,
       );
     }
     return InfoCard(
@@ -795,47 +820,14 @@ class HomeScreenState extends State<HomeScreen> {
       value: inside ? 'Office' : 'Outside',
       suffix: distLabel,
       suffixColor: inside ? const Color(0xFF22C55E) : AppTheme.error,
+      secondaryIcon: wifiIcon,
+      secondaryIconColor: wifiColor,
     );
   }
 
   String _formatDistance(double m) {
     if (m < 1000) return '${m.round()}m';
     return '${(m / 1000).toStringAsFixed(1)}km';
-  }
-
-  /// Wi-Fi gate status chip — only rendered when the office requires
-  /// Wi-Fi (`_status.wifiRequired`). Same InfoCard idiom as _gpsCard:
-  /// neutral (outline) before the first sample, green once the
-  /// connected network matches an expected SSID, red otherwise — so
-  /// this can never disagree with the tap-time gate in
-  /// wifiPreCheckErrorCode, which drives the same three outcomes.
-  Widget _wifiCard() {
-    // Wi-Fi gate chip state (only when the office requires Wi-Fi).
-    final wifi = _lastWifi;
-    final String wifiValue;
-    final bool wifiOk;
-    if (wifi == null) {
-      wifiValue = 'Wi-Fi'; // not yet sampled — neutral
-      wifiOk = true;
-    } else if (!wifi.isReady) {
-      wifiValue = 'Not connected';
-      wifiOk = false;
-    } else if (_status!.expectedSsids.contains(wifi.ssid)) {
-      wifiValue = 'Office Wi-Fi';
-      wifiOk = true;
-    } else {
-      wifiValue = 'Wrong network';
-      wifiOk = false;
-    }
-    final confirmed = wifi != null && wifi.isReady && wifiOk;
-    return InfoCard(
-      icon: wifiOk ? Icons.wifi_rounded : Icons.wifi_off_rounded,
-      iconColor: !wifiOk
-          ? AppTheme.error
-          : (confirmed ? const Color(0xFF22C55E) : AppTheme.outline),
-      label: 'Wi-Fi',
-      value: wifiValue,
-    );
   }
 
   Widget _statusCard(AttendanceStatus s) {

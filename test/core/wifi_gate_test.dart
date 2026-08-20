@@ -82,4 +82,73 @@ void main() {
           isNull);
     });
   });
+
+  group('wifiIndicator', () {
+    test('hidden when gate not required, status missing, flexible, or dev',
+        () {
+      expect(
+          wifiIndicator(
+              status: _status(wifiRequired: false, ssids: const []),
+              wifi: null,
+              devLocation: false),
+          WifiIndicator.hidden);
+      expect(wifiIndicator(status: null, wifi: null, devLocation: false),
+          WifiIndicator.hidden);
+      expect(
+          wifiIndicator(
+              status: _status(flexible: true), wifi: null, devLocation: false),
+          WifiIndicator.hidden);
+      expect(
+          wifiIndicator(
+              status: _status(),
+              wifi: const WifiInfoResult.notConnected(),
+              devLocation: true),
+          WifiIndicator.hidden);
+    });
+
+    test('pending before the first sample', () {
+      expect(wifiIndicator(status: _status(), wifi: null, devLocation: false),
+          WifiIndicator.pending);
+    });
+
+    test('ok on a recognized office SSID', () {
+      expect(
+          wifiIndicator(
+              status: _status(),
+              wifi: const WifiInfoResult.ready(ssid: 'Office-WiFi'),
+              devLocation: false),
+          WifiIndicator.ok);
+    });
+
+    test('bad when not connected or on an unrecognized network', () {
+      expect(
+          wifiIndicator(
+              status: _status(),
+              wifi: const WifiInfoResult.notConnected(),
+              devLocation: false),
+          WifiIndicator.bad);
+      expect(
+          wifiIndicator(
+              status: _status(),
+              wifi: const WifiInfoResult.ready(ssid: 'Neighbor'),
+              devLocation: false),
+          WifiIndicator.bad);
+    });
+
+    test('never disagrees with the tap-time pre-check', () {
+      // ok  <=> pre-check passes; bad <=> pre-check names a deny code.
+      for (final wifi in const [
+        WifiInfoResult.notConnected(),
+        WifiInfoResult.unreadable('permission denied'),
+        WifiInfoResult.ready(ssid: 'Office-WiFi'),
+        WifiInfoResult.ready(ssid: 'Neighbor'),
+      ]) {
+        final code = wifiPreCheckErrorCode(
+            status: _status(), wifi: wifi, devLocation: false);
+        final ind =
+            wifiIndicator(status: _status(), wifi: wifi, devLocation: false);
+        expect(ind == WifiIndicator.bad, code != null, reason: '$wifi');
+      }
+    });
+  });
 }
