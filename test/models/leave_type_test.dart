@@ -40,5 +40,23 @@ void main() {
       expect(t.backdateLimitDays, 0);
       expect(t.earliestBackdateDate, isNull);
     });
+
+    test('parses hours_per_day; null on older connectors', () {
+      final t = LeaveType.fromJson({
+        'id': 4,
+        'name': 'Hourly',
+        'requires_allocation': true,
+        'request_unit': 'hour',
+        'virtual_remaining_leaves': 112.0,
+        'hours_per_day': 8.0,
+      });
+      expect(t.hoursPerDay, 8.0);
+      final legacy = LeaveType.fromJson({
+        'id': 5,
+        'name': 'Legacy',
+        'requires_allocation': true,
+      });
+      expect(legacy.hoursPerDay, isNull);
+    });
   });
 }

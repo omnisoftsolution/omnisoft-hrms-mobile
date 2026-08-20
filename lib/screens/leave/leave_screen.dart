@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme.dart';
 import '../../core/error_messages.dart';
+import '../../core/leave_units.dart';
 import '../../models/leave_type.dart';
 import '../../services/holiday_service.dart';
 import '../../services/omni_mobile_api.dart';
@@ -44,11 +45,12 @@ import '../../utils/leave_backdate.dart';
       color: AppTheme.error,
     );
   }
-  final s = n == n.roundToDouble()
-      ? n.toInt().toString()
-      : n.toStringAsFixed(1);
+  // Hour-unit types render hours-first with the day equivalent from
+  // the server-provided hours_per_day: "112h (14d) left".
+  final amount = balanceAmountLabel(n, t.requestUnit, t.hoursPerDay,
+      longForm: longForm);
   return (
-    label: longForm ? '$s $unitNoun remaining' : '$s$suffix left',
+    label: longForm ? '$amount remaining' : '$amount left',
     color: AppTheme.onSurfaceVariant,
   );
 }
@@ -306,6 +308,18 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
   bool get _isHalfDay => widget.leaveType.requestUnit == 'half_day';
   bool get _isHourly => widget.leaveType.requestUnit == 'hour';
 
+  // Hour-unit types are two-mode: full day(s) by default (a plain
+  // range request — Odoo computes the hours), or specific hours on a
+  // single date (Odoo custom hours). Only the latter sends
+  // hour_from/hour_to.
+  bool _hourlyAllDay = true;
+  bool get _hourlyCustom => _isHourly && !_hourlyAllDay;
+
+  double get _hoursPerDay {
+    final h = widget.leaveType.hoursPerDay;
+    return (h != null && h > 0) ? h : kFallbackHoursPerDay;
+  }
+
   double _todToFloat(TimeOfDay t) => t.hour + t.minute / 60.0;
   double get _hourCount => _todToFloat(_hourTo) - _todToFloat(_hourFrom);
 
@@ -348,7 +362,7 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
 
   /// Half-day mode rejects pm→am on the same date (would be 0 days).
   bool get _periodValid {
-    if (_isHourly) return _hourCount > 0;
+    if (_isHourly) return _hourlyAllDay ? _dayCount > 0 : _hourCount > 0;
     if (!_isHalfDay) return true;
     if (_isSameDate && _fromPeriod == 'pm' && _toPeriod == 'am') return false;
     return _dayCount > 0;
@@ -360,7 +374,7 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
     final lastDate = DateTime(today.year, today.month, today.day)
         .add(const Duration(days: 365));
     final holidays = context.read<HolidayService>();
-    if (_isHourly) {
+    if (_hourlyCustom) {
       final picked = await showAutoDatePicker(
         context: context,
         initialDate: _dateFrom,
@@ -423,9 +437,11 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
 
   Future<void> _submit() async {
     if (!_periodValid) {
-      setState(() => _error = _isHourly
+      setState(() => _error = _hourlyCustom
           ? 'End time must be after start time.'
-          : 'Afternoon → Morning on the same date is not a valid range.');
+          : _isHourly
+              ? 'The selected range contains no working days.'
+              : 'Afternoon → Morning on the same date is not a valid range.');
       return;
     }
     if (widget.leaveType.mobileRequiresDocument && _document == null) {
@@ -448,12 +464,12 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
         holidayStatusId: widget.leaveType.id,
         dateFrom: DateFormat('yyyy-MM-dd').format(_dateFrom),
         dateTo: DateFormat('yyyy-MM-dd').format(
-            _isHourly ? _dateFrom : _dateTo),
+            _hourlyCustom ? _dateFrom : _dateTo),
         reason: _reasonController.text.trim(),
         dateFromPeriod: _isHalfDay ? _fromPeriod : null,
         dateToPeriod: _isHalfDay ? _toPeriod : null,
-        hourFrom: _isHourly ? _todToFloat(_hourFrom) : null,
-        hourTo: _isHourly ? _todToFloat(_hourTo) : null,
+        hourFrom: _hourlyCustom ? _todToFloat(_hourFrom) : null,
+        hourTo: _hourlyCustom ? _todToFloat(_hourTo) : null,
         attachment: _document?.toApiJson(),
       );
       if (!mounted) return;
@@ -658,6 +674,23 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
                 style: TextStyle(fontSize: 12, color: AppTheme.error),
               ),
             ),
+          if (_isHourly) ...[
+            const SizedBox(height: 16),
+            SegmentedButton<bool>(
+              segments: const [
+                ButtonSegment(value: true, label: Text('Full day(s)')),
+                ButtonSegment(value: false, label: Text('Specific hours')),
+              ],
+              selected: {_hourlyAllDay},
+              onSelectionChanged: (selection) => setState(() {
+                _hourlyAllDay = selection.first;
+                // Custom hours are single-day by Odoo semantics; clamp
+                // the range when switching into that mode.
+                if (!_hourlyAllDay) _dateTo = _dateFrom;
+                _error = null;
+              }),
+            ),
+          ],
           const SizedBox(height: 20),
           InkWell(
             onTap: _pickRange,
@@ -678,15 +711,17 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(_isHourly ? 'Leave date' : 'Leave dates',
+                        Text(_hourlyCustom ? 'Leave date' : 'Leave dates',
                             style: TextStyle(
                                 fontSize: 12,
                                 color: AppTheme.onSurfaceVariant)),
                         const SizedBox(height: 2),
                         Text(
-                          _isHourly
+                          _hourlyCustom
                               ? '${fmt.format(_dateFrom)}  ·  $_hourLabel'
-                              : '${fmt.format(_dateFrom)} → ${fmt.format(_dateTo)}  ·  $_dayCountLabel',
+                              : _isHourly
+                                  ? '${fmt.format(_dateFrom)} → ${fmt.format(_dateTo)}  ·  ${compactDaysWithHours(_dayCount, _hoursPerDay)}'
+                                  : '${fmt.format(_dateFrom)} → ${fmt.format(_dateTo)}  ·  $_dayCountLabel',
                           style: const TextStyle(
                               fontSize: 14, fontWeight: FontWeight.w600),
                         ),
@@ -698,7 +733,7 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
               ),
             ),
           ),
-          if (_isHourly) ...[
+          if (_hourlyCustom) ...[
             const SizedBox(height: 12),
             Row(
               children: [
