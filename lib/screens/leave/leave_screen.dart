@@ -836,8 +836,15 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
     // reuses _dayCountLabel / _hourLabel so the receipt agrees with
     // what the user just saw.
     String datesBlurb;
-    if (_isHourly) {
+    if (_hourlyCustom) {
       datesBlurb = '${fmt.format(_dateFrom)}  ·  $_hourLabel';
+    } else if (_isHourly) {
+      // Full-day mode on an hour-unit type: range + day/hour duration,
+      // matching the date box ("24 Aug 2026 → 28 Aug 2026 · 5d (40h)").
+      final dur = compactDaysWithHours(_dayCount, _hoursPerDay);
+      datesBlurb = _isSameDate
+          ? '${fmt.format(_dateFrom)}  ·  $dur'
+          : '${fmt.format(_dateFrom)} → ${fmt.format(_dateTo)}  ·  $dur';
     } else if (_isHalfDay) {
       final period = '${_fromPeriod.toUpperCase()} → ${_toPeriod.toUpperCase()}';
       datesBlurb = _isSameDate
