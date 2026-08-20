@@ -548,6 +548,9 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
     if (r.hourTo != null) {
       _hourTo = _floatToTod(r.hourTo!);
     }
+    // Full-day hour leaves come back with hour fields 0/absent; custom
+    // hours always end after 0:00.
+    _hourlyAllDay = !((r.hourTo ?? 0) > 0);
     _reasonController = TextEditingController(text: r.reason);
     _existingAttachments = List<LeaveAttachment>.from(r.attachments);
   }
@@ -622,6 +625,13 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
   bool get _isHalfDay => widget.record.requestUnit == 'half_day';
   bool get _isHourly => widget.record.requestUnit == 'hour';
 
+  // Two-mode editing for hour-unit leaves, mirroring the apply sheet:
+  // full day(s) (range, no hour fields) vs specific hours (single
+  // date + times). Initialized in initState from whether the record
+  // was created with custom hours.
+  bool _hourlyAllDay = true;
+  bool get _hourlyCustom => _isHourly && !_hourlyAllDay;
+
   bool get _isSameDate =>
       _dateFrom.year == _dateTo.year &&
       _dateFrom.month == _dateTo.month &&
@@ -659,7 +669,7 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
   }
 
   bool get _periodValid {
-    if (_isHourly) return _hourCount > 0;
+    if (_isHourly) return _hourlyAllDay ? _dayCount > 0 : _hourCount > 0;
     if (!_isHalfDay) return true;
     if (_isSameDate && _fromPeriod == 'pm' && _toPeriod == 'am') return false;
     return _dayCount > 0;
@@ -671,7 +681,7 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
     final lastDate = DateTime(today.year, today.month, today.day)
         .add(const Duration(days: 365));
     final holidays = context.read<HolidayService>();
-    if (_isHourly) {
+    if (_hourlyCustom) {
       final picked = await showAutoDatePicker(
         context: context,
         initialDate: _dateFrom.isBefore(firstDate) ? firstDate : _dateFrom,
@@ -738,9 +748,11 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
 
   Future<void> _submit() async {
     if (!_periodValid) {
-      setState(() => _error = _isHourly
+      setState(() => _error = _hourlyCustom
           ? 'End time must be after start time.'
-          : 'Afternoon → Morning on the same date is not a valid range.');
+          : _isHourly
+              ? 'The selected range contains no working days.'
+              : 'Afternoon → Morning on the same date is not a valid range.');
       return;
     }
     if (!_docRequirementMet) {
@@ -757,12 +769,12 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
         leaveId: widget.record.id,
         dateFrom: DateFormat('yyyy-MM-dd').format(_dateFrom),
         dateTo: DateFormat('yyyy-MM-dd').format(
-            _isHourly ? _dateFrom : _dateTo),
+            _hourlyCustom ? _dateFrom : _dateTo),
         reason: _reasonController.text.trim(),
         dateFromPeriod: _isHalfDay ? _fromPeriod : null,
         dateToPeriod: _isHalfDay ? _toPeriod : null,
-        hourFrom: _isHourly ? _todToFloat(_hourFrom) : null,
-        hourTo: _isHourly ? _todToFloat(_hourTo) : null,
+        hourFrom: _hourlyCustom ? _todToFloat(_hourFrom) : null,
+        hourTo: _hourlyCustom ? _todToFloat(_hourTo) : null,
         attachment: _document?.toApiJson(),
       );
       if (!mounted) return;
@@ -907,6 +919,21 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
                 .titleMedium
                 ?.copyWith(fontWeight: FontWeight.w700),
           ),
+          if (_isHourly) ...[
+            const SizedBox(height: 16),
+            SegmentedButton<bool>(
+              segments: const [
+                ButtonSegment(value: true, label: Text('Full day(s)')),
+                ButtonSegment(value: false, label: Text('Specific hours')),
+              ],
+              selected: {_hourlyAllDay},
+              onSelectionChanged: (selection) => setState(() {
+                _hourlyAllDay = selection.first;
+                if (!_hourlyAllDay) _dateTo = _dateFrom;
+                _error = null;
+              }),
+            ),
+          ],
           const SizedBox(height: 20),
           InkWell(
             onTap: _pickRange,
@@ -933,7 +960,7 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
                                 color: AppTheme.onSurfaceVariant)),
                         const SizedBox(height: 2),
                         Text(
-                          _isHourly
+                          _hourlyCustom
                               ? '${fmt.format(_dateFrom)}  ·  $_hourLabel'
                               : '${fmt.format(_dateFrom)} → ${fmt.format(_dateTo)}  ·  $_dayCountLabel',
                           style: const TextStyle(
@@ -947,7 +974,7 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
               ),
             ),
           ),
-          if (_isHourly) ...[
+          if (_hourlyCustom) ...[
             const SizedBox(height: 12),
             Row(
               children: [

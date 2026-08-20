@@ -18,6 +18,11 @@ class LeaveType {
   final double? leavesTaken;
   final double? virtualRemainingLeaves;
 
+  // Employee's working hours per day (connector 2.39.1+). Used to show
+  // a day equivalent next to hour-unit balances; null on older
+  // connectors (callers fall back to 8).
+  final double? hoursPerDay;
+
   LeaveType({
     required this.id,
     required this.name,
@@ -32,6 +37,7 @@ class LeaveType {
     this.maxLeaves,
     this.leavesTaken,
     this.virtualRemainingLeaves,
+    this.hoursPerDay,
   });
 
   factory LeaveType.fromJson(Map<String, dynamic> json) {
@@ -49,6 +55,7 @@ class LeaveType {
       maxLeaves: _toDouble(json['max_leaves']),
       leavesTaken: _toDouble(json['leaves_taken']),
       virtualRemainingLeaves: _toDouble(json['virtual_remaining_leaves']),
+      hoursPerDay: _toDouble(json['hours_per_day']),
     );
   }
 
