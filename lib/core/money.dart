@@ -1,5 +1,6 @@
 import 'package:intl/intl.dart';
 
+import '../models/currency_option.dart';
 import '../models/expense_record.dart';
 import '../models/payslip_record.dart';
 
@@ -78,3 +79,42 @@ String expenseListAmount(ExpenseRecord r) =>
 /// Net amount for a payslip row, in the payslip's actual currency.
 String payslipAmount(PayslipRecord r) =>
     MoneyFormatter.format(r.netAmount, r.currency);
+
+/// Sentinel returned by [conversionPreview] when the selected foreign
+/// currency has no configured rate — the caller renders it as a
+/// warning instead of an estimate.
+const String kRateNotConfigured = 'rate not configured';
+
+/// Input cap in the SELECTED currency (spec §6): the server's
+/// company-currency cap divided by the informational rate. Falls back
+/// to the generic sanity bound when the rate is unknown, and to the
+/// legacy 99,999.99 when there is no currency list at all (old
+/// server — identical to pre-1.23 behavior).
+double amountCapFor(CurrencyOption? selected, CurrencyListResult? list) {
+  const legacyCap = 99999.99;
+  const sanityCap = 999999999.0;
+  if (list == null) return legacyCap;
+  final serverCap = list.expenseAmountMax ?? legacyCap;
+  if (selected == null || selected.isCompanyCurrency) return serverCap;
+  final rate = selected.rateToCompany;
+  if (rate == null || rate <= 0) return sanityCap;
+  return serverCap / rate;
+}
+
+/// The "≈ $ 42.10 (estimate)" line under the amount field. Null =
+/// show nothing (company currency, nothing selected, or the typed
+/// amount doesn't parse). [kRateNotConfigured] = show the warning.
+String? conversionPreview(
+    String rawAmount, CurrencyOption? selected, CurrencyListResult? list) {
+  if (list == null || selected == null || selected.isCompanyCurrency) {
+    return null;
+  }
+  final v = double.tryParse(rawAmount.trim());
+  if (v == null || !v.isFinite || v <= 0) return null;
+  final rate = selected.rateToCompany;
+  if (rate == null || rate <= 0) return kRateNotConfigured;
+  final company = list.companyOption;
+  if (company == null) return null;
+  final converted = MoneyFormatter.format(v * rate, company.info);
+  return '≈ $converted (estimate)';
+}

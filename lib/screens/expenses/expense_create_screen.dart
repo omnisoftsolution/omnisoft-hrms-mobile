@@ -4,58 +4,67 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/constants.dart';
 import '../../core/theme.dart';
 import '../../core/error_messages.dart';
+import '../../core/money.dart';
 import '../../core/pdf_raster.dart';
+import '../../models/currency_option.dart';
 import '../../models/expense_record.dart';
 import '../../services/omni_mobile_api.dart';
 import '../../services/session_service.dart';
 import '../../widgets/labeled_field.dart';
 import '../../widgets/primary_button.dart';
 
-// MVP cap for a single expense submission. Big enough for almost any
-// SGD/USD expense, small enough that bad input ("1e25") is unambiguous.
-// TODO(configurable_limit): move to
-// ir.config_parameter("omni_hrms_mobile.expense_max_amount") if a
-// customer ever needs a higher cap.
-const double _kExpenseAmountMax = 99999.99;
-
 /// Returns (parsed value, error). When error != null the value is
 /// null. Empty input gets its own error so the disabled-submit state
 /// and the inline message stay in sync. The backend runs the same
 /// rules in Decimal — see controllers/main.py `_validate_expense_amount`.
-(double?, String?) _parseExpenseAmount(String raw) {
+/// [maxAmount]/[decimalPlaces] vary per selected currency (spec §6);
+/// callers without a currency list keep the legacy defaults.
+(double?, String?) _parseExpenseAmount(
+  String raw, {
+  int decimalPlaces = 2,
+  double maxAmount = 99999.99,
+}) {
+  final capStr = decimalPlaces > 0
+      ? NumberFormat('#,##0.00').format(maxAmount)
+      : NumberFormat('#,##0').format(maxAmount);
+  final generic =
+      'Enter a valid amount up to $capStr with max $decimalPlaces decimals.';
   final s = raw.trim();
   if (s.isEmpty) return (null, 'Amount is required.');
-  if (s.contains(RegExp(r'[eE,]'))) {
-    return (null,
-        'Enter a valid amount up to 99,999.99 with max 2 decimals.');
-  }
+  if (s.contains(RegExp(r'[eE,]'))) return (null, generic);
   final v = double.tryParse(s);
-  if (v == null || !v.isFinite) {
-    return (null,
-        'Enter a valid amount up to 99,999.99 with max 2 decimals.');
-  }
+  if (v == null || !v.isFinite) return (null, generic);
   if (v <= 0) return (null, 'Amount must be greater than zero.');
-  if (v > _kExpenseAmountMax) {
+  if (v > maxAmount) return (null, generic);
+  final decRe = decimalPlaces > 0
+      ? RegExp('^\\d+(\\.\\d{1,$decimalPlaces})?\$')
+      : RegExp(r'^\d+$');
+  if (!decRe.hasMatch(s)) {
     return (null,
-        'Enter a valid amount up to 99,999.99 with max 2 decimals.');
-  }
-  if (!RegExp(r'^\d+(\.\d{1,2})?$').hasMatch(s)) {
-    return (null, 'Max 2 decimal places.');
+        decimalPlaces > 0
+            ? 'Max $decimalPlaces decimal places.'
+            : 'This currency does not use decimals.');
   }
   return (v, null);
 }
 
 /// Rejects any keystroke that would leave the field in an invalid
-/// state — bounds the input to "up to 5 digits + optional .DD". The
-/// runtime parser still has the final say (catches blank, leading
-/// dot, etc.).
+/// state — bounds the input to "up to [maxIntDigits] digits + optional
+/// .DD" (digit count varies with [decimalPlaces]). The runtime parser
+/// still has the final say (catches blank, leading dot, etc.).
 class _AmountInputFormatter extends TextInputFormatter {
-  static final _re = RegExp(r'^\d{0,5}(\.\d{0,2})?$');
+  final RegExp _re;
+  _AmountInputFormatter({int decimalPlaces = 2, int maxIntDigits = 5})
+      : _re = decimalPlaces > 0
+            ? RegExp('^\\d{0,$maxIntDigits}(\\.\\d{0,$decimalPlaces})?\$')
+            : RegExp('^\\d{0,$maxIntDigits}\$');
   @override
   TextEditingValue formatEditUpdate(
       TextEditingValue oldValue, TextEditingValue newValue) {
@@ -105,6 +114,15 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
   int _pdfPageCount = 0;
   bool _rasterizingPdf = false;
 
+  CurrencyListResult? _currencyList;
+  CurrencyOption? _selectedCurrency;
+
+  bool get _showCurrencyPicker =>
+      _currencyList?.hasMultipleCurrencies ?? false;
+  int get _decimalPlaces => _selectedCurrency?.info.decimalPlaces ?? 2;
+  double get _maxAmount => amountCapFor(_selectedCurrency, _currencyList);
+  int get _maxIntDigits => _maxAmount >= 1000000 ? 9 : 5;
+
   bool _loadingCategories = true;
   /// Friendly message set when the category fetch itself FAILED (offline,
   /// server error). Distinct from "loaded fine but the company has zero
@@ -125,12 +143,15 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
     final r = widget.editingRecord;
     if (r != null) {
       _descriptionController.text = r.name;
-      _amountController.text = r.totalAmount.toStringAsFixed(2);
+      // The receipt (original) figure — decimals are corrected once
+      // currencies load; acceptable transitional state.
+      _amountController.text = r.origAmount.toStringAsFixed(2);
       _paymentMode = r.paymentMode;
       final parsedDate = DateTime.tryParse(r.date);
       if (parsedDate != null) _selectedDate = parsedDate;
     }
     _loadCategories();
+    _loadCurrencies();
   }
 
   @override
@@ -180,6 +201,48 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
         _categoryError = friendlyError(e);
       });
     }
+  }
+
+  Future<void> _loadCurrencies() async {
+    final session = context.read<SessionService>();
+    final prefs = await SharedPreferences.getInstance();
+    const cacheKey = 'currency_list_cache';
+    final api = OmniMobileApi(
+      baseUrl: session.clientUrl,
+      db: session.clientDb,
+      token: session.token,
+    );
+    var result = await api.getCurrencyList();
+    if (result != null) {
+      await prefs.setString(cacheKey, jsonEncode(result.toJson()));
+    } else {
+      // Old server or transient failure: last-known-good keeps the
+      // picker stable across network blips; a genuinely old server
+      // never wrote the cache, so this stays null there.
+      final cached = prefs.getString(cacheKey);
+      if (cached != null) {
+        try {
+          result = CurrencyListResult.fromJson(
+              jsonDecode(cached) as Map<String, dynamic>);
+        } catch (_) {}
+      }
+    }
+    if (!mounted) return;
+    setState(() {
+      _currencyList = result;
+      _selectedCurrency ??= _initialCurrency(result);
+    });
+  }
+
+  CurrencyOption? _initialCurrency(CurrencyListResult? list) {
+    if (list == null) return null;
+    final r = widget.editingRecord;
+    if (r != null && r.origCurrency.id != 0) {
+      for (final c in list.currencies) {
+        if (c.info.id == r.origCurrency.id) return c;
+      }
+    }
+    return list.companyOption;
   }
 
   /// Camera is the primary "Attach receipt" action — receipts are
@@ -313,7 +376,8 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
   }
 
   bool get _canSubmit {
-    final (parsed, _) = _parseExpenseAmount(_amountController.text);
+    final (parsed, _) = _parseExpenseAmount(_amountController.text,
+        decimalPlaces: _decimalPlaces, maxAmount: _maxAmount);
     // In edit mode the existing receipt is preserved server-side
     // when we omit the attachment field. So a new pick is OPTIONAL
     // even when the dev flag would normally require one.
@@ -331,8 +395,16 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
   /// something — we don't shout "Amount is required." on first open.
   String? get _amountInlineError {
     if (_amountController.text.trim().isEmpty) return null;
-    return _parseExpenseAmount(_amountController.text).$2;
+    return _parseExpenseAmount(_amountController.text,
+            decimalPlaces: _decimalPlaces, maxAmount: _maxAmount)
+        .$2;
   }
+
+  /// The "≈ $ 42.10 (estimate)" line under the amount field, or the
+  /// [kRateNotConfigured] sentinel for a foreign currency with no
+  /// configured rate. Null hides the row entirely.
+  String? get _conversionLine => conversionPreview(
+      _amountController.text, _selectedCurrency, _currencyList);
 
   String _humanize(String code) {
     switch (code) {
@@ -348,6 +420,9 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
         return 'Amount must be greater than zero.';
       case 'no_currency':
         return 'Your company has no currency configured.';
+      case 'currency_invalid':
+        return 'That currency is not enabled for your company. '
+            'Pick another or ask your administrator.';
       case 'attachment_too_large':
         return 'Receipt is too large. Try a smaller image.';
       case 'invalid_attachment':
@@ -425,8 +500,10 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
       // garbage the user then has to clear.
       bool ocrAmountValid = false;
       if (ocr.amount != null) {
-        final (v, _) =
-            _parseExpenseAmount(ocr.amount!.toStringAsFixed(2));
+        final (v, _) = _parseExpenseAmount(
+            ocr.amount!.toStringAsFixed(2),
+            decimalPlaces: _decimalPlaces,
+            maxAmount: _maxAmount);
         ocrAmountValid = v != null;
       }
       setState(() {
@@ -498,10 +575,24 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
       final amount = double.parse(_amountController.text.trim());
       final dateStr = _selectedDate.toIso8601String().substring(0, 10);
       final hasReceipt = _receiptBytes != null;
+      final selected = _selectedCurrency;
+      final sendCurrencyId =
+          (selected != null && !selected.isCompanyCurrency)
+              ? selected.info.id
+              : null;
       final r = widget.editingRecord;
       if (r != null) {
         // Edit mode: only the new receipt (if any) is sent; the
         // server preserves the existing one when attachment is omitted.
+        // Currency is trickier: omitting the key means "keep the
+        // existing currency", which is correct when unchanged — but
+        // if the record WAS foreign and the user switched back to
+        // company currency, the server must be told explicitly.
+        final modifyCurrencyId = (selected != null &&
+                selected.info.id != r.origCurrency.id &&
+                (r.origCurrency.id != 0 || !selected.isCompanyCurrency))
+            ? selected.info.id
+            : sendCurrencyId;
         await api.modifyExpense(
           expenseId: r.id,
           productId: _selectedCategory!.id,
@@ -509,6 +600,7 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
           totalAmount: amount,
           date: dateStr,
           paymentMode: _paymentMode,
+          currencyId: modifyCurrencyId,
           attachmentName: hasReceipt
               ? (_receiptName.isEmpty ? 'receipt.jpg' : _receiptName)
               : null,
@@ -526,6 +618,7 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
         totalAmount: amount,
         date: dateStr,
         paymentMode: _paymentMode,
+        currencyId: sendCurrencyId,
         attachmentName: hasReceipt
             ? (_receiptName.isEmpty ? 'receipt.jpg' : _receiptName)
             : null,
@@ -566,15 +659,57 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
             const SizedBox(height: 16),
             _dateField(),
             const SizedBox(height: 16),
-            LabeledField(
-              label: 'Amount',
-              controller: _amountController,
-              prefixIcon: Icons.attach_money_rounded,
-              keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true),
-              inputFormatters: [_AmountInputFormatter()],
-              onChanged: (_) => setState(() {}),
-            ),
+            if (_showCurrencyPicker)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Expanded(
+                    child: LabeledField(
+                      label: 'Amount',
+                      controller: _amountController,
+                      prefixIcon: Icons.attach_money_rounded,
+                      keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true),
+                      inputFormatters: [
+                        _AmountInputFormatter(
+                            decimalPlaces: _decimalPlaces,
+                            maxIntDigits: _maxIntDigits),
+                      ],
+                      onChanged: (_) => setState(() {}),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  SizedBox(
+                    width: 110,
+                    child: DropdownButtonFormField<CurrencyOption>(
+                      initialValue: _selectedCurrency,
+                      items: [
+                        for (final c in _currencyList!.currencies)
+                          DropdownMenuItem(
+                            value: c,
+                            child: Text(c.info.code),
+                          ),
+                      ],
+                      onChanged: (c) =>
+                          setState(() => _selectedCurrency = c),
+                    ),
+                  ),
+                ],
+              )
+            else
+              LabeledField(
+                label: 'Amount',
+                controller: _amountController,
+                prefixIcon: Icons.attach_money_rounded,
+                keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true),
+                inputFormatters: [
+                  _AmountInputFormatter(
+                      decimalPlaces: _decimalPlaces,
+                      maxIntDigits: _maxIntDigits),
+                ],
+                onChanged: (_) => setState(() {}),
+              ),
             if (_amountInlineError != null)
               Padding(
                 padding: const EdgeInsets.only(left: 4, top: 6),
@@ -583,6 +718,20 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
                   style: TextStyle(
                     fontSize: 12,
                     color: AppTheme.error,
+                  ),
+                ),
+              ),
+            if (_conversionLine != null)
+              Padding(
+                padding: const EdgeInsets.only(left: 4, top: 6),
+                child: Text(
+                  _conversionLine == kRateNotConfigured
+                      ? 'Exchange rate not configured — the reimbursed '
+                          'amount will be set by your administrator.'
+                      : _conversionLine!,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppTheme.onSurfaceVariant,
                   ),
                 ),
               ),
