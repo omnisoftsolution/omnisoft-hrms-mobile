@@ -1,5 +1,8 @@
 import 'package:intl/intl.dart';
 
+import '../models/expense_record.dart';
+import '../models/payslip_record.dart';
+
 /// Formatting identity of one currency, served by the connector
 /// (2.40.0+) per res.currency. Constructed with fallbacks so an old
 /// server (no symbol/position/decimals in the payload) reproduces the
@@ -65,3 +68,13 @@ class MoneyFormatter {
     return c.position == 'after' ? '$number $label' : '$label $number';
   }
 }
+
+/// List/hero amount for an expense: the RECEIPT (original) figure —
+/// what the employee actually spent (spec §5.3). Legacy payloads fall
+/// back to total_amount + code-prefix rendering via the model defaults.
+String expenseListAmount(ExpenseRecord r) =>
+    MoneyFormatter.format(r.origAmount, r.origCurrency);
+
+/// Net amount for a payslip row, in the payslip's actual currency.
+String payslipAmount(PayslipRecord r) =>
+    MoneyFormatter.format(r.netAmount, r.currency);

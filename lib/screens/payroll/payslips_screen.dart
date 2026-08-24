@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/theme.dart';
 import '../../core/error_messages.dart';
+import '../../core/money.dart';
 import '../../models/payslip_record.dart';
 import '../../services/omni_mobile_api.dart';
 import '../../services/session_service.dart';
@@ -276,7 +277,7 @@ class PayslipsScreenState extends State<PayslipsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(
-                    _formatAmount(r),
+                    payslipAmount(r),
                     style: const TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w800,
@@ -321,11 +322,6 @@ class PayslipsScreenState extends State<PayslipsScreen> {
     }
     return '${DateFormat('d MMM').format(from)} – '
         '${DateFormat('d MMM yyyy').format(to)}';
-  }
-
-  String _formatAmount(PayslipRecord r) {
-    final amt = r.netAmount.toStringAsFixed(2);
-    return r.currencyName.isEmpty ? amt : '${r.currencyName} $amt';
   }
 
   Color _stateColor(String state) {
