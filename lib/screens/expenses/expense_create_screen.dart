@@ -495,6 +495,21 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
       }
       final parsedDate =
           ocr.date.isEmpty ? null : DateTime.tryParse(ocr.date);
+      // Match OCR-detected currency against the active list.
+      CurrencyOption? ocrCurrency;
+      String? currencyNotice;
+      if (ocr.currency.isNotEmpty && _showCurrencyPicker) {
+        ocrCurrency = matchOcrCurrency(ocr.currency, _currencyList);
+        if (ocrCurrency != null) {
+          currencyNotice = '${ocrCurrency.info.code} detected from receipt.';
+        } else {
+          final companyCode =
+              _currencyList?.companyOption?.info.code ?? '';
+          currencyNotice =
+              'Receipt currency ${ocr.currency.toUpperCase()} is not '
+              'enabled; amount recorded in $companyCode.';
+        }
+      }
       // OCR amounts can be way off (misread decimals, embedded year as
       // amount, etc.). Validate before applying so we don't pre-fill
       // garbage the user then has to clear.
@@ -502,8 +517,8 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
       if (ocr.amount != null) {
         final (v, _) = _parseExpenseAmount(
             ocr.amount!.toStringAsFixed(2),
-            decimalPlaces: _decimalPlaces,
-            maxAmount: _maxAmount);
+            decimalPlaces: ocrCurrency?.info.decimalPlaces ?? _decimalPlaces,
+            maxAmount: amountCapFor(ocrCurrency ?? _selectedCurrency, _currencyList));
         ocrAmountValid = v != null;
       }
       setState(() {
@@ -515,6 +530,7 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
         }
         if (parsedDate != null) _selectedDate = parsedDate;
         if (matched != null) _selectedCategory = matched;
+        if (ocrCurrency != null) _selectedCurrency = ocrCurrency;
       });
       // The model reads all pages together and returns one total (the
       // same receipt split across pages isn't double-counted; separate
@@ -535,6 +551,14 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
             content: Text(
                 'OCR amount looks invalid. Please enter manually.'),
             duration: Duration(seconds: 3),
+          ),
+        );
+      }
+      if (currencyNotice != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(currencyNotice),
+            duration: const Duration(seconds: 4),
           ),
         );
       }

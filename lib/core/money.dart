@@ -118,3 +118,16 @@ String? conversionPreview(
   final converted = MoneyFormatter.format(v * rate, company.info);
   return '≈ $converted (estimate)';
 }
+
+/// OCR wiring (spec §5.2): the scanned ISO code selects a currency
+/// only when the tenant actually has it active. Empty/unknown codes
+/// return null — caller keeps the current selection and shows the
+/// "not enabled" notice for the unknown case.
+CurrencyOption? matchOcrCurrency(String ocrCode, CurrencyListResult? list) {
+  final code = ocrCode.trim().toUpperCase();
+  if (code.isEmpty || list == null) return null;
+  for (final c in list.currencies) {
+    if (c.info.code.toUpperCase() == code) return c;
+  }
+  return null;
+}

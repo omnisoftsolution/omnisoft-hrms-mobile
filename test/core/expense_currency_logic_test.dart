@@ -56,4 +56,16 @@ void main() {
       expect(conversionPreview('abc', myr, list), isNull);
     });
   });
+
+  group('matchOcrCurrency', () {
+    test('matches active code case-insensitively', () {
+      expect(matchOcrCurrency('MYR', list)?.info.id, 111);
+      expect(matchOcrCurrency('myr', list)?.info.id, 111);
+    });
+    test('no match / no list / empty → null', () {
+      expect(matchOcrCurrency('JPY', list), isNull);
+      expect(matchOcrCurrency('', list), isNull);
+      expect(matchOcrCurrency('MYR', null), isNull);
+    });
+  });
 }
