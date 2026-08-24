@@ -131,3 +131,33 @@ CurrencyOption? matchOcrCurrency(String ocrCode, CurrencyListResult? list) {
   }
   return null;
 }
+
+/// How many integer digits the amount field should allow, derived
+/// straight from the (currency-specific) cap so the typed value can
+/// never exceed it purely on digit count (spec finding 2).
+int intDigitsForCap(double cap) => cap.floor().toString().length;
+
+/// Decides what `currency_id` a MODIFY submission should send (spec
+/// finding 5). The connector contract: a foreign write REQUIRES an
+/// explicit currency_id; an absent key means "write in company
+/// currency" (finding 1's corruption window happens when that absent
+/// key is sent for a still-foreign record).
+///
+/// - No picker/no selection (`list == null || selected == null`): if
+///   the record is still foreign, resend its own currency id so the
+///   server doesn't reinterpret the typed amount as company currency;
+///   otherwise (already company currency) omit the key.
+/// - A selection exists: any change away from the record's original
+///   currency (foreign→company or company→foreign) must be sent
+///   explicitly. An unchanged foreign currency must also be resent
+///   every time (the "absent key" rule always means company
+///   currency). Only an unchanged company currency can omit the key.
+int? modifyCurrencyIdFor(
+    CurrencyOption? selected, ExpenseRecord record, CurrencyListResult? list) {
+  if (list == null || selected == null) {
+    return record.isForeignCurrency ? record.origCurrency.id : null;
+  }
+  if (selected.info.id != record.origCurrency.id) return selected.info.id;
+  if (!selected.isCompanyCurrency) return selected.info.id;
+  return null;
+}

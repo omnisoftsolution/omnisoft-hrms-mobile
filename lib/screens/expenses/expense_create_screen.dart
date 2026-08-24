@@ -121,7 +121,7 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
       _currencyList?.hasMultipleCurrencies ?? false;
   int get _decimalPlaces => _selectedCurrency?.info.decimalPlaces ?? 2;
   double get _maxAmount => amountCapFor(_selectedCurrency, _currencyList);
-  int get _maxIntDigits => _maxAmount >= 1000000 ? 9 : 5;
+  int get _maxIntDigits => intDigitsForCap(_maxAmount);
 
   bool _loadingCategories = true;
   /// Friendly message set when the category fetch itself FAILED (offline,
@@ -205,8 +205,8 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
 
   Future<void> _loadCurrencies() async {
     final session = context.read<SessionService>();
+    final cacheKey = 'currency_list_cache_${session.clientDb}';
     final prefs = await SharedPreferences.getInstance();
-    const cacheKey = 'currency_list_cache';
     final api = OmniMobileApi(
       baseUrl: session.clientUrl,
       db: session.clientDb,
@@ -232,6 +232,20 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
       _currencyList = result;
       _selectedCurrency ??= _initialCurrency(result);
     });
+    // Edit mode: the amount field was pre-filled in initState with a
+    // hardcoded 2-decimal format (currencies weren't loaded yet). Once
+    // the record's real currency resolves, reformat to its actual
+    // decimal places (e.g. a 0-decimal IDR prefill stuck as
+    // "34500000.00"). Guarded so a user's own edit is never clobbered.
+    final r = widget.editingRecord;
+    if (r != null &&
+        _decimalPlaces != 2 &&
+        _amountController.text == r.origAmount.toStringAsFixed(2)) {
+      setState(() {
+        _amountController.text =
+            r.origAmount.toStringAsFixed(_decimalPlaces);
+      });
+    }
   }
 
   CurrencyOption? _initialCurrency(CurrencyListResult? list) {
@@ -418,6 +432,9 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
         return 'That category is not available for your company.';
       case 'invalid_amount':
         return 'Amount must be greater than zero.';
+      case 'amount_invalid':
+        return 'That amount is not valid for the selected currency. '
+            'Check the value and try again.';
       case 'no_currency':
         return 'Your company has no currency configured.';
       case 'currency_invalid':
@@ -611,12 +628,10 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
         // Currency is trickier: omitting the key means "keep the
         // existing currency", which is correct when unchanged — but
         // if the record WAS foreign and the user switched back to
-        // company currency, the server must be told explicitly.
-        final modifyCurrencyId = (selected != null &&
-                selected.info.id != r.origCurrency.id &&
-                (r.origCurrency.id != 0 || !selected.isCompanyCurrency))
-            ? selected.info.id
-            : sendCurrencyId;
+        // company currency, the server must be told explicitly. See
+        // modifyCurrencyIdFor's doc for the full decision table
+        // (including the foreign-record/no-picker corruption window).
+        final modifyCurrencyId = modifyCurrencyIdFor(selected, r, _currencyList);
         await api.modifyExpense(
           expenseId: r.id,
           productId: _selectedCategory!.id,
