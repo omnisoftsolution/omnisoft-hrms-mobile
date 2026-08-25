@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import '../models/attendance_record.dart';
 import '../models/attendance_status.dart';
+import '../models/currency_option.dart';
 import '../models/leave_type.dart';
 import '../models/expense_record.dart';
 import '../models/leave_record.dart';
@@ -330,6 +331,21 @@ class OmniMobileApi {
         .toList();
   }
 
+  /// Active currencies + formatting metadata + informational rates
+  /// (connector 2.40.0+, spec §4.1). Returns null when the endpoint
+  /// is unavailable — an old connector 404s here — or on any other
+  /// failure. Null means "single-currency behavior": the create
+  /// screen hides the picker and everything renders as before, so
+  /// failing soft is the correct contract, not an error to surface.
+  Future<CurrencyListResult?> getCurrencyList() async {
+    try {
+      final data = await _post('/currency/list');
+      return CurrencyListResult.fromJson(data);
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Fetch one page of the user's expenses. First page omits
   /// `beforeId`; subsequent pages pass the `id` of the oldest row in
   /// the previously-received page. Page size is fixed at 50 server-
@@ -370,6 +386,7 @@ class OmniMobileApi {
     double? totalAmount,
     String? date,
     String? paymentMode,
+    int? currencyId,
     String? attachmentName,
     String? attachmentMimeType,
     String? attachmentDataB64,
@@ -383,6 +400,7 @@ class OmniMobileApi {
       'total_amount': ?totalAmount,
       'date': ?date,
       'payment_mode': ?paymentMode,
+      'currency_id': ?currencyId,
       if (hasAttachment)
         'attachment': {
           'name': attachmentName ?? 'receipt',
@@ -431,6 +449,7 @@ class OmniMobileApi {
     required double totalAmount,
     required String date,
     String paymentMode = 'own_account',
+    int? currencyId,
     String? attachmentName,
     String? attachmentMimeType,
     String? attachmentDataB64,
@@ -444,6 +463,7 @@ class OmniMobileApi {
       'total_amount': totalAmount,
       'date': date,
       'payment_mode': paymentMode,
+      'currency_id': ?currencyId,
       if (hasAttachment)
         'attachment': {
           'name': attachmentName ?? 'receipt',

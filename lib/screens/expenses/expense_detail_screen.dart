@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/theme.dart';
 import '../../core/datetime_utils.dart';
+import '../../core/money.dart';
 import '../../models/expense_record.dart';
 import '../../services/omni_mobile_api.dart';
 import '../../services/session_service.dart';
@@ -355,14 +356,8 @@ class ExpenseDetailScreen extends StatelessWidget {
     );
   }
 
-  String _formatAmount() => _fmt(record.totalAmount);
-
-  String _fmt(double v) {
-    final amt = v.toStringAsFixed(2);
-    return record.currencyName.isEmpty
-        ? amt
-        : '${record.currencyName} $amt';
-  }
+  String _formatAmount() =>
+      MoneyFormatter.format(record.origAmount, record.origCurrency);
 
   /// Build the detail rows with a divider between each one. Tax rows
   /// only render when Odoo actually applied a tax (taxAmount > 0).
@@ -381,9 +376,15 @@ class ExpenseDetailScreen extends StatelessWidget {
       ],
       ['Paid By', record.paymentModeLabel],
     ];
+    if (record.isForeignCurrency) {
+      entries.add([
+        'Reimbursed as',
+        MoneyFormatter.format(record.totalAmount, record.currency),
+      ]);
+    }
     if (record.taxAmount > 0) {
-      entries.add(['Untaxed', _fmt(record.untaxedAmount)]);
-      entries.add(['Inc. tax', _fmt(record.taxAmount)]);
+      entries.add(['Untaxed', MoneyFormatter.format(record.untaxedAmount, record.currency)]);
+      entries.add(['Inc. tax', MoneyFormatter.format(record.taxAmount, record.currency)]);
     }
     // "Receipt attached" row removed — the inline preview below the
     // card makes the boolean redundant.

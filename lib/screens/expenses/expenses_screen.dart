@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/theme.dart';
 import '../../core/error_messages.dart';
 import '../../core/datetime_utils.dart';
+import '../../core/money.dart';
 import '../../models/expense_record.dart';
 import '../../services/omni_mobile_api.dart';
 import '../../services/session_service.dart';
@@ -317,7 +317,7 @@ class ExpensesScreenState extends State<ExpensesScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    _formatAmount(r),
+                    expenseListAmount(r),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.end,
@@ -352,28 +352,6 @@ class ExpensesScreenState extends State<ExpensesScreen> {
         ),
       ),
     );
-  }
-
-  // Defensive display formatter. Pre-validation legacy rows can hold
-  // wildly out-of-range values (e.g. 1.3e+25). NumberFormat itself
-  // would happily print "13,000…0.00" with 25 digits and crater the
-  // layout, so we clamp to a sanity threshold first. The threshold is
-  // 99,999,999.99 (not the input cap of 99,999.99) so a future raise
-  // of the input limit doesn't have to be coordinated with this
-  // sanitizer — it's purely a "did someone store something insane"
-  // backstop.
-  static final NumberFormat _amountFmt = NumberFormat('#,##0.00');
-  String _formatAmount(ExpenseRecord r) {
-    final v = r.totalAmount;
-    if (!v.isFinite || v < 0 || v > 99999999.99) {
-      return r.currencyName.isEmpty
-          ? 'Invalid amount'
-          : '${r.currencyName} —';
-    }
-    final formatted = _amountFmt.format(v);
-    return r.currencyName.isEmpty
-        ? formatted
-        : '${r.currencyName} $formatted';
   }
 
   Color _stateColor(String state) {

@@ -1,3 +1,5 @@
+import '../core/money.dart';
+
 /// One row in the user's expense list, sourced from
 /// `POST /api/v1/omni_mobile/expense/list`. Matches the shape built
 /// in `controllers/main.py` `expense_list()`.
@@ -24,6 +26,9 @@ class ExpenseRecord {
   /// in the refuse wizard. Empty for any other state, or if Odoo's
   /// refuse template was customised and the server couldn't extract.
   final String refuseReason;
+  final double origAmount;
+  final CurrencyInfo currency;
+  final CurrencyInfo origCurrency;
 
   ExpenseRecord({
     required this.id,
@@ -42,10 +47,16 @@ class ExpenseRecord {
     this.untaxedAmount = 0.0,
     this.taxAmount = 0.0,
     this.refuseReason = '',
+    this.origAmount = 0.0,
+    this.currency = const CurrencyInfo(),
+    this.origCurrency = const CurrencyInfo(),
   });
 
   /// Back-compat for call sites that only need the boolean.
   bool get hasAttachment => attachments.isNotEmpty;
+
+  /// True when the receipt was in a different currency than the company.
+  bool get isForeignCurrency => origCurrency.id != 0 && currency.id != 0 && origCurrency.id != currency.id;
 
   factory ExpenseRecord.fromJson(Map<String, dynamic> json) {
     // Parse new attachments list. Fall back to the legacy
@@ -61,6 +72,23 @@ class ExpenseRecord {
         }
       }
     }
+    final currency = CurrencyInfo.fromApiFields(
+      id: (json['currency_id'] as num?)?.toInt(),
+      code: json['currency_name']?.toString(),
+      symbol: json['currency_symbol']?.toString(),
+      position: json['currency_position']?.toString(),
+      decimalPlaces: (json['currency_decimal_places'] as num?)?.toInt(),
+    );
+    final origCurrency = json.containsKey('orig_currency_id')
+        ? CurrencyInfo.fromApiFields(
+            id: (json['orig_currency_id'] as num?)?.toInt(),
+            code: json['orig_currency_name']?.toString(),
+            symbol: json['orig_currency_symbol']?.toString(),
+            position: json['orig_currency_position']?.toString(),
+            decimalPlaces:
+                (json['orig_currency_decimal_places'] as num?)?.toInt(),
+          )
+        : currency; // old server: one currency for everything
     return ExpenseRecord(
       id: (json['id'] as num?)?.toInt() ?? 0,
       name: json['name']?.toString() ?? '',
@@ -78,6 +106,9 @@ class ExpenseRecord {
       untaxedAmount: (json['untaxed_amount'] as num?)?.toDouble() ?? 0.0,
       taxAmount: (json['tax_amount'] as num?)?.toDouble() ?? 0.0,
       refuseReason: json['refuse_reason']?.toString() ?? '',
+      origAmount: (json['orig_amount'] as num?)?.toDouble() ?? ((json['total_amount'] as num?)?.toDouble() ?? 0.0),
+      currency: currency,
+      origCurrency: origCurrency,
     );
   }
 
@@ -125,6 +156,7 @@ class ExpenseCategory {
   final double defaultUnitAmount;
   final int currencyId;
   final String currencyName;
+  final CurrencyInfo currency;
 
   ExpenseCategory({
     required this.id,
@@ -132,9 +164,17 @@ class ExpenseCategory {
     this.defaultUnitAmount = 0.0,
     this.currencyId = 0,
     this.currencyName = '',
+    this.currency = const CurrencyInfo(),
   });
 
   factory ExpenseCategory.fromJson(Map<String, dynamic> json) {
+    final currency = CurrencyInfo.fromApiFields(
+      id: (json['currency_id'] as num?)?.toInt(),
+      code: json['currency_name']?.toString(),
+      symbol: json['currency_symbol']?.toString(),
+      position: json['currency_position']?.toString(),
+      decimalPlaces: (json['currency_decimal_places'] as num?)?.toInt(),
+    );
     return ExpenseCategory(
       id: (json['id'] as num?)?.toInt() ?? 0,
       name: json['name']?.toString() ?? '',
@@ -142,6 +182,7 @@ class ExpenseCategory {
           (json['default_unit_amount'] as num?)?.toDouble() ?? 0.0,
       currencyId: (json['currency_id'] as num?)?.toInt() ?? 0,
       currencyName: json['currency_name']?.toString() ?? '',
+      currency: currency,
     );
   }
 }
