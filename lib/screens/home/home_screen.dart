@@ -1,14 +1,17 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/constants.dart';
 import '../../core/datetime_utils.dart';
 import '../../core/error_messages.dart';
 import '../../core/theme.dart';
 import '../../core/wifi_gate.dart';
+import '../../models/announcement_record.dart';
 import '../../models/attendance_status.dart';
 import '../../models/auto_close_previous.dart';
 import '../../models/face_capture_result.dart';
@@ -19,6 +22,8 @@ import '../../services/location_service.dart';
 import '../../services/omni_mobile_api.dart';
 import '../../services/session_service.dart';
 import '../../services/wifi_info_service.dart';
+import '../../widgets/announcement_card.dart';
+import '../../widgets/announcement_detail_sheet.dart';
 import '../../widgets/big_check_button.dart';
 import '../../widgets/error_state_view.dart';
 import '../../widgets/feature_locked_pane.dart';
@@ -56,6 +61,8 @@ class HomeScreenState extends State<HomeScreen> {
   // a yellow banner card; cleared on dismiss or next successful
   // check-out.
   AutoClosePrevious? _autoClosedPrevious;
+  // Notice-board list for the home-screen card. Empty hides the card.
+  List<AnnouncementRecord> _announcements = const [];
   final _locationService = LocationService();
   final _deviceService = DeviceService();
   final WifiInfoService _wifiInfoService = WifiInfoService();
@@ -164,11 +171,52 @@ class HomeScreenState extends State<HomeScreen> {
       // Recompute distance once status arrives — the geofence may have
       // changed since the last poll.
       _refreshGpsCard();
+      await _loadAnnouncements(session);
     } catch (e) {
       if (mounted) setState(() => _error = friendlyError(e));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  /// Fetches the notice-board list for the home-screen card, with a
+  /// tenant-scoped SharedPreferences cache so the card can still show
+  /// something (stale-but-present) on a transient connector failure.
+  Future<void> _loadAnnouncements(SessionService session) async {
+    final cacheKey = 'announcement_list_cache_${session.clientDb}';
+    final prefs = await SharedPreferences.getInstance();
+    var result = await _api(session).getAnnouncementList();
+    if (result != null) {
+      await prefs.setString(cacheKey, jsonEncode(result.toJson()));
+    } else {
+      final cached = prefs.getString(cacheKey);
+      if (cached != null) {
+        try {
+          result = AnnouncementListResult.fromJson(
+              jsonDecode(cached) as Map<String, dynamic>);
+        } catch (_) {}
+      }
+    }
+    if (!mounted) return;
+    setState(() => _announcements = result?.announcements ?? const []);
+  }
+
+  /// Opens the detail sheet for [a] and, once dismissed, re-fetches the
+  /// list so a just-acked direct message clears its unread border
+  /// immediately rather than waiting for the next pull-to-refresh.
+  Future<void> _openAnnouncement(AnnouncementRecord a) async {
+    final session = context.read<SessionService>();
+    final api = _api(session);
+    await showAnnouncementDetailSheet(
+      context,
+      announcement: a,
+      onAck: () => api.ackAnnouncement(a.id),
+      loadImage: a.hasImage
+          ? () => api.getAnnouncementImage(a.id)
+          : null,
+    );
+    if (!mounted) return;
+    await _loadAnnouncements(session);
   }
 
   /// Light-touch GPS refresh that just powers the GPS Status card.
@@ -597,6 +645,12 @@ class HomeScreenState extends State<HomeScreen> {
             ],
           ),
         ),
+        if (_announcements.isNotEmpty)
+          AnnouncementCard(
+            announcement: _announcements.first,
+            totalCount: _announcements.length,
+            onTap: () => _openAnnouncement(_announcements.first),
+          ),
         if (_autoClosedPrevious != null) ...[
           const SizedBox(height: 16),
           _autoClosedBanner(),
