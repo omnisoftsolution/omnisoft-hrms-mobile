@@ -152,6 +152,18 @@ class SessionService extends ChangeNotifier {
 
   bool get hasCompany => _clientUrl.isNotEmpty && _companyCode.isNotEmpty;
 
+  /// Tenant+employee-scoped SharedPreferences key for the home-screen
+  /// notice-board cache (see HomeScreenState._loadAnnouncements).
+  /// Centralized here — rather than built ad hoc in home_screen.dart —
+  /// so clearSession() below can remove the exact key it was written
+  /// under without the two files drifting out of sync. Employee-scoped
+  /// (not just tenant-scoped) so a second employee signing into the
+  /// same tenant on a shared device can never inherit the previous
+  /// employee's cached list (including direct-message bodies) from a
+  /// stale fetch failure.
+  String get announcementCacheKey =>
+      'announcement_list_cache_${_clientDb}_$_employeeId';
+
   Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
     _saasUrl = prefs.getString(_keySaasUrl) ?? '';
@@ -512,6 +524,11 @@ class SessionService extends ChangeNotifier {
   /// Clear only the auth session keys. SaaS routing stays so re-login
   /// doesn't require re-entering the company code.
   Future<void> clearSession() async {
+    // Capture before the fields it's derived from (_employeeId) get
+    // wiped below, so we can remove the exact cache entry this
+    // employee's session wrote — otherwise a second employee logging
+    // into the same tenant on this device could inherit it.
+    final staleAnnouncementCacheKey = announcementCacheKey;
     _accessToken = '';
     _expiresAt = null;
     _userId = 0;
@@ -559,6 +576,7 @@ class SessionService extends ChangeNotifier {
     await prefs.remove(_keyEmployeeTimeOffApprover);
     await prefs.remove(_keyEmployeeAttendanceApprover);
     await prefs.remove(_keyEmployeeExpenseApprover);
+    await prefs.remove(staleAnnouncementCacheKey);
     notifyListeners();
   }
 

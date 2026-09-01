@@ -69,6 +69,36 @@ void main() {
     expect(bio.isEnabled, isTrue); // credential survives a manual logout
   });
 
+  test(
+      'clearSession() removes the tenant+employee-scoped announcement '
+      'cache entry (regression: shared-device employee-switch leak)',
+      () async {
+    final session = SessionService();
+    await session.load();
+    await session.saveCompany(
+      saasUrl: 'https://saas.example',
+      companyCode: 'ACME',
+      clientUrl: 'https://acme.example',
+      clientDb: 'acme_db',
+    );
+    await session.saveSession(
+      accessToken: 'tok123',
+      userId: 1,
+      userLogin: 'user@example.com',
+      userName: 'User',
+      employeeId: 42,
+      employeeName: 'Employee',
+    );
+    final cacheKey = session.announcementCacheKey;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(cacheKey, '{"announcements":[]}');
+    expect(prefs.getString(cacheKey), isNotNull);
+
+    await session.clearSession();
+
+    expect(prefs.getString(cacheKey), isNull);
+  });
+
   test('signOut() wipes the biometric credential (onLogout fired)', () async {
     SharedPreferences.setMockInitialValues({'biometric_enabled': true});
     final session = SessionService();

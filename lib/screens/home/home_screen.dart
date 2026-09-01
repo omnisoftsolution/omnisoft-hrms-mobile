@@ -180,10 +180,13 @@ class HomeScreenState extends State<HomeScreen> {
   }
 
   /// Fetches the notice-board list for the home-screen card, with a
-  /// tenant-scoped SharedPreferences cache so the card can still show
-  /// something (stale-but-present) on a transient connector failure.
+  /// tenant+employee-scoped SharedPreferences cache (see
+  /// SessionService.announcementCacheKey) so the card can still show
+  /// something (stale-but-present) on a transient connector failure —
+  /// without leaking a previous employee's cached list (including
+  /// direct-message bodies) to whoever signs in next on this device.
   Future<void> _loadAnnouncements(SessionService session) async {
-    final cacheKey = 'announcement_list_cache_${session.clientDb}';
+    final cacheKey = session.announcementCacheKey;
     final prefs = await SharedPreferences.getInstance();
     var result = await _api(session).getAnnouncementList();
     if (result != null) {

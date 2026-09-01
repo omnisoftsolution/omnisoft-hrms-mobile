@@ -10,7 +10,8 @@ import '../../services/notification_service.dart';
 /// In-app notifications inbox. Pushed from the bell icon on
 /// HomeScreen. Tap a kind-routable notification → marks read and
 /// invokes the appropriate callback; the parent (HomeScreen) wires
-/// these to HomeShell.navigateToLeave / navigateToExpense.
+/// these to HomeShell.navigateToLeave / navigateToExpense /
+/// HomeShell.openAnnouncement.
 class NotificationsScreen extends StatefulWidget {
   /// Called when the user taps a leave-kind notification.
   final void Function(int leaveId)? onLeaveTap;
