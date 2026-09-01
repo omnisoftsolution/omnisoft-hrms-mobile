@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
+import '../models/announcement_record.dart';
 import '../models/attendance_record.dart';
 import '../models/attendance_status.dart';
 import '../models/currency_option.dart';
@@ -51,6 +52,13 @@ Map<String, dynamic> buildAttendanceBody({
     if (devLocation) '_dev_location': true,
   };
 }
+
+/// Body builder for /announcement/ack — top-level so it can be
+/// unit-tested without HTTP (same convention as buildAttendanceBody).
+Map<String, dynamic> buildAnnouncementAckBody({
+  required int announcementId,
+}) =>
+    {'announcement_id': announcementId};
 
 class OmniMobileApi {
   final String baseUrl;
@@ -344,6 +352,36 @@ class OmniMobileApi {
     } catch (_) {
       return null;
     }
+  }
+
+  /// Announcements visible to this employee. Null on any failure —
+  /// old connectors without omni_hrms_announcement simply have no
+  /// board (same fail-soft convention as getCurrencyList).
+  Future<AnnouncementListResult?> getAnnouncementList() async {
+    try {
+      final data = await _post('/announcement/list');
+      return AnnouncementListResult.fromJson(data);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Background image for one announcement; null when absent or on
+  /// any failure (the card just renders without a background).
+  Future<String?> getAnnouncementImage(int announcementId) async {
+    try {
+      final data = await _post('/announcement/image',
+          {'announcement_id': announcementId});
+      final b64 = data['image_b64'];
+      return b64 is String && b64.isNotEmpty ? b64 : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> ackAnnouncement(int announcementId) async {
+    await _post('/announcement/ack',
+        buildAnnouncementAckBody(announcementId: announcementId));
   }
 
   /// Fetch one page of the user's expenses. First page omits
