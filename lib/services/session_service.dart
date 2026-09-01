@@ -594,6 +594,14 @@ class SessionService extends ChangeNotifier {
   /// Full reset (clears SaaS routing too). Used when the user wants to
   /// switch companies entirely.
   Future<void> logout() async {
+    // Capture BEFORE _clientDb is wiped below. clearSession()'s own
+    // capture runs after this method has already blanked _clientDb, so
+    // by the time it computes announcementCacheKey the tenant segment
+    // is already '' — it removes the wrong (never-written) key and
+    // orphans the real tenant+employee entry. Compute the real key
+    // here, while both _clientDb and _employeeId still hold the
+    // pre-logout session's values, and remove it ourselves below.
+    final staleAnnouncementCacheKey = announcementCacheKey;
     _saasUrl = '';
     _companyCode = '';
     _clientUrl = '';
@@ -604,6 +612,7 @@ class SessionService extends ChangeNotifier {
     await prefs.remove(_keyCompanyCode);
     await prefs.remove(_keyClientUrl);
     await prefs.remove(_keyClientDb);
+    await prefs.remove(staleAnnouncementCacheKey);
     onLogout?.call();
     notifyListeners();
   }

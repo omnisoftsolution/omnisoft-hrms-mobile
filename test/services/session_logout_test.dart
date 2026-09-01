@@ -99,6 +99,42 @@ void main() {
     expect(prefs.getString(cacheKey), isNull);
   });
 
+  test(
+      'logout() removes the announcement cache under the pre-logout '
+      'tenant+employee key (regression: company-switch orphaned the '
+      'cache because _clientDb was already wiped before the key was '
+      'captured)', () async {
+    final session = SessionService();
+    await session.load();
+    await session.saveCompany(
+      saasUrl: 'https://saas.example',
+      companyCode: 'ACME',
+      clientUrl: 'https://acme.example',
+      clientDb: 'acme_db',
+    );
+    await session.saveSession(
+      accessToken: 'tok123',
+      userId: 1,
+      userLogin: 'user@example.com',
+      userName: 'User',
+      employeeId: 42,
+      employeeName: 'Employee',
+    );
+    // The key as actually written by HomeScreen while acme_db/employee
+    // 42 were the live session — captured up front so the assertion
+    // below doesn't depend on session state that logout() is about to
+    // clear.
+    final cacheKey = session.announcementCacheKey;
+    expect(cacheKey, 'announcement_list_cache_acme_db_42');
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(cacheKey, '{"announcements":[]}');
+    expect(prefs.getString(cacheKey), isNotNull);
+
+    await session.logout(); // company-switch path (company_settings_screen)
+
+    expect(prefs.getString(cacheKey), isNull);
+  });
+
   test('signOut() wipes the biometric credential (onLogout fired)', () async {
     SharedPreferences.setMockInitialValues({'biometric_enabled': true});
     final session = SessionService();
