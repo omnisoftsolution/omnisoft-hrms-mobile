@@ -44,6 +44,17 @@ class NotificationRecord {
     return null;
   }
 
+  bool get isAnnouncementKind => kind == 'announcement';
+
+  /// Tap-through hint for announcement notifications. Mirrors
+  /// [leaveIdHint] but reads `announcement_id` from the payload.
+  int? get announcementIdHint {
+    final v = payload['announcement_id'];
+    if (v is num) return v.toInt();
+    if (v is String) return int.tryParse(v);
+    return null;
+  }
+
   factory NotificationRecord.fromJson(Map<String, dynamic> json) {
     Map<String, dynamic> payload = const {};
     final raw = json['payload'];

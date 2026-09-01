@@ -116,6 +116,10 @@ class OmniAppBar extends StatelessWidget implements PreferredSizeWidget {
             Navigator.of(context, rootNavigator: true).pop();
             await shell?.navigateToExpense(expenseId);
           },
+          onAnnouncementTap: (announcementId) async {
+            Navigator.of(context, rootNavigator: true).pop();
+            await shell?.openAnnouncement(announcementId);
+          },
         ),
       ),
     );

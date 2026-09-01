@@ -131,7 +131,9 @@ class HomeShellState extends State<HomeShell> {
               ),
             ],
           ),
-          action: (fresh.isLeaveKind || fresh.isExpenseKind)
+          action: (fresh.isLeaveKind ||
+                  fresh.isExpenseKind ||
+                  fresh.isAnnouncementKind)
               ? SnackBarAction(
                   label: 'VIEW',
                   textColor: Colors.white,
@@ -147,6 +149,12 @@ class HomeShellState extends State<HomeShell> {
                       if (id != null) {
                         _notifSvc?.markRead(fresh.id);
                         navigateToExpense(id);
+                      }
+                    } else if (fresh.isAnnouncementKind) {
+                      final id = fresh.announcementIdHint;
+                      if (id != null) {
+                        _notifSvc?.markRead(fresh.id);
+                        openAnnouncement(id);
                       }
                     }
                   },
@@ -208,6 +216,15 @@ class HomeShellState extends State<HomeShell> {
     setState(() => _index = 3);
     await WidgetsBinding.instance.endOfFrame;
     await _expensesKey.currentState?.refresh();
+  }
+
+  /// Reached via the bell → announcement notification tap chain.
+  /// Announcements live on the HOME tab (notice-board card + detail
+  /// sheet), so this just switches tabs and asks HomeScreen to open
+  /// the matching record — silently no-op if it's no longer live.
+  Future<void> openAnnouncement(int announcementId) async {
+    _onTabTap(0); // HOME tab hosts the announcement card + sheet
+    await _homeKey.currentState?.openAnnouncementById(announcementId);
   }
 
   /// Wraps the given root screen in its own Navigator so that pushes

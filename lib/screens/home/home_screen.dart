@@ -219,6 +219,22 @@ class HomeScreenState extends State<HomeScreen> {
     await _loadAnnouncements(session);
   }
 
+  /// Deep-link entry point from the notification-tap chain
+  /// (HomeShell.openAnnouncement). Re-fetches the list so a stale
+  /// cache can't hide a just-arrived announcement, then opens the
+  /// detail sheet for the matching record. Silently no-ops if the
+  /// announcement is no longer live (expired, unpublished, or acked
+  /// off the list) — there's nothing useful to show the user.
+  Future<void> openAnnouncementById(int announcementId) async {
+    final session = context.read<SessionService>();
+    await _loadAnnouncements(session);
+    if (!mounted) return;
+    final match =
+        _announcements.where((a) => a.id == announcementId).toList();
+    if (match.isEmpty) return; // expired or not visible — silent no-op
+    await _openAnnouncement(match.first);
+  }
+
   /// Light-touch GPS refresh that just powers the GPS Status card.
   /// Doesn't surface errors to the user — failure just means the card
   /// shows "—". Early-return when the SaaS geolocation flag is off

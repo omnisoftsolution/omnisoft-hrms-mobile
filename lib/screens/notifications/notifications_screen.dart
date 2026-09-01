@@ -18,10 +18,14 @@ class NotificationsScreen extends StatefulWidget {
   /// Called when the user taps an expense-kind notification.
   final void Function(int expenseId)? onExpenseTap;
 
+  /// Called when the user taps an announcement-kind notification.
+  final void Function(int announcementId)? onAnnouncementTap;
+
   const NotificationsScreen({
     super.key,
     this.onLeaveTap,
     this.onExpenseTap,
+    this.onAnnouncementTap,
   });
 
   @override
@@ -51,6 +55,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       final expenseId = n.expenseIdHint;
       if (expenseId != null && widget.onExpenseTap != null) {
         widget.onExpenseTap!(expenseId);
+        return;
+      }
+    } else if (n.isAnnouncementKind) {
+      final announcementId = n.announcementIdHint;
+      if (announcementId != null && widget.onAnnouncementTap != null) {
+        widget.onAnnouncementTap!(announcementId);
         return;
       }
     }
@@ -140,6 +150,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       'leave_refused' => Icons.event_busy_rounded,
       'expense_approved' => Icons.receipt_long_rounded,
       'expense_refused' => Icons.receipt_long_rounded,
+      'announcement' => Icons.campaign_outlined,
       _ => Icons.notifications_rounded,
     };
     final iconColor = switch (n.kind) {
@@ -147,6 +158,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       'leave_refused' => AppTheme.error,
       'expense_approved' => AppTheme.primary,
       'expense_refused' => AppTheme.error,
+      'announcement' => AppTheme.primary,
       _ => AppTheme.outline,
     };
     final created = n.createDate;
