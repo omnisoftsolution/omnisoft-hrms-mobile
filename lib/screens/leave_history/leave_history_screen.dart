@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme.dart';
 import '../../core/error_messages.dart';
+import '../../core/leave_units.dart';
 import '../../models/leave_record.dart';
 import '../../services/omni_mobile_api.dart';
 import '../../services/session_service.dart';
@@ -553,6 +555,8 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
     _hourlyAllDay = !((r.hourTo ?? 0) > 0);
     _reasonController = TextEditingController(text: r.reason);
     _existingAttachments = List<LeaveAttachment>.from(r.attachments);
+    // A custom-hours record opens with its server-computed duration.
+    _schedulePreview();
   }
 
   Future<void> _viewAttachment(LeaveAttachment a) async {
@@ -639,12 +643,71 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
 
   double get _hourCount => _todToFloat(_hourTo) - _todToFloat(_hourFrom);
 
-  String get _hourLabel {
-    final h = _hourCount;
-    return h == h.roundToDouble()
-        ? '${h.toInt()}h'
-        : '${h.toStringAsFixed(1)}h';
+  // Odoo-computed hours for the current "Specific hours" selection,
+  // from /leave/preview (connector 2.41.0+). Null until fetched, or
+  // when the connector predates the route — the label then falls back
+  // to end-minus-start. Mirrors the apply sheet.
+  double? _previewHours;
+  bool _previewLoading = false;
+  int _previewSeq = 0;
+  Timer? _previewDebounce;
+
+  @override
+  void dispose() {
+    _previewDebounce?.cancel();
+    _reasonController.dispose();
+    super.dispose();
   }
+
+  String get _hourLabel => customHoursLabel(
+      naiveHours: _hourCount,
+      serverHours: _previewHours,
+      loading: _previewLoading);
+
+  String? get _hourCaption =>
+      customHoursCaption(naiveHours: _hourCount, serverHours: _previewHours);
+
+  /// Call inside setState (or initState) after any change to the
+  /// custom-hours selection. Debounced; _previewSeq drops in-flight
+  /// responses.
+  void _schedulePreview() {
+    _previewDebounce?.cancel();
+    _previewSeq++;
+    _previewHours = null;
+    _previewLoading = false;
+    if (!_hourlyCustom || _hourCount <= 0) return;
+    _previewLoading = true;
+    _previewDebounce =
+        Timer(const Duration(milliseconds: 300), _fetchPreview);
+  }
+
+  Future<void> _fetchPreview() async {
+    if (!mounted) return;
+    final seq = _previewSeq;
+    try {
+      final preview = await widget.api.previewLeave(
+        holidayStatusId: widget.record.leaveTypeId,
+        dateFrom: DateFormat('yyyy-MM-dd').format(_dateFrom),
+        dateTo: DateFormat('yyyy-MM-dd').format(_dateFrom),
+        hourFrom: _todToFloat(_hourFrom),
+        hourTo: _todToFloat(_hourTo),
+      );
+      if (!mounted || seq != _previewSeq) return;
+      setState(() {
+        _previewHours = preview.hours;
+        _previewLoading = false;
+      });
+    } catch (e) {
+      // Older connector (route missing), offline, … — keep the naive
+      // label; a preview must never block the form.
+      debugPrint('leave/preview unavailable: $e');
+      if (!mounted || seq != _previewSeq) return;
+      setState(() => _previewLoading = false);
+    }
+  }
+
+  bool get _customHoursOutsideSchedule =>
+      _previewHours != null && _previewHours! <= 0;
 
   double get _dayCount {
     final holidays = context.read<HolidayService>();
@@ -669,7 +732,11 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
   }
 
   bool get _periodValid {
-    if (_isHourly) return _hourlyAllDay ? _dayCount > 0 : _hourCount > 0;
+    if (_isHourly) {
+      return _hourlyAllDay
+          ? _dayCount > 0
+          : _hourCount > 0 && !_customHoursOutsideSchedule;
+    }
     if (!_isHalfDay) return true;
     if (_isSameDate && _fromPeriod == 'pm' && _toPeriod == 'am') return false;
     return _dayCount > 0;
@@ -696,6 +763,7 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
           _dateFrom = picked;
           _dateTo = picked;
           _error = null;
+          _schedulePreview();
         });
       }
       return;
@@ -736,6 +804,7 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
           _hourTo = picked;
         }
         _error = null;
+        _schedulePreview();
       });
     }
   }
@@ -749,7 +818,9 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
   Future<void> _submit() async {
     if (!_periodValid) {
       setState(() => _error = _hourlyCustom
-          ? 'End time must be after start time.'
+          ? (_hourCount <= 0
+              ? 'End time must be after start time.'
+              : 'The selected time is outside your work schedule.')
           : _isHourly
               ? 'The selected range contains no working days.'
               : 'Afternoon → Morning on the same date is not a valid range.');
@@ -931,6 +1002,7 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
                 _hourlyAllDay = selection.first;
                 if (!_hourlyAllDay) _dateTo = _dateFrom;
                 _error = null;
+                _schedulePreview();
               }),
             ),
           ],
@@ -991,6 +1063,19 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
                 ),
               ],
             ),
+            if (_hourCaption != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8, left: 4),
+                child: Text(
+                  _hourCaption!,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: _customHoursOutsideSchedule
+                        ? AppTheme.error
+                        : AppTheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
           ],
           if (_isHalfDay) ...[
             const SizedBox(height: 16),
