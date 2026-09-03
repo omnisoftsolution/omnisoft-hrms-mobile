@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -323,11 +324,74 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
   double _todToFloat(TimeOfDay t) => t.hour + t.minute / 60.0;
   double get _hourCount => _todToFloat(_hourTo) - _todToFloat(_hourFrom);
 
-  String get _hourLabel {
-    final h = _hourCount;
-    return h == h.roundToDouble()
-        ? '${h.toInt()}h'
-        : '${h.toStringAsFixed(1)}h';
+  // Odoo-computed hours for the current "Specific hours" selection,
+  // from /leave/preview (connector 2.41.0+). Null until fetched, or
+  // when the connector predates the route — the label then falls back
+  // to end-minus-start. The app cannot see the work schedule, so only
+  // the server knows that 11:00-15:00 across a 12-13 lunch is 3h.
+  double? _previewHours;
+  bool _previewLoading = false;
+  int _previewSeq = 0;
+  Timer? _previewDebounce;
+
+  @override
+  void dispose() {
+    _previewDebounce?.cancel();
+    _reasonController.dispose();
+    super.dispose();
+  }
+
+  String get _hourLabel => customHoursLabel(
+      naiveHours: _hourCount,
+      serverHours: _previewHours,
+      loading: _previewLoading);
+
+  String? get _hourCaption =>
+      customHoursCaption(naiveHours: _hourCount, serverHours: _previewHours);
+
+  /// Call inside setState after any change to the custom-hours
+  /// selection. Debounced so spinning a time dial doesn't fan out
+  /// requests; bumping _previewSeq drops in-flight responses.
+  void _schedulePreview() {
+    _previewDebounce?.cancel();
+    _previewSeq++;
+    _previewHours = null;
+    _previewLoading = false;
+    if (!_hourlyCustom || _hourCount <= 0) return;
+    _previewLoading = true;
+    _previewDebounce =
+        Timer(const Duration(milliseconds: 300), _fetchPreview);
+  }
+
+  Future<void> _fetchPreview() async {
+    if (!mounted) return;
+    final seq = _previewSeq;
+    try {
+      final session = context.read<SessionService>();
+      final api = OmniMobileApi(
+        baseUrl: session.clientUrl,
+        db: session.clientDb,
+        token: session.token,
+      );
+      final preview = await api.previewLeave(
+        holidayStatusId: widget.leaveType.id,
+        dateFrom: DateFormat('yyyy-MM-dd').format(_dateFrom),
+        dateTo: DateFormat('yyyy-MM-dd').format(_dateFrom),
+        hourFrom: _todToFloat(_hourFrom),
+        hourTo: _todToFloat(_hourTo),
+      );
+      if (!mounted || seq != _previewSeq) return;
+      setState(() {
+        _previewHours = preview.hours;
+        _previewLoading = false;
+      });
+    } catch (e) {
+      // Older connector (route missing), offline, … — keep the naive
+      // label; a preview must never block the form.
+      debugPrint('leave/preview unavailable: $e');
+      if (!mounted || seq != _previewSeq) return;
+      setState(() => _previewLoading = false);
+    }
   }
 
   bool get _isSameDate =>
@@ -360,9 +424,19 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
         : '${n.toStringAsFixed(1)}d';
   }
 
+  /// Custom hours the server says fall entirely outside the schedule
+  /// (0h) would create a zero-duration leave — refuse like an inverted
+  /// range.
+  bool get _customHoursOutsideSchedule =>
+      _previewHours != null && _previewHours! <= 0;
+
   /// Half-day mode rejects pm→am on the same date (would be 0 days).
   bool get _periodValid {
-    if (_isHourly) return _hourlyAllDay ? _dayCount > 0 : _hourCount > 0;
+    if (_isHourly) {
+      return _hourlyAllDay
+          ? _dayCount > 0
+          : _hourCount > 0 && !_customHoursOutsideSchedule;
+    }
     if (!_isHalfDay) return true;
     if (_isSameDate && _fromPeriod == 'pm' && _toPeriod == 'am') return false;
     return _dayCount > 0;
@@ -389,6 +463,7 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
           _dateFrom = picked;
           _dateTo = picked;
           _error = null;
+          _schedulePreview();
         });
       }
       return;
@@ -431,6 +506,7 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
           _hourTo = picked;
         }
         _error = null;
+        _schedulePreview();
       });
     }
   }
@@ -438,7 +514,9 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
   Future<void> _submit() async {
     if (!_periodValid) {
       setState(() => _error = _hourlyCustom
-          ? 'End time must be after start time.'
+          ? (_hourCount <= 0
+              ? 'End time must be after start time.'
+              : 'The selected time is outside your work schedule.')
           : _isHourly
               ? 'The selected range contains no working days.'
               : 'Afternoon → Morning on the same date is not a valid range.');
@@ -688,6 +766,7 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
                 // the range when switching into that mode.
                 if (!_hourlyAllDay) _dateTo = _dateFrom;
                 _error = null;
+                _schedulePreview();
               }),
             ),
           ],
@@ -750,6 +829,19 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
                 ),
               ],
             ),
+            if (_hourCaption != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8, left: 4),
+                child: Text(
+                  _hourCaption!,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: _customHoursOutsideSchedule
+                        ? AppTheme.error
+                        : AppTheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
           ],
           if (_isHalfDay) ...[
             const SizedBox(height: 16),

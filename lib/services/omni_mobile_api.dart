@@ -6,6 +6,7 @@ import '../models/attendance_status.dart';
 import '../models/currency_option.dart';
 import '../models/leave_type.dart';
 import '../models/expense_record.dart';
+import '../models/leave_duration_preview.dart';
 import '../models/leave_record.dart';
 import '../models/notification_record.dart';
 import '../models/ocr_result.dart';
@@ -49,6 +50,31 @@ Map<String, dynamic> buildAttendanceBody({
     'wifi_ssid': ?wifiSsid,
     'wifi_bssid': ?wifiBssid,
     if (devLocation) '_dev_location': true,
+  };
+}
+
+/// Builds the request body for /leave/preview — the same shape as
+/// /leave/apply minus reason and attachment. Optional fields are
+/// omitted (not sent as JSON null): the connector reads "both hour
+/// fields absent" as a full-day range request, so a null would be a
+/// different request. Top-level so it can be unit-tested without HTTP.
+Map<String, dynamic> buildLeavePreviewBody({
+  required int holidayStatusId,
+  required String dateFrom,
+  required String dateTo,
+  String? dateFromPeriod,
+  String? dateToPeriod,
+  double? hourFrom,
+  double? hourTo,
+}) {
+  return {
+    'holiday_status_id': holidayStatusId,
+    'date_from': dateFrom,
+    'date_to': dateTo,
+    'date_from_period': ?dateFromPeriod,
+    'date_to_period': ?dateToPeriod,
+    'hour_from': ?hourFrom,
+    'hour_to': ?hourTo,
   };
 }
 
@@ -530,6 +556,34 @@ class OmniMobileApi {
 
   Future<Map<String, dynamic>> getAttachment(int attachmentId) {
     return _post('/leave/attachment/get', {'attachment_id': attachmentId});
+  }
+
+  /// Duration Odoo would store for a prospective request (connector
+  /// 2.41.0+). Nothing is created. On an older connector the route is
+  /// missing and this throws an [ApiException] like any other call —
+  /// callers keep their local estimate in that case.
+  Future<LeaveDurationPreview> previewLeave({
+    required int holidayStatusId,
+    required String dateFrom,
+    required String dateTo,
+    String? dateFromPeriod,
+    String? dateToPeriod,
+    double? hourFrom,
+    double? hourTo,
+  }) async {
+    final data = await _post(
+      '/leave/preview',
+      buildLeavePreviewBody(
+        holidayStatusId: holidayStatusId,
+        dateFrom: dateFrom,
+        dateTo: dateTo,
+        dateFromPeriod: dateFromPeriod,
+        dateToPeriod: dateToPeriod,
+        hourFrom: hourFrom,
+        hourTo: hourTo,
+      ),
+    );
+    return LeaveDurationPreview.fromJson(data);
   }
 
   Future<Map<String, dynamic>> modifyLeave({

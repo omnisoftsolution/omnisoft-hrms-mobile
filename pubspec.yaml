@@ -1,7 +1,7 @@
 name: omni_hr
 description: Omni HR — Mobile attendance and leave management
 publish_to: 'none'
-version: 1.23.0+82
+version: 1.23.1+84
 
 environment:
   sdk: ^3.11.0
