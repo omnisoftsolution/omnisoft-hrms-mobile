@@ -45,25 +45,25 @@ IPA_OUTPUT_NAME = "omnihr.ipa"
 # this per release. Inlined (not read from a file) so it can't break on a
 # path/cwd surprise during the upload step. TestFlight allows ~4000 chars.
 TESTFLIGHT_CHANGELOG = <<~NOTES.freeze
-  Office Wi-Fi check-in + easier hourly leave.
+  Hourly time off now matches Odoo exactly.
 
-  New in this build:
-  - Check-in can verify you're on the office Wi-Fi when your company
-    enables it. A small Wi-Fi icon next to the GPS status shows green on
-    the office network. Grant precise location when asked — iOS needs it
-    to read the Wi-Fi name.
-  - Leave types counted in hours now support full-day requests: pick a
-    date range like any other leave, no time pickers. "Specific hours"
-    mode is still there for partial days.
-  - Hour-based leave balances show the day equivalent ("112h (14d)
-    left") and now match what HR sees in Odoo.
+  New in this build (1.23.1):
+  - "Specific hours" requests show the exact duration your company
+    counts, computed by Odoo. Breaks in your work schedule are not
+    counted unless your HR admin picks a different rule (Settings >
+    Employees > Omni HR Time Off).
+  - Requests that fall entirely outside your work schedule are refused
+    with a clear message instead of deducting 0h.
+  - Hour-based balances read "112h (14d) left" and match HR records.
+  - Still includes 1.23.0: multi-currency expenses and payslip currency.
 
   Please test:
-  1. Leave > an hourly leave type: apply 2 full days (Full day(s) mode),
-     check the confirmation shows the range and "2d (16h)".
-  2. Switch to Specific hours and apply a 2-hour block on one date.
-  3. If your office has Wi-Fi verification on: check in on office Wi-Fi
-     (allowed) and on cellular (blocked with a clear message).
+  1. Leave > an hourly leave type > Specific hours, pick a block that
+     crosses lunch (e.g. 11:00-15:00). The sheet should show "3h" with
+     a caption, and History should show the same after submitting.
+  2. Pick a block after hours (e.g. 18:00-20:00); submit should be
+     refused as outside your work schedule.
+  3. Modify an existing hourly request and confirm the hours update.
 NOTES
 
 platform :ios do
