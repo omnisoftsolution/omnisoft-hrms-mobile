@@ -45,25 +45,28 @@ IPA_OUTPUT_NAME = "omnihr.ipa"
 # this per release. Inlined (not read from a file) so it can't break on a
 # path/cwd surprise during the upload step. TestFlight allows ~4000 chars.
 TESTFLIGHT_CHANGELOG = <<~NOTES.freeze
-  Hourly time off now matches Odoo exactly.
+  Sign in with your Omni HR account. Activate with the link or QR code
+  from HR, keep Face ID, and manage your signed-in phones under
+  Security and Privacy.
 
-  New in this build (1.23.1):
-  - "Specific hours" requests show the exact duration your company
-    counts, computed by Odoo. Breaks in your work schedule are not
-    counted unless your HR admin picks a different rule (Settings >
-    Employees > Omni HR Time Off).
-  - Requests that fall entirely outside your work schedule are refused
-    with a clear message instead of deducting 0h.
-  - Hour-based balances read "112h (14d) left" and match HR records.
-  - Still includes 1.23.0: multi-currency expenses and payslip currency.
+  New in this build (1.25.0):
+  - Activate a phone with the invite link or QR code HR sends you,
+    then use Face ID to sign back in on that phone.
+  - Profile > Security and Privacy > Your devices lists every phone
+    trusted for your account; sign out remotely revokes a lost or old
+    one.
+  - Your Odoo password still works to sign in until HR sends you an
+    app-access invite.
 
   Please test:
-  1. Leave > an hourly leave type > Specific hours, pick a block that
-     crosses lunch (e.g. 11:00-15:00). The sheet should show "3h" with
-     a caption, and History should show the same after submitting.
-  2. Pick a block after hours (e.g. 18:00-20:00); submit should be
-     refused as outside your work schedule.
-  3. Modify an existing hourly request and confirm the hours update.
+  1. Open the invite link (or scan the QR code) from HR, activate,
+     then enable Face ID. Kill and reopen the app and confirm Face ID
+     signs you back in.
+  2. Open Profile > Security and Privacy > Your devices; sign in on a
+     second phone with the same account and confirm both phones show
+     up there.
+  3. From Odoo, revoke one of the two phones, then relaunch the app on
+     that phone and confirm it asks you to sign in again.
 NOTES
 
 platform :ios do

@@ -66,3 +66,52 @@ Branch `feat/liveness-confidence-threshold` @ 479c32d (unmerged, unpushed) mirro
 0.90 spoof-confidence gate: lib/services/face_spoof_detector.dart, face_recognition_engine.dart,
 lib/core/constants.dart. Do not merge just to sync with kiosk; mobile ships it on its own schedule.
 iOS is still-frame-only for spoof texture (multi-frame raw-bytes P1.1 open, per kiosk notes).
+
+## App identity (1.25.0)
+- Login chain: the server decides — app credential first, Odoo password fallback while the
+  tenant flag is on. `/login` and `/me` both return `auth_source` (`'omni'` | `'odoo'`);
+  `SessionService.supportsIdentity` is `authSource.isNotEmpty`. A response with no `auth_source`
+  key means a legacy (pre-identity) connector: `updateFromMe` leaves `authSource` untouched rather
+  than clearing it, and all new UI (Your devices, forget-this-phone sheet) stays hidden for that
+  session.
+- Storage keys (lib/services/session_service.dart): secure storage `refresh_token`; prefs
+  `refresh_expires_at`, `auth_source`, `device_label` (plus the pre-existing `user_id`/`user_login`
+  prefs, which the refresh/`/me` paths also update). Biometric credential
+  (lib/services/biometric_auth_service.dart): secure storage `biometric_login`,
+  `biometric_refresh_token` (new refresh-token mode), legacy `biometric_password` (old
+  password-mode credential, still read for accounts that haven't re-logged-in yet).
+- `SessionService.refreshAccessToken(deviceId, {refreshToken}) -> RefreshOutcome {ok, invalid,
+  failed}` exchanges a device refresh token for a new access token via `/auth/refresh`; `invalid`
+  (server returned `refresh_invalid`, or no token to use) drops the stored refresh token, `failed`
+  (network/timeout/server error) keeps it for a retry. `SessionService.refreshMe()` re-pulls
+  `/me` and folds `auth_source`/`device_label` back in via `updateFromMe`.
+- Face ID: a password-mode biometric credential migrates to the refresh token on the first login
+  that returns one — `BiometricAuthService.adoptRefreshToken` (called from the login screen after
+  every successful `/login`) does `replacePasswordWithRefreshToken` + `updateRefreshToken` in one
+  step, so both a fresh opt-in and an already-refresh-mode credential end up current.
+- Deep link: `omnihr://activate?c=<company>&t=<token>` (invite QR/email). iOS:
+  `CFBundleURLTypes`/`CFBundleURLSchemes` in ios/Runner/Info.plist. Android: the `omnihr://activate`
+  `<intent-filter>` in android/app/src/main/AndroidManifest.xml. Both platforms go through the
+  `app_links` package; `lib/services/deep_link_service.dart` (`DeepLinkService` +
+  `parseActivationLink`) delivers both the cold-start link and any link opened while running to
+  `main.dart`'s `_navigatorKey`, which pushes the activation screen.
+- Testable seams (fake-subclass pattern — subclass, override the network call, no real HTTP):
+  `SessionService.refreshAccessTokenWith`, `SessionService.refreshMeWith`,
+  `SessionService.resolveCompanyWith`, and `DevicesScreen.apiBuilder` (constructor param that
+  swaps in a fake `OmniMobileApi` for widget tests).
+- Profile's sign-out sheet: App Identity accounts (`supportsIdentity && authSource == 'omni'`)
+  get a choice between plain "Sign out" and "Sign out and forget this phone"
+  (lib/screens/profile/profile_screen.dart `_onLogoutPressed`/`_logout`) — forgetting calls
+  `/logout {forget_device: true}` and also disables Face ID (`BiometricAuthService.disable()`),
+  since the refresh token it held is now revoked server-side. Either path calls
+  `SessionService.clearSession()`, NOT `logout()` — `clearSession()` wipes just the login session
+  and keeps the biometric credential (unless just disabled) and the SaaS/company routing, so the
+  user can sign back in without re-typing the company code. `SessionService.logout()` is the full
+  reset (also clears SaaS routing) used for switching companies / delete account, not for sign-out.
+- Build note: `app_links` resolved to 6.4.1 in pubspec.lock (pubspec.yaml's own constraint is
+  `^6.3.2`; environment sdk is still `^3.11.0`), and 6.4.1 raised the resolved SDK floor to
+  Dart >= 3.12 / Flutter >= 3.44 — every build machine and fastlane lane needs Flutter >= 3.44
+  (this Mac has 3.44.6), and iOS needs `pod install` before the next build.
+- Connector dependency: connector >= 2.45.0 (omnihrdemo runs 2.45.1). Known follow-up: the
+  connector will return the credential login as `user.login` for app-credential sessions starting
+  in 2.45.2 — not yet true on 2.45.1.

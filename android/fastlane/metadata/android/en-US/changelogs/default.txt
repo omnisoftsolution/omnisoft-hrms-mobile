@@ -1,1 +1,1 @@
-Hourly time off now shows the exact duration your company counts, matching what HR sees in Odoo: breaks in your work schedule are no longer counted unless your HR admin chooses otherwise. Also includes the multi-currency expenses and payslip currency improvements from 1.23.0.
+Sign in with your Omni HR account. Activate with the link or QR code from HR, keep Face ID, and manage your signed-in phones under Security and Privacy.
