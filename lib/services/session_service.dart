@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'omni_mobile_api.dart';
 import 'saas_service.dart';
 
 /// Session state for the mobile app. Persists across launches.
@@ -64,6 +65,13 @@ class SessionService extends ChangeNotifier {
       'employee_attendance_approver';
   static const _keyEmployeeExpenseApprover = 'employee_expense_approver';
 
+  // Keys: App Identity (device refresh token + auth source). Cleared
+  // by clearSession() same as the rest of the login session.
+  static const _kRefreshToken = 'refresh_token';
+  static const _kRefreshExpiresAt = 'refresh_expires_at';
+  static const _kAuthSource = 'auth_source';
+  static const _kDeviceLabel = 'device_label';
+
   String _saasUrl = '';
   String _companyCode = '';
   String _clientUrl = '';
@@ -99,6 +107,12 @@ class SessionService extends ChangeNotifier {
   String _employeeTimeOffApprover = '';
   String _employeeAttendanceApprover = '';
   String _employeeExpenseApprover = '';
+
+  // App Identity: device refresh token + auth source
+  String _refreshToken = '';
+  DateTime? _refreshExpiresAt;
+  String _authSource = '';
+  String _deviceLabel = '';
 
   // SaaS routing
   String get saasUrl => _saasUrl;
@@ -144,6 +158,16 @@ class SessionService extends ChangeNotifier {
   String get employeeTimeOffApprover => _employeeTimeOffApprover;
   String get employeeAttendanceApprover => _employeeAttendanceApprover;
   String get employeeExpenseApprover => _employeeExpenseApprover;
+
+  // App Identity
+  String get refreshToken => _refreshToken;
+  DateTime? get refreshExpiresAt => _refreshExpiresAt;
+  String get authSource => _authSource;
+  /// True once the connector has told us which auth source this
+  /// account uses ('omni' | 'odoo'). False for a legacy connector
+  /// that predates the /login `auth_source` field.
+  bool get supportsIdentity => _authSource.isNotEmpty;
+  String get deviceLabel => _deviceLabel;
 
   bool get isLoggedIn =>
       _accessToken.isNotEmpty &&
@@ -195,6 +219,11 @@ class SessionService extends ChangeNotifier {
         prefs.getString(_keyEmployeeAttendanceApprover) ?? '';
     _employeeExpenseApprover =
         prefs.getString(_keyEmployeeExpenseApprover) ?? '';
+    _refreshToken = await _secure.read(key: _kRefreshToken) ?? '';
+    final rx = prefs.getString(_kRefreshExpiresAt) ?? '';
+    _refreshExpiresAt = rx.isNotEmpty ? DateTime.tryParse(rx) : null;
+    _authSource = prefs.getString(_kAuthSource) ?? '';
+    _deviceLabel = prefs.getString(_kDeviceLabel) ?? '';
     notifyListeners();
   }
 
@@ -334,6 +363,39 @@ class SessionService extends ChangeNotifier {
       employeeExpenseApprover:
           employee['expense_approver_name']?.toString() ?? '',
     );
+    _authSource = res['auth_source']?.toString() ?? '';
+    _deviceLabel = ((res['device'] as Map?)?['label'] ?? '').toString();
+    final rt = res['refresh_token']?.toString() ?? '';
+    final rx = res['refresh_expires_at']?.toString() ?? '';
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kAuthSource, _authSource);
+    await prefs.setString(_kDeviceLabel, _deviceLabel);
+    if (rt.isNotEmpty) {
+      _refreshToken = rt;
+      _refreshExpiresAt = rx.isNotEmpty ? DateTime.tryParse(rx) : null;
+      await _secure.write(key: _kRefreshToken, value: rt);
+      await prefs.setString(_kRefreshExpiresAt, rx);
+    }
+    notifyListeners();
+  }
+
+  /// Persist just the access token + expiry. Shared by [saveSession]
+  /// (full /login payload) and [refreshAccessToken] (/auth/refresh
+  /// only returns a new access token — the rest of the session is
+  /// untouched).
+  Future<void> _saveAccessToken(String accessToken, DateTime? expiresAt) async {
+    _accessToken = accessToken;
+    _expiresAt = expiresAt;
+    final prefs = await SharedPreferences.getInstance();
+    try {
+      await _secure.write(key: _keyAccessToken, value: accessToken);
+    } catch (_) {
+      // Secure-storage write failed (exotic OS/Keychain error). The in-memory
+      // token is already set above, so the session is live for this launch.
+      // Proceed — prefs cleanup below must always run.
+    }
+    await prefs.remove(_keyAccessToken);
+    await prefs.setString(_keyExpiresAt, expiresAt?.toIso8601String() ?? '');
   }
 
   /// Persist everything returned by /login in one call.
@@ -359,8 +421,7 @@ class SessionService extends ChangeNotifier {
     String employeeAttendanceApprover = '',
     String employeeExpenseApprover = '',
   }) async {
-    _accessToken = accessToken;
-    _expiresAt = expiresAt;
+    await _saveAccessToken(accessToken, expiresAt);
     _userId = userId;
     _userLogin = userLogin;
     _userName = userName;
@@ -380,15 +441,6 @@ class SessionService extends ChangeNotifier {
     _employeeAttendanceApprover = employeeAttendanceApprover;
     _employeeExpenseApprover = employeeExpenseApprover;
     final prefs = await SharedPreferences.getInstance();
-    try {
-      await _secure.write(key: _keyAccessToken, value: accessToken);
-    } catch (_) {
-      // Secure-storage write failed (exotic OS/Keychain error). The in-memory
-      // token is already set above, so the session is live for this launch.
-      // Proceed — prefs cleanup below must always run.
-    }
-    await prefs.remove(_keyAccessToken);
-    await prefs.setString(_keyExpiresAt, expiresAt?.toIso8601String() ?? '');
     await prefs.setInt(_keyUserId, userId);
     await prefs.setString(_keyUserLogin, userLogin);
     await prefs.setString(_keyUserName, userName);
@@ -532,6 +584,10 @@ class SessionService extends ChangeNotifier {
     _employeeTimeOffApprover = '';
     _employeeAttendanceApprover = '';
     _employeeExpenseApprover = '';
+    _refreshToken = '';
+    _refreshExpiresAt = null;
+    _authSource = '';
+    _deviceLabel = '';
     final prefs = await SharedPreferences.getInstance();
     try {
       await _secure.delete(key: _keyAccessToken);
@@ -539,7 +595,15 @@ class SessionService extends ChangeNotifier {
       // Secure-storage delete failed (exotic OS/Keychain error).
       // Continue — the prefs cleanup chain below must always run.
     }
+    try {
+      await _secure.delete(key: _kRefreshToken);
+    } catch (_) {
+      // Same rationale as above — continue the cleanup chain.
+    }
     await prefs.remove(_keyAccessToken);
+    await prefs.remove(_kRefreshExpiresAt);
+    await prefs.remove(_kAuthSource);
+    await prefs.remove(_kDeviceLabel);
     await prefs.remove(_keyExpiresAt);
     await prefs.remove(_keyUserId);
     await prefs.remove(_keyUserLogin);
@@ -559,6 +623,53 @@ class SessionService extends ChangeNotifier {
     await prefs.remove(_keyEmployeeTimeOffApprover);
     await prefs.remove(_keyEmployeeAttendanceApprover);
     await prefs.remove(_keyEmployeeExpenseApprover);
+    notifyListeners();
+  }
+
+  /// Exchange the stored device refresh token for a new access session
+  /// via /auth/refresh. Returns false (and forgets the refresh token)
+  /// when the server refuses it with `refresh_invalid` — e.g. the
+  /// device was revoked or the refresh token expired. Any other
+  /// failure (network, timeout, etc.) also returns false but leaves
+  /// the refresh token in place so a later retry can still succeed.
+  Future<bool> refreshAccessToken(String deviceId) async {
+    if (_refreshToken.isEmpty) return false;
+    final api = OmniMobileApi(baseUrl: _clientUrl, db: _clientDb, token: '');
+    try {
+      final res = await api.refresh(refreshToken: _refreshToken, deviceId: deviceId);
+      final expiresAtStr = res['expires_at']?.toString() ?? '';
+      final expiresAt =
+          expiresAtStr.isNotEmpty ? DateTime.tryParse(expiresAtStr) : null;
+      await _saveAccessToken(res['access_token']?.toString() ?? '', expiresAt);
+      notifyListeners();
+      return true;
+    } on ApiException catch (e) {
+      if (e.errorCode == 'refresh_invalid') {
+        _refreshToken = '';
+        try {
+          await _secure.delete(key: _kRefreshToken);
+        } catch (_) {
+          // Secure-storage delete failed (exotic OS/Keychain error) — the
+          // in-memory token is already cleared above.
+        }
+        notifyListeners();
+      }
+      return false;
+    }
+  }
+
+  /// Refresh `authSource`/`deviceLabel` from a raw `/me` response.
+  /// No-op when the map lacks `auth_source` — a legacy connector that
+  /// predates App Identity never sends it, so `supportsIdentity` must
+  /// stay whatever it already was rather than flipping to false.
+  void updateFromMe(Map<String, dynamic> me) {
+    if (!me.containsKey('auth_source')) return;
+    _authSource = me['auth_source']?.toString() ?? '';
+    _deviceLabel = ((me['device'] as Map?)?['label'] ?? '').toString();
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.setString(_kAuthSource, _authSource);
+      prefs.setString(_kDeviceLabel, _deviceLabel);
+    });
     notifyListeners();
   }
 

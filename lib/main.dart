@@ -122,6 +122,7 @@ class _OmniHrAppState extends State<OmniHrApp> with WidgetsBindingObserver {
         employeeExpenseApprover:
             employee['expense_approver_name']?.toString(),
       );
+      s.updateFromMe(res);
     } catch (_) {
       // Silent — cached employee fields stay. invalid_session is
       // handled by the global onInvalidSession callback set in main().
