@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omni_hr/core/error_messages.dart';
+import 'package:omni_hr/services/omni_mobile_api.dart';
 
 void main() {
   group('friendlyError', () {
@@ -119,6 +120,27 @@ void main() {
           contains('not recognized'));
       expect(friendlyError('egress_ip_mismatch'),
           contains('office network'));
+    });
+  });
+
+  group('friendlyErrorCode', () {
+    test('identity codes have human messages', () {
+      expect(friendlyErrorCode('account_locked', retryAfter: 900),
+          'Too many attempts. Try again in 15 minutes.');
+      expect(friendlyErrorCode('account_locked', retryAfter: 59),
+          'Too many attempts. Try again in 1 minute.');
+      expect(friendlyErrorCode('activation_expired'),
+          'This invite has expired. Ask HR to send a new one.');
+      expect(friendlyErrorCode('password_too_short'),
+          'Choose a longer password.');
+      expect(friendlyErrorCode('mail_not_configured'),
+          'Password reset by email is not available here. Ask HR to reset it for you.');
+    });
+
+    test('friendlyError maps identity ApiExceptions via retry_after', () {
+      final e = ApiException('account_locked',
+          data: {'success': false, 'error': 'account_locked', 'retry_after': 120});
+      expect(friendlyError(e), 'Too many attempts. Try again in 2 minutes.');
     });
   });
 }

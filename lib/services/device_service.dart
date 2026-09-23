@@ -43,4 +43,29 @@ class DeviceService {
     _cached = finalId;
     return finalId;
   }
+
+  /// Human-readable label the connector shows in the device list,
+  /// e.g. "iPhone · iPhone15,2" or "Android · Pixel 8". Falls back to
+  /// the platform name alone when the model cannot be read.
+  Future<String> getDeviceLabel() async {
+    final platform = Platform.isIOS
+        ? 'iPhone'
+        : Platform.isAndroid
+            ? 'Android'
+            : Platform.operatingSystem;
+    try {
+      final info = DeviceInfoPlugin();
+      String model = '';
+      if (Platform.isIOS) {
+        final ios = await info.iosInfo;
+        model = ios.utsname.machine.isNotEmpty ? ios.utsname.machine : ios.name;
+      } else if (Platform.isAndroid) {
+        final android = await info.androidInfo;
+        model = android.model;
+      }
+      return model.isNotEmpty ? '$platform · $model' : platform;
+    } catch (_) {
+      return platform;
+    }
+  }
 }

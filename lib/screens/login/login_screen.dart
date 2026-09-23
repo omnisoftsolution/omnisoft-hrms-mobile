@@ -16,6 +16,7 @@ import '../../widgets/labeled_field.dart';
 import '../../widgets/primary_button.dart';
 import '../home/home_shell.dart';
 import 'company_settings_screen.dart';
+import 'device_code_dialog.dart';
 
 /// Email/password login. Reached after CompanyCodeScreen has resolved
 /// the SaaS routing (clientUrl + clientDb). On success, calls
@@ -64,9 +65,14 @@ class _LoginScreenState extends State<LoginScreen> {
     final res = await bio.authenticateAndRetrieve();
     if (!mounted) return;
     if (res.outcome == BiometricAuthOutcome.success && res.credential != null) {
-      await _performLogin(
-          res.credential!.login, res.credential!.password ?? '',
-          fromBiometric: true);
+      final cred = res.credential!;
+      if (cred.isRefresh) {
+        await _refreshLogin();
+      } else {
+        // Legacy password-mode credential: replay the password login.
+        await _performLogin(cred.login, cred.password ?? '',
+            fromBiometric: true);
+      }
       return;
     }
     if (res.outcome == BiometricAuthOutcome.lockedOut) {
@@ -76,6 +82,44 @@ class _LoginScreenState extends State<LoginScreen> {
     }
     // canceled / failed / unavailable: stay on the login screen — the
     // password form and the Face ID button both remain available to retry.
+  }
+
+  /// Biometric login backed by a device refresh token: trade it for a
+  /// fresh access token. If the server refuses, biometric login is
+  /// turned off and the user signs in with their password again.
+  Future<void> _refreshLogin() async {
+    final session = context.read<SessionService>();
+    final bio = context.read<BiometricAuthService>();
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+    try {
+      final deviceId = await _deviceService.getDeviceId();
+      final ok = await session.refreshAccessToken(deviceId);
+      if (!mounted) return;
+      if (ok) {
+        _goHome();
+        return;
+      }
+      await bio.disable();
+      if (!mounted) return;
+      setState(() {
+        _capable = false;
+        _error = friendlyErrorCode('refresh_invalid');
+      });
+    } catch (e) {
+      if (mounted) setState(() => _error = friendlyError(e));
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  void _goHome() {
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const HomeShell()),
+      (_) => false,
+    );
   }
 
   @override
@@ -96,38 +140,68 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   /// Shared login path for both the password form and biometric replay.
+  ///
+  /// [emailCode] is the 6-digit code from the new-device email, sent on
+  /// the retry after the server answered `device_verification_required`.
   Future<void> _performLogin(String loginText, String password,
-      {bool fromBiometric = false}) async {
+      {bool fromBiometric = false, String? emailCode}) async {
     setState(() {
       _submitting = true;
       _error = null;
     });
     try {
       final session = context.read<SessionService>();
+      final bio = context.read<BiometricAuthService>();
       final api = OmniMobileApi(
         baseUrl: session.clientUrl,
         db: session.clientDb,
         token: '', // login has no auth header
       );
       final deviceId = await _deviceService.getDeviceId();
+      final deviceLabel = await _deviceService.getDeviceLabel();
       final res = await api.login(
         login: loginText,
         password: password,
         deviceId: deviceId,
+        deviceLabel: deviceLabel,
         appVersion: AppConstants.appVersion,
+        emailCode: emailCode,
       );
       await session.saveLoginResponse(res);
+      final refreshToken = session.refreshToken;
+      if (refreshToken.isNotEmpty) {
+        // Migrate a password-mode biometric login to the refresh token,
+        // and keep an existing refresh-mode one current.
+        await bio.replacePasswordWithRefreshToken(refreshToken);
+        await bio.updateRefreshToken(refreshToken);
+      }
       if (!mounted) return;
       await _maybeOfferBiometricOptIn(loginText, password, session.employeeName);
       if (!mounted) return;
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const HomeShell()),
-        (_) => false,
-      );
+      _goHome();
     } on ApiException catch (e) {
       if (!mounted) return;
       final bio = context.read<BiometricAuthService>();
-      if (e.errorCode == 'invalid_credentials' &&
+      if (e.errorCode == 'account_locked') {
+        setState(() => _error = friendlyErrorCode('account_locked',
+            retryAfter: (e.data?['retry_after'] as num?)?.toInt()));
+      } else if (e.errorCode == 'device_verification_required' ||
+          e.errorCode == 'verification_code_invalid') {
+        // New phone: ask for the emailed code and retry with it. A wrong
+        // code comes back here as verification_code_invalid and re-opens
+        // the dialog with the error; Cancel ends the loop.
+        final code = await showDeviceCodeDialog(
+          context,
+          email: loginText,
+          error: e.errorCode == 'verification_code_invalid'
+              ? friendlyErrorCode('verification_code_invalid')
+              : null,
+        );
+        if (code != null && mounted) {
+          return _performLogin(loginText, password,
+              fromBiometric: fromBiometric, emailCode: code);
+        }
+      } else if (e.errorCode == 'invalid_credentials' &&
           fromBiometric &&
           bio.isEnabled) {
         await bio.disable();
@@ -142,10 +216,40 @@ class _LoginScreenState extends State<LoginScreen> {
         setState(() => _error = _humanize(e));
       }
     } catch (e) {
-      setState(() => _error = friendlyError(e));
+      if (mounted) setState(() => _error = friendlyError(e));
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
+  }
+
+  /// "Forgot password?": ask for the email (prefilled from the form) and
+  /// request a reset link. The server answers the same way whether or
+  /// not the email has app access, so the confirmation stays neutral.
+  Future<void> _forgotPassword() async {
+    final email = await showDialog<String>(
+      context: context,
+      builder: (_) =>
+          _ForgotPasswordDialog(initialEmail: _loginController.text.trim()),
+    );
+    if (email == null || email.isEmpty || !mounted) return;
+    final session = context.read<SessionService>();
+    final api = OmniMobileApi(
+      baseUrl: session.clientUrl,
+      db: session.clientDb,
+      token: '',
+    );
+    String message;
+    try {
+      final body = await api.passwordResetRequest(email);
+      message = body['error'] == 'mail_not_configured'
+          ? friendlyErrorCode('mail_not_configured')
+          : 'If that email has app access, a reset link is on its way.';
+    } catch (e) {
+      message = friendlyError(e);
+    }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   /// Offer to enable biometric login once, right after a successful
@@ -154,6 +258,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _maybeOfferBiometricOptIn(
       String loginText, String password, String displayName) async {
     final bio = context.read<BiometricAuthService>();
+    final refreshToken = context.read<SessionService>().refreshToken;
     if (bio.isEnabled) return;
     if (await bio.hasDismissedOptIn()) return;
     if (!await bio.isDeviceCapable()) return;
@@ -162,8 +267,15 @@ class _LoginScreenState extends State<LoginScreen> {
     final choice = await showBiometricOptInSheet(context, kind: kind);
     if (!mounted) return;
     if (choice == true) {
-      final ok = await bio.enable(
-          login: loginText, password: password, displayName: displayName);
+      // Prefer the device refresh token; a legacy connector that issues
+      // none still gets the old password-backed biometric login.
+      final ok = refreshToken.isNotEmpty
+          ? await bio.enableWithRefreshToken(
+              login: loginText,
+              refreshToken: refreshToken,
+              displayName: displayName)
+          : await bio.enable(
+              login: loginText, password: password, displayName: displayName);
       if (ok && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text('${biometricLabel(kind)} login enabled')));
@@ -304,6 +416,13 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ),
                       ],
+                      const SizedBox(height: 8),
+                      Center(
+                        child: TextButton(
+                          onPressed: _submitting ? null : _forgotPassword,
+                          child: const Text('Forgot password?'),
+                        ),
+                      ),
                       // Push the footer to the bottom of the safe area.
                       const Spacer(),
                       const SizedBox(height: 24),
@@ -458,6 +577,66 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ),
         ],
+      ],
+    );
+  }
+}
+
+/// Email prompt for "Forgot password?". Owns its controller so it is
+/// disposed only after the dialog has fully closed. Pops the trimmed
+/// email, or null on cancel.
+class _ForgotPasswordDialog extends StatefulWidget {
+  const _ForgotPasswordDialog({required this.initialEmail});
+
+  final String initialEmail;
+
+  @override
+  State<_ForgotPasswordDialog> createState() => _ForgotPasswordDialogState();
+}
+
+class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
+  late final _ctrl = TextEditingController(text: widget.initialEmail);
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _submit() => Navigator.of(context).pop(_ctrl.text.trim());
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Reset password'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Enter your work email and we will send you a link to '
+              'set a new password.'),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _ctrl,
+            keyboardType: TextInputType.emailAddress,
+            autofocus: true,
+            decoration: const InputDecoration(labelText: 'Work email'),
+            onChanged: (_) => setState(() {}),
+            onSubmitted: (_) {
+              if (_ctrl.text.trim().isNotEmpty) _submit();
+            },
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(null),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _ctrl.text.trim().isEmpty ? null : _submit,
+          child: const Text('Send link'),
+        ),
       ],
     );
   }

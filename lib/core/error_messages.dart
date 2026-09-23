@@ -12,11 +12,59 @@
 /// Usage: `setState(() => _error = friendlyError(e));`
 library;
 
+import '../services/omni_mobile_api.dart';
+
+/// App Identity error codes that [friendlyErrorCode] owns.
+const _identityCodes = {
+  'account_locked',
+  'device_verification_required',
+  'verification_code_invalid',
+  'activation_invalid',
+  'activation_expired',
+  'activation_attempts_exceeded',
+  'password_too_short',
+  'refresh_invalid',
+  'mail_not_configured',
+};
+
+/// Human message for an App Identity error code. [retryAfter] (seconds)
+/// is only used by `account_locked`.
+String friendlyErrorCode(String code, {int? retryAfter}) {
+  switch (code) {
+    case 'account_locked':
+      final mins = ((retryAfter ?? 0) / 60).ceil().clamp(1, 1440);
+      return 'Too many attempts. Try again in $mins minute${mins == 1 ? '' : 's'}.';
+    case 'device_verification_required':
+      return 'Check your work email for a sign-in code.';
+    case 'verification_code_invalid':
+      return 'That code is not right or has expired.';
+    case 'activation_invalid':
+      return 'This invite is not valid. Check the code, or ask HR to send a new one.';
+    case 'activation_expired':
+      return 'This invite has expired. Ask HR to send a new one.';
+    case 'activation_attempts_exceeded':
+      return 'Too many wrong codes. Ask HR to send a new invite.';
+    case 'password_too_short':
+      return 'Choose a longer password.';
+    case 'refresh_invalid':
+      return 'Please sign in again.';
+    case 'mail_not_configured':
+      return 'Password reset by email is not available here. Ask HR to reset it for you.';
+    default:
+      return 'Something went wrong ($code). Please try again.';
+  }
+}
+
 /// Maps a known server/error code (or an exception whose `.toString()`
 /// contains one) to a friendly, human message. Falls back to a generic
 /// message for anything unrecognized — it will not echo raw exception
 /// text unless that text is a short, obviously-safe snake_case code.
 String friendlyError(Object e) {
+  if (e is ApiException && _identityCodes.contains(e.errorCode)) {
+    return friendlyErrorCode(e.errorCode,
+        retryAfter: (e.data?['retry_after'] as num?)?.toInt());
+  }
+
   final raw = e.toString();
 
   // --- Connectivity / transport ---
