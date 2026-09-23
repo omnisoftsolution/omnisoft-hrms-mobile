@@ -26,14 +26,24 @@ class FakeBiometricGate implements BiometricGate {
   Future<BiometricAuthOutcome> authenticate(String reason) async => nextOutcome;
 }
 
-Widget _host(BiometricAuthService svc, {PasswordVerifier? verify}) => MaterialApp(
+Widget _host(
+  BiometricAuthService svc, {
+  PasswordVerifier? verify,
+  String Function()? refreshTokenProvider,
+  String authSource = '',
+}) =>
+    MaterialApp(
       home: Scaffold(
         body: ChangeNotifierProvider<BiometricAuthService>.value(
           value: svc,
-          child: SecurityPrivacyCard(
-            login: 'budi@acme.sg',
-            displayName: 'Budi',
-            verifyPassword: verify ?? (_) async => PasswordCheck.ok,
+          child: SingleChildScrollView(
+            child: SecurityPrivacyCard(
+              login: 'budi@acme.sg',
+              displayName: 'Budi',
+              verifyPassword: verify ?? (_) async => PasswordCheck.ok,
+              refreshTokenProvider: refreshTokenProvider,
+              authSource: authSource,
+            ),
           ),
         ),
       ),
@@ -172,5 +182,68 @@ void main() {
     await tester.pumpAndSettle();
     expect(verifyCalls, 0);
     expect(svc.isEnabled, isFalse);
+  });
+
+  testWidgets(
+      'refresh token present: enables with the token, never stores the password',
+      (tester) async {
+    final svc = BiometricAuthService(gate: FakeBiometricGate(available: true));
+    await svc.load();
+    await tester.pumpWidget(_host(svc,
+        verify: (_) async => PasswordCheck.ok,
+        refreshTokenProvider: () => 'RT-123'));
+    await tester.pumpAndSettle();
+    await _tapToggleAndConfirm(tester);
+    expect(svc.isEnabled, isTrue);
+    const storage = FlutterSecureStorage();
+    expect(await storage.read(key: 'biometric_refresh_token'), 'RT-123');
+    expect(await storage.read(key: 'biometric_password'), isNull);
+  });
+
+  testWidgets('empty refresh token: falls back to storing the password',
+      (tester) async {
+    final svc = BiometricAuthService(gate: FakeBiometricGate(available: true));
+    await svc.load();
+    await tester.pumpWidget(_host(svc,
+        verify: (_) async => PasswordCheck.ok, refreshTokenProvider: () => ''));
+    await tester.pumpAndSettle();
+    await _tapToggleAndConfirm(tester);
+    expect(svc.isEnabled, isTrue);
+    const storage = FlutterSecureStorage();
+    expect(await storage.read(key: 'biometric_password'), 'whatever');
+    expect(await storage.read(key: 'biometric_refresh_token'), isNull);
+  });
+
+  testWidgets('authSource omni: shows Your devices and Change password tiles',
+      (tester) async {
+    final svc = BiometricAuthService(gate: FakeBiometricGate(available: false));
+    await tester.pumpWidget(_host(svc, authSource: 'omni'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(ListTile, 'Your devices'), findsOneWidget);
+    expect(find.widgetWithText(ListTile, 'Change password'), findsOneWidget);
+    expect(find.textContaining('Odoo password'), findsNothing);
+  });
+
+  testWidgets('authSource odoo: shows only the app-invite info tile',
+      (tester) async {
+    final svc = BiometricAuthService(gate: FakeBiometricGate(available: false));
+    await tester.pumpWidget(_host(svc, authSource: 'odoo'));
+    await tester.pumpAndSettle();
+    expect(
+        find.text(
+            'Signed in with your Odoo password. HR will send you an app invite.'),
+        findsOneWidget);
+    expect(find.text('Your devices'), findsNothing);
+    expect(find.text('Change password'), findsNothing);
+  });
+
+  testWidgets('authSource empty: no identity tiles', (tester) async {
+    final svc = BiometricAuthService(gate: FakeBiometricGate(available: false));
+    await tester.pumpWidget(_host(svc));
+    await tester.pumpAndSettle();
+    expect(find.text('Your devices'), findsNothing);
+    expect(find.text('Change password'), findsNothing);
+    expect(find.textContaining('Odoo password'), findsNothing);
+    expect(find.text('Privacy Policy'), findsOneWidget);
   });
 }

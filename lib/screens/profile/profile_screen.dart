@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../../core/constants.dart';
 import '../../core/datetime_utils.dart';
 import '../../core/theme.dart';
+import '../../services/biometric_auth_service.dart';
 import '../../services/face_recognition_service.dart';
 import '../../services/omni_mobile_api.dart';
 import '../../services/device_service.dart';
@@ -78,6 +79,8 @@ class ProfileScreen extends StatelessWidget {
           SecurityPrivacyCard(
             login: session.userLogin,
             displayName: session.employeeName,
+            authSource: session.authSource,
+            refreshTokenProvider: () => session.refreshToken,
             verifyPassword: (password) async {
               final api = OmniMobileApi(
                 baseUrl: session.clientUrl,
@@ -110,7 +113,7 @@ class ProfileScreen extends StatelessWidget {
             label: 'LOGOUT',
             icon: Icons.logout_rounded,
             variant: PrimaryButtonVariant.danger,
-            onPressed: () => _logout(context, session),
+            onPressed: () => _onLogoutPressed(context, session),
           ),
           // App Store / Play Store policy: account deletion path
           // must be reachable from within the app. Kept as a low-key
@@ -718,7 +721,42 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
-  Future<void> _logout(BuildContext context, SessionService session) async {
+  /// App Identity ('omni') accounts choose between a plain sign-out and
+  /// "forget this phone"; everyone else signs out directly as before.
+  Future<void> _onLogoutPressed(
+      BuildContext context, SessionService session) async {
+    if (!(session.supportsIdentity && session.authSource == 'omni')) {
+      return _logout(context, session);
+    }
+    final forget = await showModalBottomSheet<bool>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.logout_rounded),
+              title: const Text('Sign out'),
+              onTap: () => Navigator.pop(ctx, false),
+            ),
+            ListTile(
+              leading: const Icon(Icons.phonelink_erase_outlined),
+              title: const Text('Sign out and forget this phone'),
+              subtitle:
+                  const Text('This phone will need your password next time.'),
+              onTap: () => Navigator.pop(ctx, true),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (forget == null || !context.mounted) return;
+    return _logout(context, session, forgetDevice: forget);
+  }
+
+  Future<void> _logout(BuildContext context, SessionService session,
+      {bool forgetDevice = false}) async {
+    final bio = context.read<BiometricAuthService>();
     // Best-effort server-side revocation; even if it fails (network
     // down, expired session), we still wipe the local copy.
     try {
@@ -727,10 +765,13 @@ class ProfileScreen extends StatelessWidget {
         db: session.clientDb,
         token: session.token,
       );
-      await api.logout();
+      await api.logout(forgetDevice: forgetDevice);
     } catch (_) {
       // ignored — local clear runs regardless
     }
+    // Forgetting the phone revokes its device trust server-side, so the
+    // local Face ID credential (refresh token) is useless — drop it.
+    if (forgetDevice) await bio.disable();
     // clearSession (not signOut) so a deliberate Log out ends the session
     // but KEEPS the biometric credential — the user can sign back in with
     // Face ID. Delete account / company-change still use signOut().
