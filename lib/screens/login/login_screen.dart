@@ -435,10 +435,14 @@ class _LoginScreenState extends State<LoginScreen> {
                       Wrap(
                         alignment: WrapAlignment.center,
                         children: [
-                          TextButton(
-                            onPressed: _submitting ? null : _forgotPassword,
-                            child: const Text('Forgot password?'),
-                          ),
+                          // A pre-2.45 connector has no reset endpoint:
+                          // offer it only once this company's connector
+                          // has shown App Identity support.
+                          if (session.identityCapable)
+                            TextButton(
+                              onPressed: _submitting ? null : _forgotPassword,
+                              child: const Text('Forgot password?'),
+                            ),
                           TextButton(
                             onPressed: _submitting
                                 ? null

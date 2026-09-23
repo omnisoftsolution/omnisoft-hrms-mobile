@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../core/constants.dart';
 import '../../core/error_messages.dart';
 import '../../core/theme.dart';
+import '../../models/company_info.dart';
 import '../../services/biometric_auth_service.dart';
 import '../../services/device_service.dart';
 import '../../services/omni_mobile_api.dart';
@@ -24,7 +25,23 @@ class ActivationScreen extends StatefulWidget {
   final String? companyCode;
   final String? token;
 
-  const ActivationScreen({super.key, this.companyCode, this.token});
+  /// Test seam: builds the unauthenticated API client for a company's
+  /// Odoo URL + database. Defaults to the real [OmniMobileApi].
+  @visibleForTesting
+  final OmniMobileApi Function(String baseUrl, String db)? apiBuilder;
+
+  /// Test seam: the screen shown after a successful activation.
+  /// Defaults to [HomeShell].
+  @visibleForTesting
+  final WidgetBuilder? homeBuilder;
+
+  const ActivationScreen({
+    super.key,
+    this.companyCode,
+    this.token,
+    this.apiBuilder,
+    this.homeBuilder,
+  });
 
   @override
   State<ActivationScreen> createState() => _ActivationScreenState();
@@ -85,24 +102,40 @@ class _ActivationScreenState extends State<ActivationScreen> {
   Future<void> _activate() async {
     final session = context.read<SessionService>();
     final bio = context.read<BiometricAuthService>();
-    final companyCode =
-        _hasCompany ? widget.companyCode! : _companyController.text.trim();
+    final companyCode = (_hasCompany
+            ? widget.companyCode!
+            : _companyController.text)
+        .trim();
     final login = _emailController.text.trim().toLowerCase();
     setState(() {
       _submitting = true;
       _error = null;
     });
     try {
-      if (!session.hasCompany || session.companyCode != companyCode) {
-        await session.resolveCompany(companyCode);
+      // Another company's invite: look it up but stage the switch — the
+      // saved company and any live session change only once activation
+      // succeeds, so a failed or abandoned attempt leaves them intact.
+      final sameCompany = session.hasCompany &&
+          companyCode.toUpperCase() == session.companyCode.toUpperCase();
+      CompanyInfo? staged;
+      String stagedSaasUrl = '';
+      var baseUrl = session.clientUrl;
+      var db = session.clientDb;
+      if (!sameCompany) {
+        stagedSaasUrl = session.effectiveSaasUrl();
+        staged = await session.lookupCompany(companyCode,
+            saasUrl: stagedSaasUrl);
+        baseUrl = staged.odooUrl;
+        db = staged.database;
       }
       final deviceId = await _deviceService.getDeviceId();
       final deviceLabel = await _deviceService.getDeviceLabel();
-      final api = OmniMobileApi(
-        baseUrl: session.clientUrl,
-        db: session.clientDb,
-        token: '', // activation has no auth header
-      );
+      final api = widget.apiBuilder?.call(baseUrl, db) ??
+          OmniMobileApi(
+            baseUrl: baseUrl,
+            db: db,
+            token: '', // activation has no auth header
+          );
       final res = await api.activate(
         login: login,
         token: _hasToken ? widget.token : null,
@@ -112,6 +145,11 @@ class _ActivationScreenState extends State<ActivationScreen> {
         deviceLabel: deviceLabel,
         appVersion: AppConstants.appVersion,
       );
+      if (staged != null) {
+        // Commit the switch: drop the other company's session first.
+        if (session.accessToken.isNotEmpty) await session.clearSession();
+        await session.saveCompanyInfo(staged, saasUrl: stagedSaasUrl);
+      }
       await session.saveLoginResponse(res);
       // Face ID already on: hand it the new device token (as a password
       // login does, and only for the same login); otherwise offer it below.
@@ -121,7 +159,8 @@ class _ActivationScreenState extends State<ActivationScreen> {
           bio, login, session.refreshToken, session.employeeName);
       if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const HomeShell()),
+        MaterialPageRoute(
+            builder: widget.homeBuilder ?? (_) => const HomeShell()),
         (_) => false,
       );
     } on ApiException catch (e) {
@@ -170,6 +209,10 @@ class _ActivationScreenState extends State<ActivationScreen> {
             'Contact your administrator to request access.';
       case 'missing_fields':
         return 'Fill in every field.';
+      case 'server_error':
+        // A pre-2.45 connector has no /auth/activate: Odoo answers with
+        // an HTML 404, which the API layer reports as server_error.
+        return 'Activation is not available for your company yet. Ask HR.';
       default:
         // Activation codes route through friendlyErrorCode.
         return friendlyError(e);

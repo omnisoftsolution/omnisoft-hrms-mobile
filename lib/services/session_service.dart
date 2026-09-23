@@ -3,6 +3,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/constants.dart';
+import '../models/company_info.dart';
 import 'omni_mobile_api.dart';
 import 'saas_service.dart';
 
@@ -48,6 +49,11 @@ class SessionService extends ChangeNotifier {
   static const _keyCompanyName = 'company_name';
   static const _keyCompanyLogoB64 = 'company_logo_b64';
   static const _keyShowConnectionDetails = 'show_connection_details';
+  // True once this company's connector has answered with `auth_source`
+  // (App Identity 2.45+). Kept with the routing keys so the signed-out
+  // login screen knows whether to offer "Forgot password?"; reset when
+  // the company changes and by the full logout().
+  static const _keyIdentityCapable = 'identity_capable';
 
   // Keys: login session (cleared on logout)
   static const _keyAccessToken = 'access_token';
@@ -93,6 +99,7 @@ class SessionService extends ChangeNotifier {
   String _companyName = '';
   String _companyLogoB64 = '';
   bool _showConnectionDetails = false;
+  bool _identityCapable = false;
 
   String _accessToken = '';
   DateTime? _expiresAt;
@@ -141,6 +148,12 @@ class SessionService extends ChangeNotifier {
   String get companyName => _companyName;
   String get companyLogoB64 => _companyLogoB64;
   bool get showConnectionDetails => _showConnectionDetails;
+
+  /// Whether this company's connector supports App Identity (it has
+  /// answered /login or /me with `auth_source`). Unlike
+  /// [supportsIdentity] it survives sign-out, so the login screen can
+  /// gate identity-only actions such as "Forgot password?".
+  bool get identityCapable => _identityCapable;
 
   // Auth session
   String get accessToken => _accessToken;
@@ -201,6 +214,7 @@ class SessionService extends ChangeNotifier {
     _companyLogoB64 = prefs.getString(_keyCompanyLogoB64) ?? '';
     _showConnectionDetails =
         prefs.getBool(_keyShowConnectionDetails) ?? false;
+    _identityCapable = prefs.getBool(_keyIdentityCapable) ?? false;
     _accessToken = await _readTokenWithMigration(prefs);
     final exp = prefs.getString(_keyExpiresAt);
     _expiresAt = exp != null && exp.isNotEmpty ? DateTime.tryParse(exp) : null;
@@ -268,6 +282,13 @@ class SessionService extends ChangeNotifier {
     String companyLogoB64 = '',
     bool showConnectionDetails = false,
   }) async {
+    // A different company (or tenant) may run a pre-identity connector:
+    // forget what the previous one supported until it answers again.
+    final companyChanged =
+        companyCode.toUpperCase() != _companyCode.toUpperCase() ||
+            clientUrl != _clientUrl ||
+            clientDb != _clientDb;
+    if (companyChanged) _identityCapable = false;
     _saasUrl = saasUrl;
     _companyCode = companyCode;
     _clientUrl = clientUrl;
@@ -306,35 +327,56 @@ class SessionService extends ChangeNotifier {
     await prefs.setString(_keyCompanyName, _companyName);
     await prefs.setString(_keyCompanyLogoB64, _companyLogoB64);
     await prefs.setBool(_keyShowConnectionDetails, _showConnectionDetails);
+    await prefs.setBool(_keyIdentityCapable, _identityCapable);
     notifyListeners();
   }
 
-  /// Resolve [code] on the SaaS and save the company routing. Resolves
-  /// against [saasUrl] when given (the company-code screen's typed URL),
-  /// else the session's SaaS URL, else [DevConstants.defaultSaasUrl]
-  /// (an invite link on a fresh install has none yet). Throws the
-  /// [SaasService] exception unchanged; nothing is saved on failure.
+  /// The SaaS URL a company lookup uses: [saasUrl] when given (the
+  /// company-code screen's typed URL — used as typed, even empty, so
+  /// SaasService reports it as invalid as that screen always did), else
+  /// the session's SaaS URL, else [DevConstants.defaultSaasUrl] (an
+  /// invite link on a fresh install has none yet).
+  String effectiveSaasUrl([String? saasUrl]) =>
+      saasUrl ?? (_saasUrl.isNotEmpty ? _saasUrl : DevConstants.defaultSaasUrl);
+
+  /// Resolve [code] on the SaaS WITHOUT saving anything, so a caller can
+  /// stage a company switch and commit it (via [saveCompanyInfo]) only
+  /// once the follow-up step succeeds. URL fallback as [effectiveSaasUrl].
+  /// Throws the [SaasService] exception unchanged.
+  Future<CompanyInfo> lookupCompany(String code, {String? saasUrl}) =>
+      lookupCompanyWith(SaasService(), code, saasUrl: saasUrl);
+
+  @visibleForTesting
+  Future<CompanyInfo> lookupCompanyWith(SaasService saas, String code,
+          {String? saasUrl}) =>
+      saas.resolveCompany(effectiveSaasUrl(saasUrl), code);
+
+  /// Save a company returned by [lookupCompany], with the same arguments
+  /// the company-code screen passes to [saveCompany].
+  Future<void> saveCompanyInfo(CompanyInfo info, {required String saasUrl}) =>
+      saveCompany(
+        saasUrl: saasUrl,
+        companyCode: info.companyCode,
+        clientUrl: info.odooUrl,
+        clientDb: info.database,
+        features: info.features,
+        companyName: info.name,
+        companyLogoB64: info.companyLogoB64,
+        showConnectionDetails: info.showConnectionDetails,
+      );
+
+  /// Resolve [code] on the SaaS and save the company routing
+  /// ([lookupCompany] + [saveCompanyInfo]). Throws the [SaasService]
+  /// exception unchanged; nothing is saved on failure.
   Future<void> resolveCompany(String code, {String? saasUrl}) =>
       resolveCompanyWith(SaasService(), code, saasUrl: saasUrl);
 
   @visibleForTesting
   Future<void> resolveCompanyWith(SaasService saas, String code,
       {String? saasUrl}) async {
-    // An explicit URL is used as typed (even empty — SaasService then
-    // reports it as invalid, as the company-code screen always did).
-    final url = saasUrl ??
-        (_saasUrl.isNotEmpty ? _saasUrl : DevConstants.defaultSaasUrl);
-    final info = await saas.resolveCompany(url, code);
-    await saveCompany(
-      saasUrl: url,
-      companyCode: info.companyCode,
-      clientUrl: info.odooUrl,
-      clientDb: info.database,
-      features: info.features,
-      companyName: info.name,
-      companyLogoB64: info.companyLogoB64,
-      showConnectionDetails: info.showConnectionDetails,
-    );
+    final url = effectiveSaasUrl(saasUrl);
+    final info = await lookupCompanyWith(saas, code, saasUrl: url);
+    await saveCompanyInfo(info, saasUrl: url);
   }
 
   /// Re-resolve the company from the SaaS and refresh cached feature
@@ -405,6 +447,7 @@ class SessionService extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_kAuthSource, _authSource);
     await prefs.setString(_kDeviceLabel, _deviceLabel);
+    if (_authSource.isNotEmpty) await _markIdentityCapable(prefs);
     if (rt.isNotEmpty) {
       _refreshToken = rt;
       _refreshExpiresAt = rx.isNotEmpty ? DateTime.tryParse(rx) : null;
@@ -779,7 +822,7 @@ class SessionService extends ChangeNotifier {
             employee['attendance_approver_name']?.toString(),
         employeeExpenseApprover: employee['expense_approver_name']?.toString(),
       );
-      updateFromMe(res);
+      await updateFromMe(res);
       return true;
     } catch (_) {
       return false;
@@ -790,15 +833,20 @@ class SessionService extends ChangeNotifier {
   /// No-op when the map lacks `auth_source` — a legacy connector that
   /// predates App Identity never sends it, so `supportsIdentity` must
   /// stay whatever it already was rather than flipping to false.
-  void updateFromMe(Map<String, dynamic> me) {
+  Future<void> updateFromMe(Map<String, dynamic> me) async {
     if (!me.containsKey('auth_source')) return;
     _authSource = me['auth_source']?.toString() ?? '';
     _deviceLabel = ((me['device'] as Map?)?['label'] ?? '').toString();
-    SharedPreferences.getInstance().then((prefs) {
-      prefs.setString(_kAuthSource, _authSource);
-      prefs.setString(_kDeviceLabel, _deviceLabel);
-    });
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kAuthSource, _authSource);
+    await prefs.setString(_kDeviceLabel, _deviceLabel);
+    if (_authSource.isNotEmpty) await _markIdentityCapable(prefs);
     notifyListeners();
+  }
+
+  Future<void> _markIdentityCapable(SharedPreferences prefs) async {
+    _identityCapable = true;
+    await prefs.setBool(_keyIdentityCapable, true);
   }
 
   /// Deliberate, user-initiated sign-out: wipe the login session AND fire
@@ -819,12 +867,14 @@ class SessionService extends ChangeNotifier {
     _companyCode = '';
     _clientUrl = '';
     _clientDb = '';
+    _identityCapable = false;
     await clearSession();
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_keySaasUrl);
     await prefs.remove(_keyCompanyCode);
     await prefs.remove(_keyClientUrl);
     await prefs.remove(_keyClientDb);
+    await prefs.remove(_keyIdentityCapable);
     onLogout?.call();
     notifyListeners();
   }

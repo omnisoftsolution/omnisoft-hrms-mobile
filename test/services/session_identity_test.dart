@@ -291,7 +291,7 @@ void main() {
   test('updateFromMe sets authSource and deviceLabel when present', () async {
     final s = SessionService();
     await s.load();
-    s.updateFromMe({
+    await s.updateFromMe({
       'auth_source': 'omni',
       'device': {'label': 'Pixel'},
     });
@@ -300,11 +300,76 @@ void main() {
     expect(s.supportsIdentity, isTrue);
   });
 
+  group('identityCapable', () {
+    test('set by a login response that carries auth_source, persisted',
+        () async {
+      final s = SessionService();
+      await s.load();
+      expect(s.identityCapable, isFalse);
+      await s.saveLoginResponse(omniRes());
+      expect(s.identityCapable, isTrue);
+      final s2 = SessionService();
+      await s2.load();
+      expect(s2.identityCapable, isTrue);
+    });
+
+    test('not set by a legacy login response without auth_source', () async {
+      final s = SessionService();
+      await s.saveLoginResponse(omniRes()..remove('auth_source'));
+      expect(s.identityCapable, isFalse);
+    });
+
+    test('set by updateFromMe when auth_source is present', () async {
+      final s = SessionService();
+      await s.load();
+      await s.updateFromMe({'auth_source': 'omni'});
+      expect(s.identityCapable, isTrue);
+    });
+
+    test('survives clearSession (involuntary expiry / sign-out)', () async {
+      final s = SessionService();
+      await s.saveLoginResponse(omniRes());
+      await s.clearSession();
+      expect(s.identityCapable, isTrue);
+      final s2 = SessionService();
+      await s2.load();
+      expect(s2.identityCapable, isTrue);
+    });
+
+    test('cleared by the full logout() company reset', () async {
+      final s = SessionService();
+      await s.saveLoginResponse(omniRes());
+      await s.logout();
+      expect(s.identityCapable, isFalse);
+      final s2 = SessionService();
+      await s2.load();
+      expect(s2.identityCapable, isFalse);
+    });
+
+    test('reset by saveCompany when the company changes, kept otherwise',
+        () async {
+      final s = SessionService();
+      await s.saveCompany(
+          saasUrl: 'https://saas', companyCode: 'A', clientUrl: 'https://a');
+      await s.saveLoginResponse(omniRes());
+      // Same company re-saved (e.g. refreshSubscription): kept.
+      await s.saveCompany(
+          saasUrl: 'https://saas', companyCode: 'A', clientUrl: 'https://a');
+      expect(s.identityCapable, isTrue);
+      await s.saveCompany(
+          saasUrl: 'https://saas', companyCode: 'B', clientUrl: 'https://b');
+      expect(s.identityCapable, isFalse);
+      final s2 = SessionService();
+      await s2.load();
+      expect(s2.identityCapable, isFalse);
+    });
+  });
+
   test('updateFromMe is a no-op when auth_source is absent (legacy connector)',
       () async {
     final s = SessionService();
     await s.saveLoginResponse(omniRes()); // authSource == 'omni'
-    s.updateFromMe({
+    await s.updateFromMe({
       'user': {'id': 1, 'name': 'A'},
     });
     expect(s.authSource, 'omni');
