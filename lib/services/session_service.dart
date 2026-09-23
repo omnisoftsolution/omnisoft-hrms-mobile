@@ -632,9 +632,18 @@ class SessionService extends ChangeNotifier {
   /// device was revoked or the refresh token expired. Any other
   /// failure (network, timeout, etc.) also returns false but leaves
   /// the refresh token in place so a later retry can still succeed.
-  Future<bool> refreshAccessToken(String deviceId) async {
-    if (_refreshToken.isEmpty) return false;
+  ///
+  /// Thin wrapper: builds the real [OmniMobileApi] and delegates to
+  /// [refreshAccessTokenWith], which holds all the logic and is
+  /// unit-testable with a fake api (no real HTTP).
+  Future<bool> refreshAccessToken(String deviceId) {
     final api = OmniMobileApi(baseUrl: _clientUrl, db: _clientDb, token: '');
+    return refreshAccessTokenWith(api, deviceId);
+  }
+
+  @visibleForTesting
+  Future<bool> refreshAccessTokenWith(OmniMobileApi api, String deviceId) async {
+    if (_refreshToken.isEmpty) return false;
     try {
       final res = await api.refresh(refreshToken: _refreshToken, deviceId: deviceId);
       final expiresAtStr = res['expires_at']?.toString() ?? '';
