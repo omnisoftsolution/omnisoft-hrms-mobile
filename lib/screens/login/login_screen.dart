@@ -67,7 +67,7 @@ class _LoginScreenState extends State<LoginScreen> {
     if (res.outcome == BiometricAuthOutcome.success && res.credential != null) {
       final cred = res.credential!;
       if (cred.isRefresh) {
-        await _refreshLogin(cred.refreshToken!);
+        await _refreshLogin(cred.login, cred.refreshToken!);
       } else {
         // Legacy password-mode credential: replay the password login.
         await _performLogin(cred.login, cred.password ?? '',
@@ -90,7 +90,7 @@ class _LoginScreenState extends State<LoginScreen> {
   /// If the server refuses the token, biometric login is turned off and
   /// the user signs in with their password; a transient failure (e.g.
   /// no network) keeps Face ID so they can simply retry.
-  Future<void> _refreshLogin(String refreshToken) async {
+  Future<void> _refreshLogin(String login, String refreshToken) async {
     final session = context.read<SessionService>();
     final bio = context.read<BiometricAuthService>();
     setState(() {
@@ -107,7 +107,10 @@ class _LoginScreenState extends State<LoginScreen> {
           // for HomeShell (the session is logged in now), so repopulate
           // the profile a sign-out wiped before any mounted check. A
           // failed /me is not fatal — cached/empty fields fill in on the
-          // next app resume, as in main.dart.
+          // next app resume, as in main.dart. The login is seeded from
+          // the Face ID credential first so the profile's password check
+          // works even when /me fails offline; /me overwrites it if sent.
+          await session.setUserLogin(login);
           await session.refreshMe();
           if (!mounted) return;
           if (session.isLoggedIn) _goHome();

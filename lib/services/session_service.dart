@@ -473,11 +473,16 @@ class SessionService extends ChangeNotifier {
   }
 
   /// Refresh employee + approver fields from a /me response without
-  /// touching auth (token, expiresAt, userId, userLogin). Used by
+  /// touching the token or expiresAt. Used by
   /// _refreshMeInBackground on app start + resume so HR-side edits
   /// (manager change, new approver, etc.) flow into the app without
   /// a logout cycle.
+  ///
+  /// [userId]/[userLogin] are applied only when present and non-empty,
+  /// so a /me from an older connector that omits `user` keeps them.
   Future<void> updateEmployeeFromMe({
+    int? userId,
+    String? userLogin,
     String? userName,
     int? employeeId,
     String? employeeName,
@@ -496,6 +501,14 @@ class SessionService extends ChangeNotifier {
     String? employeeExpenseApprover,
   }) async {
     final prefs = await SharedPreferences.getInstance();
+    if (userId != null && userId > 0) {
+      _userId = userId;
+      await prefs.setInt(_keyUserId, userId);
+    }
+    if (userLogin != null && userLogin.isNotEmpty) {
+      _userLogin = userLogin;
+      await prefs.setString(_keyUserLogin, userLogin);
+    }
     if (userName != null) {
       _userName = userName;
       await prefs.setString(_keyUserName, userName);
@@ -703,6 +716,12 @@ class SessionService extends ChangeNotifier {
   Future<bool> refreshMe() => refreshMeWith(
       OmniMobileApi(baseUrl: _clientUrl, db: _clientDb, token: _accessToken));
 
+  /// Seed the user login (e.g. from the Face ID credential after a
+  /// sign-out wiped it) so screens that need it work even if /me fails.
+  /// Goes through [updateEmployeeFromMe] — the one persistence path.
+  Future<void> setUserLogin(String login) =>
+      updateEmployeeFromMe(userLogin: login);
+
   @visibleForTesting
   Future<bool> refreshMeWith(OmniMobileApi api) async {
     try {
@@ -710,6 +729,8 @@ class SessionService extends ChangeNotifier {
       final user = res['user'] as Map<String, dynamic>? ?? {};
       final employee = res['employee'] as Map<String, dynamic>? ?? {};
       await updateEmployeeFromMe(
+        userId: (user['id'] as num?)?.toInt(),
+        userLogin: user['login']?.toString(),
         userName: user['name']?.toString(),
         employeeId: (employee['id'] as num?)?.toInt(),
         employeeName: employee['name']?.toString(),

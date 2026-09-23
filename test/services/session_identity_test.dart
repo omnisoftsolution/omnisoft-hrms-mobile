@@ -228,7 +228,7 @@ void main() {
         'success': true,
         'auth_source': 'omni',
         'device': {'label': 'iPhone · iPhone15,2'},
-        'user': {'id': 9, 'name': 'Agus'},
+        'user': {'id': 9, 'login': 'agus@maxhill.test', 'name': 'Agus'},
         'employee': {
           'id': 6,
           'name': 'Agus Salim',
@@ -239,6 +239,13 @@ void main() {
     );
     final ok = await s.refreshMeWith(fake);
     expect(ok, isTrue);
+    expect(s.userId, 9);
+    expect(s.userLogin, 'agus@maxhill.test');
+    // Persisted, so a restart keeps them.
+    final s2 = SessionService();
+    await s2.load();
+    expect(s2.userId, 9);
+    expect(s2.userLogin, 'agus@maxhill.test');
     expect(s.userName, 'Agus');
     expect(s.employeeId, 6);
     expect(s.employeeName, 'Agus Salim');
@@ -246,6 +253,31 @@ void main() {
     expect(s.employeeDepartment, 'Production');
     expect(s.authSource, 'omni');
     expect(s.deviceLabel, 'iPhone · iPhone15,2');
+  });
+
+  test('refreshMeWith keeps userId/userLogin when /me omits user '
+      '(older connector)', () async {
+    final s = SessionService();
+    await s.saveLoginResponse(omniRes()); // userId 9, login a@b.c
+    final fake = _FakeApi(
+      onMe: () async => {
+        'success': true,
+        'employee': {'id': 6, 'name': 'A'},
+      },
+    );
+    expect(await s.refreshMeWith(fake), isTrue);
+    expect(s.userId, 9);
+    expect(s.userLogin, 'a@b.c');
+  });
+
+  test('setUserLogin seeds and persists the login', () async {
+    final s = SessionService();
+    await s.load();
+    await s.setUserLogin('face@b.c');
+    expect(s.userLogin, 'face@b.c');
+    final s2 = SessionService();
+    await s2.load();
+    expect(s2.userLogin, 'face@b.c');
   });
 
   test('refreshMeWith returns false and swallows errors', () async {
