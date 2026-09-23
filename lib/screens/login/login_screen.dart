@@ -67,7 +67,7 @@ class _LoginScreenState extends State<LoginScreen> {
     if (res.outcome == BiometricAuthOutcome.success && res.credential != null) {
       final cred = res.credential!;
       if (cred.isRefresh) {
-        await _refreshLogin();
+        await _refreshLogin(cred.refreshToken!);
       } else {
         // Legacy password-mode credential: replay the password login.
         await _performLogin(cred.login, cred.password ?? '',
@@ -84,10 +84,13 @@ class _LoginScreenState extends State<LoginScreen> {
     // password form and the Face ID button both remain available to retry.
   }
 
-  /// Biometric login backed by a device refresh token: trade it for a
-  /// fresh access token. If the server refuses, biometric login is
-  /// turned off and the user signs in with their password again.
-  Future<void> _refreshLogin() async {
+  /// Biometric login backed by the device refresh token Face ID stored
+  /// (it survives sign-out, unlike the session's copy): trade it for a
+  /// fresh access token, re-pull the profile from /me, then go home.
+  /// If the server refuses the token, biometric login is turned off and
+  /// the user signs in with their password; a transient failure (e.g.
+  /// no network) keeps Face ID so they can simply retry.
+  Future<void> _refreshLogin(String refreshToken) async {
     final session = context.read<SessionService>();
     final bio = context.read<BiometricAuthService>();
     setState(() {
@@ -96,18 +99,29 @@ class _LoginScreenState extends State<LoginScreen> {
     });
     try {
       final deviceId = await _deviceService.getDeviceId();
-      final ok = await session.refreshAccessToken(deviceId);
-      if (!mounted) return;
-      if (ok) {
-        _goHome();
-        return;
+      final outcome = await session.refreshAccessToken(deviceId,
+          refreshToken: refreshToken);
+      switch (outcome) {
+        case RefreshOutcome.ok:
+          // The top-level Consumer may already be swapping this screen
+          // for HomeShell (the session is logged in now), so repopulate
+          // the profile a sign-out wiped before any mounted check. A
+          // failed /me is not fatal — cached/empty fields fill in on the
+          // next app resume, as in main.dart.
+          await session.refreshMe();
+          if (!mounted) return;
+          if (session.isLoggedIn) _goHome();
+        case RefreshOutcome.invalid:
+          await bio.disable();
+          if (!mounted) return;
+          setState(() {
+            _capable = false;
+            _error = friendlyErrorCode('refresh_invalid');
+          });
+        case RefreshOutcome.failed:
+          if (!mounted) return;
+          setState(() => _error = friendlyError(ApiException('network_error')));
       }
-      await bio.disable();
-      if (!mounted) return;
-      setState(() {
-        _capable = false;
-        _error = friendlyErrorCode('refresh_invalid');
-      });
     } catch (e) {
       if (mounted) setState(() => _error = friendlyError(e));
     } finally {

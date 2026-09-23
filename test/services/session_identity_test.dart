@@ -7,8 +7,13 @@ import 'package:omni_hr/services/omni_mobile_api.dart';
 /// Records the args it received and returns/throws whatever [onRefresh]
 /// says, so refreshAccessTokenWith can be tested without real HTTP.
 class _FakeApi extends OmniMobileApi {
-  _FakeApi({this.onRefresh})
+  _FakeApi({this.onRefresh, this.onMe})
       : super(baseUrl: 'https://example.test', db: 'testdb', token: '');
+
+  final Future<Map<String, dynamic>> Function()? onMe;
+
+  @override
+  Future<Map<String, dynamic>> me() => onMe!();
 
   final Future<Map<String, dynamic>> Function({
     required String refreshToken,
@@ -94,8 +99,8 @@ void main() {
         'expires_at': '2026-12-01 00:00:00',
       },
     );
-    final ok = await s.refreshAccessTokenWith(fake, 'device-1');
-    expect(ok, isTrue);
+    final out = await s.refreshAccessTokenWith(fake, 'device-1');
+    expect(out, RefreshOutcome.ok);
     expect(s.accessToken, 'NEW-A');
     expect(s.expiresAt, DateTime.parse('2026-12-01 00:00:00'));
     expect(s.refreshToken, 'R');
@@ -112,8 +117,8 @@ void main() {
         throw ApiException('refresh_invalid');
       },
     );
-    final ok = await s.refreshAccessTokenWith(fake, 'device-1');
-    expect(ok, isFalse);
+    final out = await s.refreshAccessTokenWith(fake, 'device-1');
+    expect(out, RefreshOutcome.invalid);
     expect(s.refreshToken, '');
     expect(await const FlutterSecureStorage().read(key: 'refresh_token'),
         isNull);
@@ -128,20 +133,127 @@ void main() {
         throw ApiException('network_error');
       },
     );
-    final ok = await s.refreshAccessTokenWith(fake, 'device-1');
-    expect(ok, isFalse);
+    final out = await s.refreshAccessTokenWith(fake, 'device-1');
+    expect(out, RefreshOutcome.failed);
     expect(s.refreshToken, 'R');
     expect(await const FlutterSecureStorage().read(key: 'refresh_token'), 'R');
   });
 
-  test('refreshAccessTokenWith with no stored refresh token returns false '
+  test('refreshAccessTokenWith with no refresh token at all returns invalid '
       'without calling the api', () async {
     final s = SessionService();
     await s.load();
     final fake = _FakeApi();
-    final ok = await s.refreshAccessTokenWith(fake, 'device-1');
-    expect(ok, isFalse);
+    final out = await s.refreshAccessTokenWith(fake, 'device-1');
+    expect(out, RefreshOutcome.invalid);
     expect(fake.callCount, 0);
+  });
+
+  test('refreshAccessTokenWith uses the override token (Face ID) and '
+      'persists it as the session refresh token on ok', () async {
+    final s = SessionService();
+    await s.saveLoginResponse(omniRes());
+    await s.clearSession(); // signed out: session token and profile wiped
+    final fake = _FakeApi(
+      onRefresh: ({required refreshToken, required deviceId}) async => {
+        'success': true,
+        'access_token': 'NEW-A',
+        'expires_at': '2026-12-01 00:00:00',
+      },
+    );
+    final out = await s.refreshAccessTokenWith(fake, 'device-1',
+        refreshToken: 'FACE');
+    expect(out, RefreshOutcome.ok);
+    expect(fake.lastRefreshToken, 'FACE');
+    expect(s.accessToken, 'NEW-A');
+    expect(s.refreshToken, 'FACE');
+    expect(await const FlutterSecureStorage().read(key: 'refresh_token'),
+        'FACE');
+  });
+
+  test('refreshAccessTokenWith returns failed on network_error and keeps '
+      'the session token even with an override', () async {
+    final s = SessionService();
+    await s.saveLoginResponse(omniRes());
+    final fake = _FakeApi(
+      onRefresh: ({required refreshToken, required deviceId}) async {
+        throw ApiException('network_error');
+      },
+    );
+    final out = await s.refreshAccessTokenWith(fake, 'device-1',
+        refreshToken: 'FACE');
+    expect(out, RefreshOutcome.failed);
+    expect(s.refreshToken, 'R');
+    expect(await const FlutterSecureStorage().read(key: 'refresh_token'), 'R');
+  });
+
+  test('refreshAccessTokenWith returns invalid with an override token and '
+      'clears the session token too', () async {
+    final s = SessionService();
+    await s.saveLoginResponse(omniRes());
+    final fake = _FakeApi(
+      onRefresh: ({required refreshToken, required deviceId}) async {
+        throw ApiException('refresh_invalid');
+      },
+    );
+    final out = await s.refreshAccessTokenWith(fake, 'device-1',
+        refreshToken: 'FACE');
+    expect(out, RefreshOutcome.invalid);
+    expect(s.refreshToken, '');
+    expect(await const FlutterSecureStorage().read(key: 'refresh_token'),
+        isNull);
+  });
+
+  test('refreshAccessTokenWith returns failed on a non-ApiException error',
+      () async {
+    final s = SessionService();
+    await s.saveLoginResponse(omniRes());
+    final fake = _FakeApi(
+      onRefresh: ({required refreshToken, required deviceId}) async {
+        throw StateError('boom');
+      },
+    );
+    final out = await s.refreshAccessTokenWith(fake, 'device-1');
+    expect(out, RefreshOutcome.failed);
+    expect(s.refreshToken, 'R');
+  });
+
+  test('refreshMeWith repopulates employee fields and auth source from /me',
+      () async {
+    final s = SessionService();
+    await s.saveLoginResponse(omniRes());
+    await s.clearSession();
+    final fake = _FakeApi(
+      onMe: () async => {
+        'success': true,
+        'auth_source': 'omni',
+        'device': {'label': 'iPhone · iPhone15,2'},
+        'user': {'id': 9, 'name': 'Agus'},
+        'employee': {
+          'id': 6,
+          'name': 'Agus Salim',
+          'job_title': 'Operator',
+          'department_name': 'Production',
+        },
+      },
+    );
+    final ok = await s.refreshMeWith(fake);
+    expect(ok, isTrue);
+    expect(s.userName, 'Agus');
+    expect(s.employeeId, 6);
+    expect(s.employeeName, 'Agus Salim');
+    expect(s.employeeJobTitle, 'Operator');
+    expect(s.employeeDepartment, 'Production');
+    expect(s.authSource, 'omni');
+    expect(s.deviceLabel, 'iPhone · iPhone15,2');
+  });
+
+  test('refreshMeWith returns false and swallows errors', () async {
+    final s = SessionService();
+    await s.saveLoginResponse(omniRes());
+    final fake = _FakeApi(onMe: () async => throw ApiException('network_error'));
+    expect(await s.refreshMeWith(fake), isFalse);
+    expect(s.employeeName, 'A'); // cached fields untouched
   });
 
   test('updateFromMe sets authSource and deviceLabel when present', () async {

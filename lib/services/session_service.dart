@@ -5,6 +5,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'omni_mobile_api.dart';
 import 'saas_service.dart';
 
+/// Result of [SessionService.refreshAccessToken]: `ok` = new access
+/// token saved; `invalid` = the server refused the refresh token (or
+/// there was none), so the user must sign in with a password; `failed`
+/// = transient error (network, timeout, server error), token kept.
+enum RefreshOutcome { ok, invalid, failed }
+
 /// Session state for the mobile app. Persists across launches.
 ///
 /// Layout:
@@ -626,43 +632,106 @@ class SessionService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Exchange the stored device refresh token for a new access session
-  /// via /auth/refresh. Returns false (and forgets the refresh token)
-  /// when the server refuses it with `refresh_invalid` — e.g. the
-  /// device was revoked or the refresh token expired. Any other
-  /// failure (network, timeout, etc.) also returns false but leaves
-  /// the refresh token in place so a later retry can still succeed.
+  /// Exchange a device refresh token for a new access session via
+  /// /auth/refresh. Uses [refreshToken] when given (the token Face ID
+  /// stored, which survives sign-out) and otherwise the session's own.
+  ///
+  /// - [RefreshOutcome.ok]: new access token saved; the token used is
+  ///   persisted as the session refresh token.
+  /// - [RefreshOutcome.invalid]: the server refused it (`refresh_invalid`,
+  ///   e.g. device revoked or token expired) or there was no token to
+  ///   use; the session refresh token is forgotten.
+  /// - [RefreshOutcome.failed]: any other error (network, timeout,
+  ///   server error); the refresh token is kept so a retry can succeed.
   ///
   /// Thin wrapper: builds the real [OmniMobileApi] and delegates to
   /// [refreshAccessTokenWith], which holds all the logic and is
   /// unit-testable with a fake api (no real HTTP).
-  Future<bool> refreshAccessToken(String deviceId) {
+  Future<RefreshOutcome> refreshAccessToken(String deviceId,
+      {String? refreshToken}) {
     final api = OmniMobileApi(baseUrl: _clientUrl, db: _clientDb, token: '');
-    return refreshAccessTokenWith(api, deviceId);
+    return refreshAccessTokenWith(api, deviceId, refreshToken: refreshToken);
   }
 
   @visibleForTesting
-  Future<bool> refreshAccessTokenWith(OmniMobileApi api, String deviceId) async {
-    if (_refreshToken.isEmpty) return false;
+  Future<RefreshOutcome> refreshAccessTokenWith(
+      OmniMobileApi api, String deviceId,
+      {String? refreshToken}) async {
+    final token = (refreshToken != null && refreshToken.isNotEmpty)
+        ? refreshToken
+        : _refreshToken;
+    if (token.isEmpty) return RefreshOutcome.invalid;
     try {
-      final res = await api.refresh(refreshToken: _refreshToken, deviceId: deviceId);
+      final res = await api.refresh(refreshToken: token, deviceId: deviceId);
       final expiresAtStr = res['expires_at']?.toString() ?? '';
       final expiresAt =
           expiresAtStr.isNotEmpty ? DateTime.tryParse(expiresAtStr) : null;
       await _saveAccessToken(res['access_token']?.toString() ?? '', expiresAt);
-      notifyListeners();
-      return true;
-    } on ApiException catch (e) {
-      if (e.errorCode == 'refresh_invalid') {
-        _refreshToken = '';
+      if (token != _refreshToken) {
+        // Face ID's token after a sign-out: adopt it as the session's.
+        // refresh_expires_at is unknown here, so it is left as it was.
+        _refreshToken = token;
         try {
-          await _secure.delete(key: _kRefreshToken);
+          await _secure.write(key: _kRefreshToken, value: token);
         } catch (_) {
-          // Secure-storage delete failed (exotic OS/Keychain error) — the
-          // in-memory token is already cleared above.
+          // Secure-storage write failed — the in-memory token is set.
         }
-        notifyListeners();
       }
+      notifyListeners();
+      return RefreshOutcome.ok;
+    } on ApiException catch (e) {
+      if (e.errorCode != 'refresh_invalid') return RefreshOutcome.failed;
+      _refreshToken = '';
+      try {
+        await _secure.delete(key: _kRefreshToken);
+      } catch (_) {
+        // Secure-storage delete failed (exotic OS/Keychain error) — the
+        // in-memory token is already cleared above.
+      }
+      notifyListeners();
+      return RefreshOutcome.invalid;
+    } catch (_) {
+      return RefreshOutcome.failed;
+    }
+  }
+
+  /// Re-pull the user/employee/approver fields and the identity fields
+  /// from /me using the current access token. Shared by the app-start/
+  /// resume refresh in main.dart and the Face ID refresh login (which
+  /// arrives with the profile wiped by a sign-out). Returns false on any
+  /// error; cached fields stay as they were.
+  Future<bool> refreshMe() => refreshMeWith(
+      OmniMobileApi(baseUrl: _clientUrl, db: _clientDb, token: _accessToken));
+
+  @visibleForTesting
+  Future<bool> refreshMeWith(OmniMobileApi api) async {
+    try {
+      final res = await api.me();
+      final user = res['user'] as Map<String, dynamic>? ?? {};
+      final employee = res['employee'] as Map<String, dynamic>? ?? {};
+      await updateEmployeeFromMe(
+        userName: user['name']?.toString(),
+        employeeId: (employee['id'] as num?)?.toInt(),
+        employeeName: employee['name']?.toString(),
+        employeeAvatarB64: employee['avatar_b64']?.toString(),
+        employeeJobTitle: employee['job_title']?.toString(),
+        employeeJobPosition: employee['job_position']?.toString(),
+        employeeDepartment: employee['department_name']?.toString(),
+        employeeManager: employee['manager_name']?.toString(),
+        employeeWorkEmail: employee['work_email']?.toString(),
+        employeeWorkPhone: employee['work_phone']?.toString(),
+        employeeCompanyName: employee['company_name']?.toString(),
+        employeeCompanyLogoB64: employee['company_logo_b64']?.toString(),
+        employeeHrApprover: employee['hr_approver_name']?.toString(),
+        employeeTimeOffApprover:
+            employee['time_off_approver_name']?.toString(),
+        employeeAttendanceApprover:
+            employee['attendance_approver_name']?.toString(),
+        employeeExpenseApprover: employee['expense_approver_name']?.toString(),
+      );
+      updateFromMe(res);
+      return true;
+    } catch (_) {
       return false;
     }
   }

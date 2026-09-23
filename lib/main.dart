@@ -91,42 +91,10 @@ class _OmniHrAppState extends State<OmniHrApp> with WidgetsBindingObserver {
   Future<void> _refreshMeInBackground() async {
     final s = widget.session;
     if (!s.isLoggedIn) return;
-    try {
-      final api = OmniMobileApi(
-        baseUrl: s.clientUrl,
-        db: s.clientDb,
-        token: s.token,
-      );
-      final res = await api.me();
-      final user = res['user'] as Map<String, dynamic>? ?? {};
-      final employee = res['employee'] as Map<String, dynamic>? ?? {};
-      await s.updateEmployeeFromMe(
-        userName: user['name']?.toString(),
-        employeeId: (employee['id'] as num?)?.toInt(),
-        employeeName: employee['name']?.toString(),
-        employeeAvatarB64: employee['avatar_b64']?.toString(),
-        employeeJobTitle: employee['job_title']?.toString(),
-        employeeJobPosition: employee['job_position']?.toString(),
-        employeeDepartment: employee['department_name']?.toString(),
-        employeeManager: employee['manager_name']?.toString(),
-        employeeWorkEmail: employee['work_email']?.toString(),
-        employeeWorkPhone: employee['work_phone']?.toString(),
-        employeeCompanyName: employee['company_name']?.toString(),
-        employeeCompanyLogoB64:
-            employee['company_logo_b64']?.toString(),
-        employeeHrApprover: employee['hr_approver_name']?.toString(),
-        employeeTimeOffApprover:
-            employee['time_off_approver_name']?.toString(),
-        employeeAttendanceApprover:
-            employee['attendance_approver_name']?.toString(),
-        employeeExpenseApprover:
-            employee['expense_approver_name']?.toString(),
-      );
-      s.updateFromMe(res);
-    } catch (_) {
-      // Silent — cached employee fields stay. invalid_session is
-      // handled by the global onInvalidSession callback set in main().
-    }
+    // Errors are swallowed inside refreshMe — cached employee fields
+    // stay. invalid_session is handled by the global onInvalidSession
+    // callback set in main().
+    await s.refreshMe();
   }
 
   @override
