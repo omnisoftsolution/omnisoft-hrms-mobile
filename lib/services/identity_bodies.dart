@@ -7,7 +7,9 @@ Map<String, dynamic> buildLoginBody({
   String? emailCode,
 }) =>
     {
-      'login': login.trim().toLowerCase(),
+      // Trim only: Odoo matches res.users.login case-sensitively, so a
+      // mixed-case login must reach /login exactly as the user has it.
+      'login': login.trim(),
       'password': password,
       'device_id': ?deviceId,
       if (deviceLabel != null && deviceLabel.isNotEmpty)

@@ -187,8 +187,9 @@ class _LoginScreenState extends State<LoginScreen> {
       );
       await session.saveLoginResponse(res);
       // Migrate a password-mode biometric login to the refresh token,
-      // and keep an existing refresh-mode one current.
-      await bio.adoptRefreshToken(session.refreshToken);
+      // and keep an existing refresh-mode one current — only when this is
+      // the same login Face ID was enabled for.
+      await bio.adoptRefreshToken(session.refreshToken, login: loginText);
       if (!mounted) return;
       await _maybeOfferBiometricOptIn(loginText, password, session.employeeName);
       if (!mounted) return;

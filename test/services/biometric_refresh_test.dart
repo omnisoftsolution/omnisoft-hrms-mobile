@@ -118,7 +118,7 @@ void main() {
       final svc = BiometricAuthService(
           gate: FakeBiometricGate(nextOutcome: BiometricAuthOutcome.success));
       await svc.load();
-      await svc.adoptRefreshToken('R');
+      expect(await svc.adoptRefreshToken('R', login: 'a@b.c'), isFalse);
       expect(svc.isEnabled, isFalse);
       expect(await s.read(key: 'biometric_refresh_token'), isNull);
     });
@@ -128,7 +128,7 @@ void main() {
           gate: FakeBiometricGate(nextOutcome: BiometricAuthOutcome.success));
       await svc.load();
       await svc.enableWithRefreshToken(login: 'a@b.c', refreshToken: 'OLD');
-      await svc.adoptRefreshToken('NEW');
+      expect(await svc.adoptRefreshToken('NEW', login: 'a@b.c'), isTrue);
       expect(await s.read(key: 'biometric_refresh_token'), 'NEW');
       expect(svc.usesRefreshToken, isTrue);
     });
@@ -138,7 +138,7 @@ void main() {
           gate: FakeBiometricGate(nextOutcome: BiometricAuthOutcome.success));
       await svc.load();
       await svc.enable(login: 'a@b.c', password: 'pw');
-      await svc.adoptRefreshToken('NEW');
+      expect(await svc.adoptRefreshToken('NEW', login: 'a@b.c'), isTrue);
       expect(svc.usesRefreshToken, isTrue);
       expect(await s.read(key: 'biometric_refresh_token'), 'NEW');
       expect(await s.read(key: 'biometric_password'), isNull);
@@ -149,8 +149,44 @@ void main() {
           gate: FakeBiometricGate(nextOutcome: BiometricAuthOutcome.success));
       await svc.load();
       await svc.enableWithRefreshToken(login: 'a@b.c', refreshToken: 'OLD');
-      await svc.adoptRefreshToken('');
+      expect(await svc.adoptRefreshToken('', login: 'a@b.c'), isFalse);
       expect(await s.read(key: 'biometric_refresh_token'), 'OLD');
+    });
+
+    test('a different login leaves a password-mode credential untouched',
+        () async {
+      final svc = BiometricAuthService(
+          gate: FakeBiometricGate(nextOutcome: BiometricAuthOutcome.success));
+      await svc.load();
+      await svc.enable(login: 'a@b.c', password: 'pw');
+      expect(await svc.adoptRefreshToken('NEW', login: 'other@b.c'), isFalse);
+      expect(svc.usesRefreshToken, isFalse);
+      expect(await s.read(key: 'biometric_password'), 'pw');
+      expect(await s.read(key: 'biometric_refresh_token'), isNull);
+      expect(await s.read(key: 'biometric_login'), 'a@b.c');
+    });
+
+    test('a different login leaves the old refresh token in place', () async {
+      final svc = BiometricAuthService(
+          gate: FakeBiometricGate(nextOutcome: BiometricAuthOutcome.success));
+      await svc.load();
+      await svc.enableWithRefreshToken(login: 'a@b.c', refreshToken: 'OLD');
+      expect(await svc.adoptRefreshToken('NEW', login: 'other@b.c'), isFalse);
+      expect(await s.read(key: 'biometric_refresh_token'), 'OLD');
+      expect(await s.read(key: 'biometric_login'), 'a@b.c');
+      expect(svc.usesRefreshToken, isTrue);
+    });
+
+    test('login match ignores case and surrounding whitespace', () async {
+      final svc = BiometricAuthService(
+          gate: FakeBiometricGate(nextOutcome: BiometricAuthOutcome.success));
+      await svc.load();
+      await svc.enable(login: 'Say.Puay@Example.com', password: 'pw');
+      expect(
+          await svc.adoptRefreshToken('NEW', login: '  say.puay@EXAMPLE.com '),
+          isTrue);
+      expect(await s.read(key: 'biometric_refresh_token'), 'NEW');
+      expect(await s.read(key: 'biometric_password'), isNull);
     });
   });
 }

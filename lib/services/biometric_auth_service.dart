@@ -172,12 +172,26 @@ class BiometricAuthService extends ChangeNotifier {
   /// Hand a freshly issued device refresh token (password login or
   /// activation) to an already-enabled biometric login: migrates a
   /// legacy password credential, then keeps a refresh-mode one current.
-  /// No-op when biometric login is off or [refreshToken] is empty.
-  Future<void> adoptRefreshToken(String refreshToken) async {
-    if (refreshToken.isEmpty) return;
+  ///
+  /// Login-scoped: the token is adopted only when [login] matches the
+  /// login biometric login was enabled for (trimmed, case-insensitive).
+  /// Another person signing in on this phone must never rebind the
+  /// enabled user's Face ID to their own account. Returns true when the
+  /// token was adopted; false (and no change) when biometric login is
+  /// off, [refreshToken] is empty or the login differs.
+  Future<bool> adoptRefreshToken(String refreshToken,
+      {required String login}) async {
+    if (!_enabled || refreshToken.isEmpty) return false;
+    final stored = await _secure.read(key: _sLogin);
+    if (stored == null || _normLogin(stored) != _normLogin(login)) {
+      return false;
+    }
     await replacePasswordWithRefreshToken(refreshToken);
     await updateRefreshToken(refreshToken);
+    return true;
   }
+
+  static String _normLogin(String login) => login.trim().toLowerCase();
 
   /// Refresh the stored token in place. No-op unless already enabled in
   /// refresh-token mode.
