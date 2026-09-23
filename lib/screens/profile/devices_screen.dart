@@ -12,7 +12,12 @@ import '../../widgets/error_state_view.dart';
 /// only). Lists the phones trusted for this account; any phone other than
 /// this one can be signed out (revoked) here.
 class DevicesScreen extends StatefulWidget {
-  const DevicesScreen({super.key});
+  const DevicesScreen({super.key, this.apiBuilder});
+
+  /// Test seam: builds the API client from the session. Defaults to the
+  /// real [OmniMobileApi] for the session's company and token.
+  @visibleForTesting
+  final OmniMobileApi Function(SessionService session)? apiBuilder;
 
   @override
   State<DevicesScreen> createState() => _DevicesScreenState();
@@ -29,11 +34,12 @@ class _DevicesScreenState extends State<DevicesScreen> {
   void initState() {
     super.initState();
     final session = context.read<SessionService>();
-    _api = OmniMobileApi(
-      baseUrl: session.clientUrl,
-      db: session.clientDb,
-      token: session.token,
-    );
+    _api = widget.apiBuilder?.call(session) ??
+        OmniMobileApi(
+          baseUrl: session.clientUrl,
+          db: session.clientDb,
+          token: session.token,
+        );
     _load();
   }
 
