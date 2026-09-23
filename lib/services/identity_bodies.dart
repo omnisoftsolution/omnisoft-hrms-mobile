@@ -9,10 +9,10 @@ Map<String, dynamic> buildLoginBody({
     {
       'login': login.trim().toLowerCase(),
       'password': password,
-      if (deviceId != null) 'device_id': deviceId,
+      'device_id': ?deviceId,
       if (deviceLabel != null && deviceLabel.isNotEmpty)
         'device_label': deviceLabel,
-      if (appVersion != null) 'app_version': appVersion,
+      'app_version': ?appVersion,
       if (emailCode != null && emailCode.isNotEmpty) 'email_code': emailCode,
     };
 
@@ -29,13 +29,13 @@ Map<String, dynamic> buildActivateBody({
       'login': login.trim().toLowerCase(),
       if (token != null && token.isNotEmpty)
         'token': token
-      else if (code != null)
-        'code': code,
+      else
+        'code': ?code,
       'password': password,
       'device_id': deviceId,
       if (deviceLabel != null && deviceLabel.isNotEmpty)
         'device_label': deviceLabel,
-      if (appVersion != null) 'app_version': appVersion,
+      'app_version': ?appVersion,
     };
 
 Map<String, dynamic> buildRefreshBody({
