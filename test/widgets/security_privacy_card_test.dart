@@ -129,6 +129,21 @@ void main() {
     expect(svc.isEnabled, isFalse);
   });
 
+  testWidgets('a server message (e.g. lockout) is shown as is, does NOT enable',
+      (tester) async {
+    final svc = BiometricAuthService(gate: FakeBiometricGate(available: true));
+    await svc.load();
+    await tester.pumpWidget(_host(svc,
+        verify: (_) async => const PasswordCheck.failed(
+            'Too many attempts. Try again in 15 minutes.')));
+    await tester.pumpAndSettle();
+    await _tapToggleAndConfirm(tester);
+    expect(find.text('Too many attempts. Try again in 15 minutes.'),
+        findsOneWidget);
+    expect(find.textContaining("Couldn't verify"), findsNothing);
+    expect(svc.isEnabled, isFalse);
+  });
+
   testWidgets('correct password: enables + shows confirmation', (tester) async {
     final svc = BiometricAuthService(gate: FakeBiometricGate(available: true));
     await svc.load();

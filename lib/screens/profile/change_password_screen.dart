@@ -9,7 +9,12 @@ import '../../services/session_service.dart';
 /// Profile → Security & Privacy → "Change password" (App Identity accounts
 /// only). The server signs out every other phone on success.
 class ChangePasswordScreen extends StatefulWidget {
-  const ChangePasswordScreen({super.key});
+  const ChangePasswordScreen({super.key, this.apiBuilder});
+
+  /// Test seam: builds the API client from the session. Defaults to the
+  /// real [OmniMobileApi] for the session's company and token.
+  @visibleForTesting
+  final OmniMobileApi Function(SessionService session)? apiBuilder;
 
   @override
   State<ChangePasswordScreen> createState() => _ChangePasswordScreenState();
@@ -46,11 +51,12 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
       _busy = true;
       _error = null;
     });
-    final api = OmniMobileApi(
-      baseUrl: session.clientUrl,
-      db: session.clientDb,
-      token: session.token,
-    );
+    final api = widget.apiBuilder?.call(session) ??
+        OmniMobileApi(
+          baseUrl: session.clientUrl,
+          db: session.clientDb,
+          token: session.token,
+        );
     try {
       await api.passwordChange(
         currentPassword: _current.text,
@@ -67,6 +73,10 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
         _error = switch (e.errorCode) {
           'invalid_credentials' => 'Current password is not right.',
           'password_too_short' => friendlyErrorCode('password_too_short'),
+          'not_allowed' =>
+            'Password change is not available for this account. Ask HR.',
+          'account_locked' => friendlyErrorCode('account_locked',
+              retryAfter: (e.data?['retry_after'] as num?)?.toInt()),
           _ => friendlyError(e),
         };
       });

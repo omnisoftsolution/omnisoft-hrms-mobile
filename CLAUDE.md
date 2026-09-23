@@ -74,9 +74,17 @@ iOS is still-frame-only for spoof texture (multi-frame raw-bytes P1.1 open, per 
   key means a legacy (pre-identity) connector: `updateFromMe` leaves `authSource` untouched rather
   than clearing it, and all new UI (Your devices, forget-this-phone sheet) stays hidden for that
   session.
+- `identity_capable` (prefs bool, `SessionService.identityCapable`): set true whenever `/login`,
+  `/me` or `/auth/refresh` carries `auth_source`. Stored with the SaaS routing keys — survives
+  `clearSession()`, removed by the full `logout()`, reset to false by `saveCompany` when the company
+  (code/URL/db) changes. The signed-out login screen shows "Forgot password?" only when it is true
+  ("Activate with an invite" is always shown; a pre-2.45 connector answers activation with an HTML
+  404 = `server_error`, mapped to "Activation is not available for your company yet. Ask HR.").
+- `/login` body is case-preserving: `buildLoginBody` only trims the login (Odoo matches
+  `res.users.login` case-sensitively). Activation and password-reset bodies still trim + lowercase.
 - Storage keys (lib/services/session_service.dart): secure storage `refresh_token`; prefs
-  `refresh_expires_at`, `auth_source`, `device_label` (plus the pre-existing `user_id`/`user_login`
-  prefs, which the refresh/`/me` paths also update). Biometric credential
+  `refresh_expires_at`, `auth_source`, `device_label`, `identity_capable` (plus the pre-existing
+  `user_id`/`user_login` prefs, which the refresh/`/me` paths also update). Biometric credential
   (lib/services/biometric_auth_service.dart): secure storage `biometric_login`,
   `biometric_refresh_token` (new refresh-token mode), legacy `biometric_password` (old
   password-mode credential, still read for accounts that haven't re-logged-in yet).
@@ -86,9 +94,19 @@ iOS is still-frame-only for spoof texture (multi-frame raw-bytes P1.1 open, per 
   (network/timeout/server error) keeps it for a retry. `SessionService.refreshMe()` re-pulls
   `/me` and folds `auth_source`/`device_label` back in via `updateFromMe`.
 - Face ID: a password-mode biometric credential migrates to the refresh token on the first login
-  that returns one — `BiometricAuthService.adoptRefreshToken` (called from the login screen after
-  every successful `/login`) does `replacePasswordWithRefreshToken` + `updateRefreshToken` in one
-  step, so both a fresh opt-in and an already-refresh-mode credential end up current.
+  that returns one — `BiometricAuthService.adoptRefreshToken(token, login:)` (called from the
+  login and activation screens after every success) does `replacePasswordWithRefreshToken` +
+  `updateRefreshToken` in one step, so both a fresh opt-in and an already-refresh-mode credential
+  end up current. It is LOGIN-SCOPED: it adopts only when `login` matches the stored
+  `biometric_login` (trimmed, case-insensitive) and returns false otherwise, so another person
+  signing in on the phone never rebinds the owner's Face ID.
+- Company lookup: `SessionService.lookupCompany(code, {saasUrl})` resolves on the SaaS WITHOUT
+  saving (URL fallback = `effectiveSaasUrl`: typed URL, else session SaaS URL, else
+  `DevConstants.defaultSaasUrl`); `saveCompanyInfo(info, saasUrl:)` commits it;
+  `resolveCompany` = lookup + save (company-code screen). The activation screen stages another
+  company's invite with `lookupCompany`, activates against the looked-up URL, and only on success
+  clears a live session, saves the company and the login response — a failed activation leaves
+  `clientUrl`/`clientDb`/tokens untouched.
 - Deep link: `omnihr://activate?c=<company>&t=<token>` (invite QR/email). iOS:
   `CFBundleURLTypes`/`CFBundleURLSchemes` in ios/Runner/Info.plist. Android: the `omnihr://activate`
   `<intent-filter>` in android/app/src/main/AndroidManifest.xml. Both platforms go through the
@@ -97,8 +115,14 @@ iOS is still-frame-only for spoof texture (multi-frame raw-bytes P1.1 open, per 
   `main.dart`'s `_navigatorKey`, which pushes the activation screen.
 - Testable seams (fake-subclass pattern — subclass, override the network call, no real HTTP):
   `SessionService.refreshAccessTokenWith`, `SessionService.refreshMeWith`,
-  `SessionService.resolveCompanyWith`, and `DevicesScreen.apiBuilder` (constructor param that
-  swaps in a fake `OmniMobileApi` for widget tests).
+  `SessionService.resolveCompanyWith`/`lookupCompanyWith`, and `apiBuilder` constructor params
+  that swap in a fake `OmniMobileApi` for widget tests on `DevicesScreen`,
+  `ChangePasswordScreen` (both `(SessionService) -> api`), `LoginScreen` and `ActivationScreen`
+  (both `(baseUrl, db) -> api`, plus a `homeBuilder` so tests don't build HomeShell). Profile's
+  logic is in top-level `checkPasswordWith` / `logoutWith` (profile_screen.dart).
+  `PasswordCheck` is a const-instance class (ok / wrongPassword / rateLimited / error, plus
+  `PasswordCheck.failed(message)` for lockout text). Deep-link dedupe is `LinkDeduper` (drops
+  only the first repeat within 2 s — the initial-link + stream double delivery).
 - Profile's sign-out sheet: App Identity accounts (`supportsIdentity && authSource == 'omni'`)
   get a choice between plain "Sign out" and "Sign out and forget this phone"
   (lib/screens/profile/profile_screen.dart `_onLogoutPressed`/`_logout`) — forgetting calls

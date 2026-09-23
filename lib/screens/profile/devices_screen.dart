@@ -96,10 +96,18 @@ class _DevicesScreenState extends State<DevicesScreen> {
     }
   }
 
+  /// Odoo serialises an empty Char/Datetime as `false`: read strings
+  /// defensively so such a row renders instead of throwing.
+  static String? _str(Object? v) => v is String ? v : null;
+
+  String _label(Map<String, dynamic> d) {
+    final label = _str(d['label']);
+    return label != null && label.isNotEmpty ? label : 'Unnamed phone';
+  }
+
   String _subtitle(Map<String, dynamic> d) {
-    final since = DateTimeUtils.formatLocalDate(d['trusted_since'] as String?);
-    final seen =
-        DateTimeUtils.formatLocalDateTime(d['last_seen_at'] as String?);
+    final since = DateTimeUtils.formatLocalDate(_str(d['trusted_since']));
+    final seen = DateTimeUtils.formatLocalDateTime(_str(d['last_seen_at']));
     return 'Trusted since $since · last seen $seen';
   }
 
@@ -123,9 +131,7 @@ class _DevicesScreenState extends State<DevicesScreen> {
           for (final d in devices)
             ListTile(
               leading: const Icon(Icons.smartphone),
-              title: Text((d['label'] as String?)?.isNotEmpty == true
-                  ? d['label'] as String
-                  : 'Unnamed phone'),
+              title: Text(_label(d)),
               subtitle: Text(_subtitle(d)),
               trailing: d['current'] == true
                   ? const Chip(label: Text('This phone'))

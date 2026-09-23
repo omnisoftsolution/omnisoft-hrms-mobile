@@ -300,6 +300,45 @@ void main() {
     expect(s.supportsIdentity, isTrue);
   });
 
+  test('refreshAccessTokenWith ok records the auth source from the response '
+      '(so identity tiles show even if /me then fails)', () async {
+    final s = SessionService();
+    await s.saveLoginResponse(omniRes());
+    await s.clearSession(); // signed out: authSource wiped
+    expect(s.authSource, '');
+    final fake = _FakeApi(
+      onRefresh: ({required refreshToken, required deviceId}) async => {
+        'success': true,
+        'access_token': 'NEW-A',
+        'expires_at': '2026-12-01 00:00:00',
+        'auth_source': 'omni',
+      },
+    );
+    expect(await s.refreshAccessTokenWith(fake, 'd', refreshToken: 'FACE'),
+        RefreshOutcome.ok);
+    expect(s.authSource, 'omni');
+    expect(s.supportsIdentity, isTrue);
+    final s2 = SessionService();
+    await s2.load();
+    expect(s2.authSource, 'omni');
+  });
+
+  test('a device label Odoo serialised as false becomes empty', () async {
+    final s = SessionService();
+    await s.saveLoginResponse(omniRes()..['device'] = {'label': false});
+    expect(s.deviceLabel, '');
+    await s.updateFromMe({
+      'auth_source': 'omni',
+      'device': {'label': false},
+    });
+    expect(s.deviceLabel, '');
+    await s.updateFromMe({
+      'auth_source': 'omni',
+      'device': {'label': 'Pixel 8'},
+    });
+    expect(s.deviceLabel, 'Pixel 8');
+  });
+
   group('identityCapable', () {
     test('set by a login response that carries auth_source, persisted',
         () async {

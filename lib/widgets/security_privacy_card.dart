@@ -11,8 +11,37 @@ import '../services/biometric_types.dart';
 import 'biometric_optin_sheet.dart' show biometricLabel;
 
 /// Outcome of verifying the signed-in user's password against the server
-/// before enabling biometric login.
-enum PasswordCheck { ok, wrongPassword, rateLimited, error }
+/// before enabling biometric login. The fixed outcomes are constants;
+/// [PasswordCheck.failed] carries a ready-to-show server message (e.g.
+/// the account lockout wait).
+class PasswordCheck {
+  const PasswordCheck._(this._kind, [this.message]);
+
+  /// A refusal whose [message] the card shows as is.
+  const PasswordCheck.failed(String message) : this._('failed', message);
+
+  final String _kind;
+
+  /// User-facing text for a [PasswordCheck.failed] outcome; null otherwise.
+  final String? message;
+
+  static const ok = PasswordCheck._('ok');
+  static const wrongPassword = PasswordCheck._('wrong_password');
+  static const rateLimited = PasswordCheck._('rate_limited');
+  static const error = PasswordCheck._('error');
+
+  @override
+  bool operator ==(Object other) =>
+      other is PasswordCheck &&
+      other._kind == _kind &&
+      other.message == message;
+
+  @override
+  int get hashCode => Object.hash(_kind, message);
+
+  @override
+  String toString() => 'PasswordCheck($_kind${message == null ? '' : ': $message'})';
+}
 
 /// Verifies [password] for the signed-in user against the server. Returns
 /// [PasswordCheck.ok] only when the server accepts it.
@@ -96,13 +125,12 @@ class _SecurityPrivacyCardState extends State<SecurityPrivacyCard> {
 
     if (check != PasswordCheck.ok) {
       setState(() => _busy = false);
-      final message = switch (check) {
-        PasswordCheck.wrongPassword =>
-          'Incorrect password — ${biometricLabel(_bioKind)} not enabled.',
-        PasswordCheck.rateLimited =>
-          'Too many attempts — please try again in a few minutes.',
-        _ => "Couldn't verify — check your connection.",
-      };
+      final message = check.message ??
+          (check == PasswordCheck.wrongPassword
+              ? 'Incorrect password — ${biometricLabel(_bioKind)} not enabled.'
+              : check == PasswordCheck.rateLimited
+                  ? 'Too many attempts — please try again in a few minutes.'
+                  : "Couldn't verify — check your connection.");
       messenger.showSnackBar(
           SnackBar(content: Text(message), backgroundColor: AppTheme.error));
       return;

@@ -142,6 +142,29 @@ void main() {
     expect(find.text('Budi iPhone'), findsOneWidget);
   });
 
+  testWidgets('an empty Char serialised as false (label, dates) does not crash',
+      (tester) async {
+    final api = _FakeApi([
+      [
+        _current,
+        <String, dynamic>{
+          'id': 3,
+          'label': false,
+          'device_id': 'dev-x',
+          'trusted_since': false,
+          'last_seen_at': false,
+          'current': false,
+        },
+      ]
+    ]);
+    await tester.pumpWidget(_host(api));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Unnamed phone'), findsOneWidget);
+    expect(find.text('Trusted since - · last seen -'), findsOneWidget);
+  });
+
   testWidgets('only the current device shows the empty message',
       (tester) async {
     final api = _FakeApi([

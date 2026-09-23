@@ -441,7 +441,7 @@ class SessionService extends ChangeNotifier {
           employee['expense_approver_name']?.toString() ?? '',
     );
     _authSource = res['auth_source']?.toString() ?? '';
-    _deviceLabel = ((res['device'] as Map?)?['label'] ?? '').toString();
+    _deviceLabel = _labelOf(res);
     final rt = res['refresh_token']?.toString() ?? '';
     final rx = res['refresh_expires_at']?.toString() ?? '';
     final prefs = await SharedPreferences.getInstance();
@@ -752,6 +752,16 @@ class SessionService extends ChangeNotifier {
       final expiresAt =
           expiresAtStr.isNotEmpty ? DateTime.tryParse(expiresAtStr) : null;
       await _saveAccessToken(res['access_token']?.toString() ?? '', expiresAt);
+      // /auth/refresh exists only on identity connectors and names the
+      // auth source; record it so the identity tiles show even if the
+      // follow-up /me fails.
+      final src = res['auth_source'];
+      if (src is String && src.isNotEmpty) {
+        _authSource = src;
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_kAuthSource, src);
+        await _markIdentityCapable(prefs);
+      }
       if (token != _refreshToken) {
         // Face ID's token after a sign-out: adopt it as the session's.
         // refresh_expires_at is unknown here, so it is left as it was.
@@ -836,12 +846,20 @@ class SessionService extends ChangeNotifier {
   Future<void> updateFromMe(Map<String, dynamic> me) async {
     if (!me.containsKey('auth_source')) return;
     _authSource = me['auth_source']?.toString() ?? '';
-    _deviceLabel = ((me['device'] as Map?)?['label'] ?? '').toString();
+    _deviceLabel = _labelOf(me);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_kAuthSource, _authSource);
     await prefs.setString(_kDeviceLabel, _deviceLabel);
     if (_authSource.isNotEmpty) await _markIdentityCapable(prefs);
     notifyListeners();
+  }
+
+  /// `device.label` from a /login or /me body. Odoo serialises an empty
+  /// Char as `false`, which must read as '' (not the string "false").
+  static String _labelOf(Map<String, dynamic> body) {
+    final device = body['device'];
+    final label = device is Map ? device['label'] : null;
+    return label is String ? label : '';
   }
 
   Future<void> _markIdentityCapable(SharedPreferences prefs) async {

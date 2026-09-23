@@ -55,8 +55,8 @@ TESTFLIGHT_CHANGELOG = <<~NOTES.freeze
   - Profile > Security and Privacy > Your devices lists every phone
     trusted for your account; sign out remotely revokes a lost or old
     one.
-  - Your Odoo password still works to sign in until HR sends you an
-    app-access invite.
+  - Your Odoo password still works to sign in until you activate your
+    Omni HR account.
 
   Please test:
   1. Open the invite link (or scan the QR code) from HR, activate,
