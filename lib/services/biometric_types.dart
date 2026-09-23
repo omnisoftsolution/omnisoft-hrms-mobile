@@ -3,11 +3,14 @@ import 'package:local_auth/local_auth.dart';
 /// Which biometric modality to name in the UI.
 enum BiometricKind { faceId, touchId, fingerprint, face, iris, generic, none }
 
-/// A stored login+password pair, returned once a biometric prompt passes.
+/// A stored login credential, returned once a biometric prompt passes.
+/// Carries either a refresh token (preferred) or a legacy password.
 class BiometricCredential {
   final String login;
-  final String password;
-  const BiometricCredential(this.login, this.password);
+  final String? password;
+  final String? refreshToken;
+  const BiometricCredential(this.login, {this.password, this.refreshToken});
+  bool get isRefresh => refreshToken != null && refreshToken!.isNotEmpty;
 }
 
 /// Outcome of a biometric prompt / retrieve attempt.

@@ -64,7 +64,8 @@ class _LoginScreenState extends State<LoginScreen> {
     final res = await bio.authenticateAndRetrieve();
     if (!mounted) return;
     if (res.outcome == BiometricAuthOutcome.success && res.credential != null) {
-      await _performLogin(res.credential!.login, res.credential!.password,
+      await _performLogin(
+          res.credential!.login, res.credential!.password ?? '',
           fromBiometric: true);
       return;
     }
