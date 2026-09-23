@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:omni_hr/services/biometric_auth_service.dart';
 import 'package:omni_hr/services/biometric_types.dart';
 import 'package:omni_hr/services/session_service.dart';
+import 'package:omni_hr/screens/activation/activation_screen.dart';
 import 'package:omni_hr/screens/login/login_screen.dart';
 
 /// Scriptable gate. Default outcome `canceled` so the biometric path
@@ -96,5 +97,18 @@ void main() {
     await bio.disable();
     await tester.pumpAndSettle();
     expect(find.textContaining('Sign in with'), findsNothing);
+  });
+
+  testWidgets('"Activate with an invite" opens the activation screen in '
+      'manual mode', (tester) async {
+    final bio = await _loadedBio(FakeBiometricGate(available: true));
+    await tester.pumpWidget(_host(bio));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Activate with an invite'));
+    await tester.tap(find.text('Activate with an invite'));
+    await tester.pumpAndSettle();
+    expect(find.byType(ActivationScreen), findsOneWidget);
+    expect(find.byKey(const Key('activation_company')), findsOneWidget);
+    expect(find.byKey(const Key('activation_code')), findsOneWidget);
   });
 }

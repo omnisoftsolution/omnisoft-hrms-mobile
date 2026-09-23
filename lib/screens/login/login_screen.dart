@@ -14,6 +14,7 @@ import '../../widgets/biometric_optin_sheet.dart';
 import '../../widgets/brand_logo.dart';
 import '../../widgets/labeled_field.dart';
 import '../../widgets/primary_button.dart';
+import '../activation/activation_screen.dart';
 import '../home/home_shell.dart';
 import 'company_settings_screen.dart';
 import 'device_code_dialog.dart';
@@ -434,11 +435,25 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ],
                       const SizedBox(height: 8),
-                      Center(
-                        child: TextButton(
-                          onPressed: _submitting ? null : _forgotPassword,
-                          child: const Text('Forgot password?'),
-                        ),
+                      Wrap(
+                        alignment: WrapAlignment.center,
+                        children: [
+                          TextButton(
+                            onPressed: _submitting ? null : _forgotPassword,
+                            child: const Text('Forgot password?'),
+                          ),
+                          TextButton(
+                            onPressed: _submitting
+                                ? null
+                                : () => Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (_) =>
+                                            const ActivationScreen(),
+                                      ),
+                                    ),
+                            child: const Text('Activate with an invite'),
+                          ),
+                        ],
                       ),
                       // Push the footer to the bottom of the safe area.
                       const Spacer(),

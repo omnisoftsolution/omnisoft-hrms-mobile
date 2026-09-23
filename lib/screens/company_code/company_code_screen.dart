@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 import '../../core/constants.dart';
 import '../../core/theme.dart';
 import '../../core/error_messages.dart';
-import '../../services/saas_service.dart';
 import '../../services/session_service.dart';
 import '../../widgets/brand_logo.dart';
 import '../../widgets/labeled_field.dart';
@@ -32,24 +31,10 @@ class _CompanyCodeScreenState extends State<CompanyCodeScreen> {
       _error = null;
     });
     try {
-      final saas = SaasService();
-      final info = await saas.resolveCompany(
-        _saasUrlController.text.trim(),
-        _codeController.text.trim(),
-      );
-      if (!mounted) return;
-
-      final session = context.read<SessionService>();
-      await session.saveCompany(
-        saasUrl: _saasUrlController.text.trim(),
-        companyCode: info.companyCode,
-        clientUrl: info.odooUrl,
-        clientDb: info.database,
-        features: info.features,
-        companyName: info.name,
-        companyLogoB64: info.companyLogoB64,
-        showConnectionDetails: info.showConnectionDetails,
-      );
+      await context.read<SessionService>().resolveCompany(
+            _codeController.text.trim(),
+            saasUrl: _saasUrlController.text.trim(),
+          );
 
       if (!mounted) return;
       Navigator.of(context).pushReplacement(

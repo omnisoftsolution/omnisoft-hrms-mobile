@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/constants.dart';
 import 'omni_mobile_api.dart';
 import 'saas_service.dart';
 
@@ -306,6 +307,34 @@ class SessionService extends ChangeNotifier {
     await prefs.setString(_keyCompanyLogoB64, _companyLogoB64);
     await prefs.setBool(_keyShowConnectionDetails, _showConnectionDetails);
     notifyListeners();
+  }
+
+  /// Resolve [code] on the SaaS and save the company routing. Resolves
+  /// against [saasUrl] when given (the company-code screen's typed URL),
+  /// else the session's SaaS URL, else [DevConstants.defaultSaasUrl]
+  /// (an invite link on a fresh install has none yet). Throws the
+  /// [SaasService] exception unchanged; nothing is saved on failure.
+  Future<void> resolveCompany(String code, {String? saasUrl}) =>
+      resolveCompanyWith(SaasService(), code, saasUrl: saasUrl);
+
+  @visibleForTesting
+  Future<void> resolveCompanyWith(SaasService saas, String code,
+      {String? saasUrl}) async {
+    // An explicit URL is used as typed (even empty — SaasService then
+    // reports it as invalid, as the company-code screen always did).
+    final url = saasUrl ??
+        (_saasUrl.isNotEmpty ? _saasUrl : DevConstants.defaultSaasUrl);
+    final info = await saas.resolveCompany(url, code);
+    await saveCompany(
+      saasUrl: url,
+      companyCode: info.companyCode,
+      clientUrl: info.odooUrl,
+      clientDb: info.database,
+      features: info.features,
+      companyName: info.name,
+      companyLogoB64: info.companyLogoB64,
+      showConnectionDetails: info.showConnectionDetails,
+    );
   }
 
   /// Re-resolve the company from the SaaS and refresh cached feature

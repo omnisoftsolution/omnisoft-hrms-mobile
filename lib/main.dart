@@ -8,6 +8,8 @@ import 'services/notification_service.dart';
 import 'services/omni_mobile_api.dart';
 import 'services/session_service.dart';
 import 'services/biometric_auth_service.dart';
+import 'services/deep_link_service.dart';
+import 'screens/activation/activation_screen.dart';
 import 'screens/company_code/company_code_screen.dart';
 import 'screens/home/home_shell.dart';
 import 'screens/login/login_screen.dart';
@@ -47,10 +49,17 @@ class OmniHrApp extends StatefulWidget {
 }
 
 class _OmniHrAppState extends State<OmniHrApp> with WidgetsBindingObserver {
+  final _navigatorKey = GlobalKey<NavigatorState>();
+  final _deepLinks = DeepLinkService();
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Invite links (omnihr://activate) open the activation screen on
+    // top of whatever the session Consumer below is showing — on a cold
+    // start (initial link) or while the app is running.
+    _deepLinks.listen(_openActivation);
     // Cold-start refresh — picks up subscription + employee changes
     // the admin/HR made while the app was closed. Fire-and-forget;
     // we don't block the first frame on a network round-trip.
@@ -58,9 +67,24 @@ class _OmniHrAppState extends State<OmniHrApp> with WidgetsBindingObserver {
     _refreshMeInBackground();
   }
 
+  void _openActivation(ActivationArgs a) {
+    final nav = _navigatorKey.currentState;
+    if (nav == null) {
+      // Link arrived before the first frame built the navigator.
+      WidgetsBinding.instance
+          .addPostFrameCallback((_) => _openActivation(a));
+      return;
+    }
+    nav.push(MaterialPageRoute(
+      builder: (_) =>
+          ActivationScreen(companyCode: a.companyCode, token: a.token),
+    ));
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _deepLinks.dispose();
     super.dispose();
   }
 
@@ -108,6 +132,7 @@ class _OmniHrAppState extends State<OmniHrApp> with WidgetsBindingObserver {
         ChangeNotifierProvider(create: (_) => NotificationService()),
       ],
       child: MaterialApp(
+        navigatorKey: _navigatorKey,
         title: AppConstants.appName,
         theme: AppTheme.lightTheme,
         debugShowCheckedModeBanner: false,

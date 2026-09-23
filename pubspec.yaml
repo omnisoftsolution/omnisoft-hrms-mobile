@@ -43,6 +43,8 @@ dependencies:
   google_mlkit_face_detection: ^0.13.0
   tflite_flutter: ^0.12.1
   image: ^4.1.7
+  # omnihr://activate?c=<company>&t=<token> invite links (QR + email).
+  app_links: ^6.3.2
 
 dev_dependencies:
   flutter_test:
