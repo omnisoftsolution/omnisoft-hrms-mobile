@@ -169,6 +169,16 @@ class BiometricAuthService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Hand a freshly issued device refresh token (password login or
+  /// activation) to an already-enabled biometric login: migrates a
+  /// legacy password credential, then keeps a refresh-mode one current.
+  /// No-op when biometric login is off or [refreshToken] is empty.
+  Future<void> adoptRefreshToken(String refreshToken) async {
+    if (refreshToken.isEmpty) return;
+    await replacePasswordWithRefreshToken(refreshToken);
+    await updateRefreshToken(refreshToken);
+  }
+
   /// Refresh the stored token in place. No-op unless already enabled in
   /// refresh-token mode.
   Future<void> updateRefreshToken(String refreshToken) async {

@@ -113,6 +113,9 @@ class _ActivationScreenState extends State<ActivationScreen> {
         appVersion: AppConstants.appVersion,
       );
       await session.saveLoginResponse(res);
+      // Face ID already on: hand it the new device token (as a password
+      // login does); otherwise offer it below.
+      await bio.adoptRefreshToken(session.refreshToken);
       if (!mounted) return;
       await _maybeOfferBiometricOptIn(
           bio, login, session.refreshToken, session.employeeName);

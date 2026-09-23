@@ -186,13 +186,9 @@ class _LoginScreenState extends State<LoginScreen> {
         emailCode: emailCode,
       );
       await session.saveLoginResponse(res);
-      final refreshToken = session.refreshToken;
-      if (refreshToken.isNotEmpty) {
-        // Migrate a password-mode biometric login to the refresh token,
-        // and keep an existing refresh-mode one current.
-        await bio.replacePasswordWithRefreshToken(refreshToken);
-        await bio.updateRefreshToken(refreshToken);
-      }
+      // Migrate a password-mode biometric login to the refresh token,
+      // and keep an existing refresh-mode one current.
+      await bio.adoptRefreshToken(session.refreshToken);
       if (!mounted) return;
       await _maybeOfferBiometricOptIn(loginText, password, session.employeeName);
       if (!mounted) return;

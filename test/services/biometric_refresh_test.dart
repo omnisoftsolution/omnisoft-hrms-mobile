@@ -110,4 +110,47 @@ void main() {
         await const FlutterSecureStorage().read(key: 'biometric_refresh_token'),
         isNull);
   });
+
+  group('adoptRefreshToken', () {
+    const s = FlutterSecureStorage();
+
+    test('is a no-op when biometric login is not enabled', () async {
+      final svc = BiometricAuthService(
+          gate: FakeBiometricGate(nextOutcome: BiometricAuthOutcome.success));
+      await svc.load();
+      await svc.adoptRefreshToken('R');
+      expect(svc.isEnabled, isFalse);
+      expect(await s.read(key: 'biometric_refresh_token'), isNull);
+    });
+
+    test('replaces the stored token in refresh mode', () async {
+      final svc = BiometricAuthService(
+          gate: FakeBiometricGate(nextOutcome: BiometricAuthOutcome.success));
+      await svc.load();
+      await svc.enableWithRefreshToken(login: 'a@b.c', refreshToken: 'OLD');
+      await svc.adoptRefreshToken('NEW');
+      expect(await s.read(key: 'biometric_refresh_token'), 'NEW');
+      expect(svc.usesRefreshToken, isTrue);
+    });
+
+    test('migrates a legacy password credential to the token', () async {
+      final svc = BiometricAuthService(
+          gate: FakeBiometricGate(nextOutcome: BiometricAuthOutcome.success));
+      await svc.load();
+      await svc.enable(login: 'a@b.c', password: 'pw');
+      await svc.adoptRefreshToken('NEW');
+      expect(svc.usesRefreshToken, isTrue);
+      expect(await s.read(key: 'biometric_refresh_token'), 'NEW');
+      expect(await s.read(key: 'biometric_password'), isNull);
+    });
+
+    test('ignores an empty token', () async {
+      final svc = BiometricAuthService(
+          gate: FakeBiometricGate(nextOutcome: BiometricAuthOutcome.success));
+      await svc.load();
+      await svc.enableWithRefreshToken(login: 'a@b.c', refreshToken: 'OLD');
+      await svc.adoptRefreshToken('');
+      expect(await s.read(key: 'biometric_refresh_token'), 'OLD');
+    });
+  });
 }
