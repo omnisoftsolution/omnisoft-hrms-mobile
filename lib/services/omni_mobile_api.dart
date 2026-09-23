@@ -12,6 +12,7 @@ import '../models/notification_record.dart';
 import '../models/ocr_result.dart';
 import '../models/payslip_record.dart';
 import '../models/public_holiday.dart';
+import 'identity_bodies.dart';
 
 /// Builds the request body map for attendance check-in/out calls.
 ///
@@ -162,19 +163,67 @@ class OmniMobileApi {
     required String login,
     required String password,
     String? deviceId,
+    String? deviceLabel,
     String? appVersion,
-  }) async {
-    return _post('/login', {
-      'login': login,
-      'password': password,
-      'device_id': ?deviceId,
-      'app_version': ?appVersion,
-    });
+    String? emailCode,
+  }) =>
+      _post('/login', buildLoginBody(
+          login: login,
+          password: password,
+          deviceId: deviceId,
+          deviceLabel: deviceLabel,
+          appVersion: appVersion,
+          emailCode: emailCode));
+
+  Future<Map<String, dynamic>> activate({
+    required String login,
+    String? token,
+    String? code,
+    required String password,
+    required String deviceId,
+    String? deviceLabel,
+    String? appVersion,
+  }) =>
+      _post('/auth/activate', buildActivateBody(
+          login: login,
+          token: token,
+          code: code,
+          password: password,
+          deviceId: deviceId,
+          deviceLabel: deviceLabel,
+          appVersion: appVersion));
+
+  Future<Map<String, dynamic>> refresh({
+    required String refreshToken,
+    required String deviceId,
+  }) =>
+      _post('/auth/refresh',
+          buildRefreshBody(refreshToken: refreshToken, deviceId: deviceId));
+
+  Future<List<Map<String, dynamic>>> devicesList() async {
+    final data = await _post('/auth/devices/list');
+    return (data['devices'] as List? ?? const []).cast<Map<String, dynamic>>();
   }
 
-  Future<Map<String, dynamic>> logout() async {
-    return _post('/logout');
-  }
+  Future<void> deviceRevoke(String deviceId) =>
+      _post('/auth/devices/revoke', {'device_id': deviceId});
+
+  Future<void> passwordChange({
+    required String currentPassword,
+    required String newPassword,
+  }) =>
+      _post('/auth/password/change', {
+        'current_password': currentPassword,
+        'new_password': newPassword
+      });
+
+  /// Always resolves on 200; the body may carry error == 'mail_not_configured'.
+  Future<Map<String, dynamic>> passwordResetRequest(String login) =>
+      _post('/auth/password/reset_request',
+          {'login': login.trim().toLowerCase()});
+
+  Future<Map<String, dynamic>> logout({bool forgetDevice = false}) =>
+      _post('/logout', {if (forgetDevice) 'forget_device': true});
 
   /// Account deletion request. The connector revokes the mobile
   /// session and logs the request; full server-side data cleanup is
