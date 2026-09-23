@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 /// Asks for the 6-digit sign-in code the connector emailed when this
 /// phone is not yet trusted (`device_verification_required`). Returns
@@ -22,6 +23,7 @@ Future<String?> showDeviceCodeDialog(BuildContext context,
             TextField(
               controller: ctrl,
               keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
               maxLength: 6,
               autofocus: true,
               decoration: const InputDecoration(labelText: 'Code'),

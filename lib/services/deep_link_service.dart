@@ -18,15 +18,39 @@ ActivationArgs? parseActivationLink(Uri uri) {
   return ActivationArgs(c, t);
 }
 
+/// Some platforms deliver the launch link through both getInitialLink
+/// and the stream, moments apart. Drops exactly that: the first repeat
+/// of the last handled link within [window]. The same link tapped again
+/// later (e.g. after backing out of activation) is handled again.
+class LinkDeduper {
+  LinkDeduper({this.window = const Duration(seconds: 2)});
+
+  final Duration window;
+  Uri? _last;
+  DateTime? _lastAt;
+  bool _dropped = false;
+
+  bool shouldHandle(Uri u, DateTime now) {
+    if (!_dropped &&
+        u == _last &&
+        _lastAt != null &&
+        now.difference(_lastAt!) < window) {
+      _dropped = true;
+      return false;
+    }
+    _last = u;
+    _lastAt = now;
+    _dropped = false;
+    return true;
+  }
+}
+
 /// Delivers invite links to [listen]'s callback: the link that cold-
 /// started the app (getInitialLink) and any opened while it runs.
 class DeepLinkService {
   final _links = AppLinks();
   StreamSubscription<Uri>? _sub;
-
-  /// Some platforms deliver the launch link through both getInitialLink
-  /// and the stream; the same link is handled only once.
-  Uri? _lastHandled;
+  final _deduper = LinkDeduper();
 
   void listen(void Function(ActivationArgs) onActivation) {
     _links.getInitialLink().then((u) {
@@ -37,10 +61,9 @@ class DeepLinkService {
   }
 
   void _handle(Uri u, void Function(ActivationArgs) cb) {
-    if (u == _lastHandled) return;
     final a = parseActivationLink(u);
     if (a == null) return;
-    _lastHandled = u;
+    if (!_deduper.shouldHandle(u, DateTime.now())) return;
     cb(a);
   }
 

@@ -25,7 +25,17 @@ import 'device_code_dialog.dart';
 /// employee details to SessionService. The top-level Consumer in
 /// OmniHrApp then renders HomeShell.
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  const LoginScreen({super.key, this.apiBuilder, this.homeBuilder});
+
+  /// Test seam: builds the unauthenticated API client for a company's
+  /// Odoo URL + database. Defaults to the real [OmniMobileApi].
+  @visibleForTesting
+  final OmniMobileApi Function(String baseUrl, String db)? apiBuilder;
+
+  /// Test seam: the screen shown after signing in. Defaults to
+  /// [HomeShell].
+  @visibleForTesting
+  final WidgetBuilder? homeBuilder;
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -135,10 +145,20 @@ class _LoginScreenState extends State<LoginScreen> {
 
   void _goHome() {
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const HomeShell()),
+      MaterialPageRoute(
+          builder: widget.homeBuilder ?? (_) => const HomeShell()),
       (_) => false,
     );
   }
+
+  /// Unauthenticated client for the session's company (login, reset).
+  OmniMobileApi _anonApi(SessionService session) =>
+      widget.apiBuilder?.call(session.clientUrl, session.clientDb) ??
+      OmniMobileApi(
+        baseUrl: session.clientUrl,
+        db: session.clientDb,
+        token: '', // no auth header
+      );
 
   @override
   void dispose() {
@@ -170,11 +190,7 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       final session = context.read<SessionService>();
       final bio = context.read<BiometricAuthService>();
-      final api = OmniMobileApi(
-        baseUrl: session.clientUrl,
-        db: session.clientDb,
-        token: '', // login has no auth header
-      );
+      final api = _anonApi(session);
       final deviceId = await _deviceService.getDeviceId();
       final deviceLabel = await _deviceService.getDeviceLabel();
       final res = await api.login(
@@ -213,7 +229,9 @@ class _LoginScreenState extends State<LoginScreen> {
               : null,
         );
         if (code != null && mounted) {
-          return _performLogin(loginText, password,
+          // Awaited: an un-awaited return would let this attempt's
+          // `finally` re-enable Sign in while the retry is in flight.
+          return await _performLogin(loginText, password,
               fromBiometric: fromBiometric, emailCode: code);
         }
       } else if (e.errorCode == 'invalid_credentials' &&
@@ -247,12 +265,7 @@ class _LoginScreenState extends State<LoginScreen> {
           _ForgotPasswordDialog(initialEmail: _loginController.text.trim()),
     );
     if (email == null || email.isEmpty || !mounted) return;
-    final session = context.read<SessionService>();
-    final api = OmniMobileApi(
-      baseUrl: session.clientUrl,
-      db: session.clientDb,
-      token: '',
-    );
+    final api = _anonApi(context.read<SessionService>());
     String message;
     try {
       final body = await api.passwordResetRequest(email);

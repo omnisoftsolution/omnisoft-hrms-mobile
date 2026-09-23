@@ -41,6 +41,22 @@ void main() {
     expect(result, isNull);
   });
 
+  testWidgets('the code field accepts digits only', (tester) async {
+    await tester.pumpWidget(MaterialApp(
+        home: Builder(
+            builder: (ctx) => TextButton(
+                onPressed: () => showDeviceCodeDialog(ctx, email: 'a@b.c'),
+                child: const Text('open')))));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '12ab34 5');
+    await tester.pump();
+    expect(tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        '12345');
+    final submit = find.widgetWithText(FilledButton, 'Continue');
+    expect(tester.widget<FilledButton>(submit).onPressed, isNull);
+  });
+
   testWidgets('shows the error passed in', (tester) async {
     await tester.pumpWidget(MaterialApp(
         home: Builder(
