@@ -120,6 +120,7 @@ class BiometricAuthService extends ChangeNotifier {
     if (outcome != BiometricAuthOutcome.success) return false;
     await _secure.write(key: _sLogin, value: login);
     await _secure.write(key: _sPassword, value: password);
+    await _secure.delete(key: _sRefresh);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_kEnabled, true);
     if (displayName != null && displayName.isNotEmpty) {
@@ -127,6 +128,7 @@ class BiometricAuthService extends ChangeNotifier {
       _displayName = displayName;
     }
     _enabled = true;
+    _usesRefresh = false;
     notifyListeners();
     return true;
   }
@@ -138,6 +140,7 @@ class BiometricAuthService extends ChangeNotifier {
     required String refreshToken,
     String? displayName,
   }) async {
+    if (refreshToken.isEmpty) return false;
     final outcome = await _gate
         .authenticate('Confirm your identity to enable biometric login');
     if (outcome != BiometricAuthOutcome.success) return false;
