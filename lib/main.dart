@@ -76,8 +76,8 @@ class _OmniHrAppState extends State<OmniHrApp> with WidgetsBindingObserver {
       return;
     }
     nav.push(MaterialPageRoute(
-      builder: (_) =>
-          ActivationScreen(companyCode: a.companyCode, token: a.token),
+      builder: (_) => ActivationScreen(
+          companyCode: a.companyCode, token: a.token, login: a.login),
     ));
   }
 

@@ -65,13 +65,15 @@ final _nova = CompanyInfo(
   features: const {'attendance': true},
 );
 
-Map<String, dynamic> _okRes({String token = 'NEW-A', String rt = 'R'}) => {
+Map<String, dynamic> _okRes(
+        {String token = 'NEW-A', String rt = 'R', String login = 'a@b.c'}) =>
+    {
       'success': true,
       'access_token': token,
       'expires_at': '2099-01-01 00:00:00',
       'refresh_token': rt,
       'auth_source': 'omni',
-      'user': {'id': 9, 'login': 'a@b.c', 'name': 'A'},
+      'user': {'id': 9, 'login': login, 'name': 'A'},
       'employee': {'id': 6, 'name': 'A'},
     };
 
@@ -84,17 +86,17 @@ void main() {
   });
 
   testWidgets(
-      'prefilled token hides the code field and asks for email + password',
+      'prefilled token hides the code field and asks for login + password',
       (tester) async {
     await tester.pumpWidget(const MaterialApp(
         home: ActivationScreen(companyCode: 'NOVAWORKS', token: 'T')));
     expect(find.byKey(const Key('activation_code')), findsNothing);
-    expect(find.byKey(const Key('activation_email')), findsOneWidget);
+    expect(find.byKey(const Key('activation_login')), findsOneWidget);
     expect(find.byKey(const Key('activation_password')), findsOneWidget);
     expect(find.text('NOVAWORKS'), findsOneWidget);
   });
   testWidgets(
-      'manual mode shows company code, email, code, password; '
+      'manual mode shows company code, login, code, password; '
       'button disabled until valid', (tester) async {
     await tester.pumpWidget(const MaterialApp(home: ActivationScreen()));
     expect(find.byKey(const Key('activation_company')), findsOneWidget);
@@ -103,13 +105,34 @@ void main() {
     expect(tester.widget<FilledButton>(btn).onPressed, isNull);
     await tester.enterText(
         find.byKey(const Key('activation_company')), 'NOVAWORKS');
-    await tester.enterText(find.byKey(const Key('activation_email')), 'a@b.c');
+    await tester.enterText(find.byKey(const Key('activation_login')), 'a@b.c');
     await tester.enterText(find.byKey(const Key('activation_code')), '123456');
     await tester.enterText(
         find.byKey(const Key('activation_password')), 'longenough');
     await tester.enterText(
         find.byKey(const Key('activation_password2')), 'longenough');
     await tester.pump();
+    expect(tester.widget<FilledButton>(btn).onPressed, isNotNull);
+  });
+
+  testWidgets(
+      'the login field has no email keyboard or @ requirement',
+      (tester) async {
+    await tester.pumpWidget(const MaterialApp(home: ActivationScreen()));
+    // LabeledField renders its label upper-cased.
+    expect(find.text('APP LOGIN'), findsOneWidget);
+    expect(find.text('WORK EMAIL'), findsNothing);
+    await tester.enterText(
+        find.byKey(const Key('activation_company')), 'NOVAWORKS');
+    await tester.enterText(
+        find.byKey(const Key('activation_login')), '6591062006');
+    await tester.enterText(find.byKey(const Key('activation_code')), '123456');
+    await tester.enterText(
+        find.byKey(const Key('activation_password')), 'longenough');
+    await tester.enterText(
+        find.byKey(const Key('activation_password2')), 'longenough');
+    await tester.pump();
+    final btn = find.widgetWithText(FilledButton, 'Activate');
     expect(tester.widget<FilledButton>(btn).onPressed, isNotNull);
   });
 
@@ -124,6 +147,7 @@ void main() {
       WidgetTester tester, {
       String? companyCode,
       String? token,
+      String? login,
       required Future<Map<String, dynamic>> Function() onActivate,
     }) async {
       await tester.pumpWidget(MultiProvider(
@@ -135,6 +159,7 @@ void main() {
           home: ActivationScreen(
             companyCode: companyCode,
             token: token,
+            login: login,
             apiBuilder: (url, db) {
               builtUrl = url;
               builtDb = db;
@@ -149,14 +174,17 @@ void main() {
 
     Future<void> fillAndSubmit(WidgetTester tester,
         {String? company,
-        String email = '  A@B.C ',
+        String login = '  A@B.C ',
         String? code,
         bool settle = true}) async {
       if (company != null) {
         await tester.enterText(
             find.byKey(const Key('activation_company')), company);
       }
-      await tester.enterText(find.byKey(const Key('activation_email')), email);
+      if (login.isNotEmpty) {
+        await tester.enterText(
+            find.byKey(const Key('activation_login')), login);
+      }
       if (code != null) {
         await tester.enterText(find.byKey(const Key('activation_code')), code);
       }
@@ -190,7 +218,8 @@ void main() {
 
     testWidgets(
         'same company (case-insensitive) skips the lookup; sends the '
-        'trimmed lowercased email, the token only, and a device id',
+        'trimmed lowercased login, the token only, a device id, and '
+        '(no link login) the typed text as new_login',
         (tester) async {
       await session.saveCompany(
           saasUrl: 'https://saas',
@@ -208,6 +237,7 @@ void main() {
       expect(sent['token'], 'T');
       expect(sent['code'], isNull);
       expect(sent['device_id'], isNotEmpty);
+      expect(sent['new_login'], 'A@B.C');
       expect(session.accessToken, 'NEW-A');
       expect(find.text('HOME'), findsOneWidget);
     });
@@ -338,6 +368,97 @@ void main() {
       expect(find.text('HOME'), findsNothing);
       expect(session.accessToken, 'NEW-A');
       expect(find.byType(BottomSheet), findsOneWidget);
+    });
+
+    testWidgets('token link prefills the App login; unchanged means no rename',
+        (tester) async {
+      await pumpScreen(tester,
+          companyCode: 'NOVAWORKS', token: 'T', login: '6591062006',
+          onActivate: () async => _okRes(login: '6591062006'));
+      expect(find.text('6591062006'), findsOneWidget);
+      await fillAndSubmit(tester, login: '');
+      expect(api!.calls.single['new_login'], isNull);
+      expect(find.text('HOME'), findsOneWidget);
+    });
+
+    testWidgets('same login in another format is not a rename', (tester) async {
+      await pumpScreen(tester,
+          companyCode: 'NOVAWORKS', token: 'T', login: '6591062006',
+          onActivate: () async => _okRes(login: '6591062006'));
+      await fillAndSubmit(tester, login: '+65 9106 2006');
+      expect(api!.calls.single['new_login'], isNull);
+      expect(find.textContaining('Your app login is'), findsNothing);
+    });
+
+    testWidgets('a changed login is sent as new_login', (tester) async {
+      await pumpScreen(tester,
+          companyCode: 'NOVAWORKS', token: 'T', login: '6591062006',
+          onActivate: () async => _okRes(login: 'arjun'));
+      await fillAndSubmit(tester, login: 'Arjun');
+      expect(api!.calls.single['new_login'], 'Arjun');
+      expect(find.textContaining('Your app login is'), findsNothing);
+    });
+
+    testWidgets('old link without l and empty field keeps HR login',
+        (tester) async {
+      await pumpScreen(tester,
+          companyCode: 'NOVAWORKS', token: 'T',
+          onActivate: () async => _okRes(login: 'hr.login'));
+      await fillAndSubmit(tester, login: '');
+      expect(api!.calls.single['new_login'], isNull);
+      expect(find.text('HOME'), findsOneWidget);
+    });
+
+    testWidgets(
+        'an older connector ignoring new_login shows the real login',
+        (tester) async {
+      await pumpScreen(tester,
+          companyCode: 'NOVAWORKS', token: 'T', login: 'a@b.c',
+          onActivate: () async => _okRes(login: 'a@b.c'));
+      await fillAndSubmit(tester, login: 'arjun');
+      expect(find.text('Your app login is a@b.c.'), findsOneWidget);
+    });
+
+    testWidgets('code path: login required; a different login is optional',
+        (tester) async {
+      await pumpScreen(tester, onActivate: () async => _okRes(login: 'new.one'));
+      await tester.tap(find.byKey(const Key('activation_use_different_login')));
+      await tester.pump();
+      await tester.enterText(
+          find.byKey(const Key('activation_new_login')), 'New.One');
+      await fillAndSubmit(tester,
+          company: 'NOVAWORKS', login: '+65 9106 2006', code: '123456');
+      final sent = api!.calls.single;
+      expect(sent['login'], '+65 9106 2006');
+      expect(sent['new_login'], 'New.One');
+    });
+
+    testWidgets('Face ID is keyed to the login the server returned',
+        (tester) async {
+      // Typed text ('+65 9106 2006') differs from the stored login; only
+      // keying on the server's login lets Face ID adopt the new token.
+      // Today's code (typed text) leaves the old token: this test fails.
+      bio = BiometricAuthService(gate: FakeBiometricGate());
+      await bio.load();
+      await bio.enableWithRefreshToken(login: '6591062006', refreshToken: 'OLD');
+      await pumpScreen(tester,
+          companyCode: 'NOVAWORKS', token: 'T',
+          onActivate: () async => _okRes(login: '6591062006', rt: 'NEW'));
+      await fillAndSubmit(tester, login: '+65 9106 2006');
+      expect(api!.calls.single['new_login'], '+65 9106 2006');
+      expect(find.textContaining('Your app login is'), findsNothing);
+      const s = FlutterSecureStorage();
+      expect(await s.read(key: 'biometric_refresh_token'), 'NEW');
+    });
+
+    testWidgets('login_taken is shown in words', (tester) async {
+      await pumpScreen(tester,
+          companyCode: 'NOVAWORKS', token: 'T', login: 'a',
+          onActivate: () async =>
+              throw ApiException('login_taken'));
+      await fillAndSubmit(tester, login: 'taken');
+      expect(find.text('That login is already used. Choose another.'),
+          findsOneWidget);
     });
   });
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import '../../core/app_login.dart';
 import '../../core/constants.dart';
 import '../../core/error_messages.dart';
 import '../../core/theme.dart';
@@ -16,14 +17,18 @@ import '../home/home_shell.dart';
 /// First sign-in from an HR invite: the employee sets their own app
 /// password. Opened by an `omnihr://activate` link or QR (company code
 /// and token prefilled) or from the login screen's "Activate with an
-/// invite" (manual mode: company code + the 6-digit code from the
-/// invite email). On success the device is signed in and lands on home.
+/// invite" (manual mode: company code + App login + the 6-digit code
+/// from the invite email). On success the device is signed in and lands
+/// on home.
 ///
 /// Providers are read only inside the submit handler, so the form
 /// builds without any provider above it.
 class ActivationScreen extends StatefulWidget {
   final String? companyCode;
   final String? token;
+
+  /// Login carried by the invite link (`l`), prefilled and editable.
+  final String? login;
 
   /// Test seam: builds the unauthenticated API client for a company's
   /// Odoo URL + database. Defaults to the real [OmniMobileApi].
@@ -39,6 +44,7 @@ class ActivationScreen extends StatefulWidget {
     super.key,
     this.companyCode,
     this.token,
+    this.login,
     this.apiBuilder,
     this.homeBuilder,
   });
@@ -49,7 +55,8 @@ class ActivationScreen extends StatefulWidget {
 
 class _ActivationScreenState extends State<ActivationScreen> {
   final _companyController = TextEditingController();
-  final _emailController = TextEditingController();
+  final _loginController = TextEditingController();
+  final _newLoginController = TextEditingController();
   final _codeController = TextEditingController();
   final _passwordController = TextEditingController();
   final _password2Controller = TextEditingController();
@@ -57,6 +64,7 @@ class _ActivationScreenState extends State<ActivationScreen> {
   bool _obscurePassword = true;
   bool _submitting = false;
   bool _codeLocked = false;
+  bool _showNewLogin = false;
   String? _error;
 
   bool get _hasToken => widget.token != null && widget.token!.isNotEmpty;
@@ -66,6 +74,7 @@ class _ActivationScreenState extends State<ActivationScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.login != null) _loginController.text = widget.login!;
     for (final c in _controllers) {
       c.addListener(_onChanged);
     }
@@ -73,7 +82,8 @@ class _ActivationScreenState extends State<ActivationScreen> {
 
   List<TextEditingController> get _controllers => [
         _companyController,
-        _emailController,
+        _loginController,
+        _newLoginController,
         _codeController,
         _passwordController,
         _password2Controller,
@@ -91,12 +101,29 @@ class _ActivationScreenState extends State<ActivationScreen> {
 
   bool get _canSubmit {
     final password = _passwordController.text;
-    return _emailController.text.contains('@') &&
+    // Token path: an empty field keeps HR's login. Code path: the login
+    // identifies the invite, so it is required.
+    final loginOk = _hasToken || _loginController.text.trim().isNotEmpty;
+    return loginOk &&
         password.length >= 8 &&
         password == _password2Controller.text &&
         (_hasToken ||
             (!_codeLocked && _codeController.text.trim().length == 6)) &&
         (_hasCompany || _companyController.text.trim().isNotEmpty);
+  }
+
+  /// What to send as `new_login`, or null for "keep HR's login".
+  String? get _requestedNewLogin {
+    if (_hasToken) {
+      final typed = _loginController.text.trim();
+      if (typed.isEmpty) return null;
+      final fromLink = widget.login ?? '';
+      return normalizeAppLogin(typed) == normalizeAppLogin(fromLink)
+          ? null
+          : typed;
+    }
+    final alt = _newLoginController.text.trim();
+    return _showNewLogin && alt.isNotEmpty ? alt : null;
   }
 
   Future<void> _activate() async {
@@ -106,7 +133,10 @@ class _ActivationScreenState extends State<ActivationScreen> {
             ? widget.companyCode!
             : _companyController.text)
         .trim();
-    final login = _emailController.text.trim().toLowerCase();
+    final typed = _loginController.text.trim();
+    final login = (_hasToken && widget.login != null ? widget.login! : typed)
+        .toLowerCase();
+    final newLogin = _requestedNewLogin;
     setState(() {
       _submitting = true;
       _error = null;
@@ -144,6 +174,7 @@ class _ActivationScreenState extends State<ActivationScreen> {
         deviceId: deviceId,
         deviceLabel: deviceLabel,
         appVersion: AppConstants.appVersion,
+        newLogin: newLogin,
       );
       if (staged != null) {
         // Commit the switch: drop the other company's session first.
@@ -151,12 +182,20 @@ class _ActivationScreenState extends State<ActivationScreen> {
         await session.saveCompanyInfo(staged, saasUrl: stagedSaasUrl);
       }
       await session.saveLoginResponse(res);
-      // Face ID already on: hand it the new device token (as a password
-      // login does, and only for the same login); otherwise offer it below.
-      await bio.adoptRefreshToken(session.refreshToken, login: login);
+      // The server's login is the truth (it applied, or an older connector
+      // ignored, the rename). Face ID is keyed to it, never to typed text.
+      final serverLogin = session.userLogin.isNotEmpty
+          ? session.userLogin
+          : (newLogin ?? login);
+      await bio.adoptRefreshToken(session.refreshToken, login: serverLogin);
       if (!mounted) return;
+      if (newLogin != null &&
+          normalizeAppLogin(newLogin) != normalizeAppLogin(serverLogin)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Your app login is $serverLogin.')));
+      }
       await _maybeOfferBiometricOptIn(
-          bio, login, session.refreshToken, session.employeeName);
+          bio, serverLogin, session.refreshToken, session.employeeName);
       if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(
@@ -257,15 +296,46 @@ class _ActivationScreenState extends State<ActivationScreen> {
                 ),
               const SizedBox(height: 20),
               LabeledField(
-                key: const Key('activation_email'),
-                label: 'Work email',
-                controller: _emailController,
-                hintText: 'name@company.com',
-                prefixIcon: Icons.mail_outline_rounded,
-                keyboardType: TextInputType.emailAddress,
-                autofillHints: const [AutofillHints.email],
+                key: const Key('activation_login'),
+                label: 'App login',
+                controller: _loginController,
+                hintText: 'Email, phone or username',
+                prefixIcon: Icons.person_outline_rounded,
+                keyboardType: TextInputType.text,
+                autofillHints: const [AutofillHints.username],
                 textInputAction: TextInputAction.next,
               ),
+              Padding(
+                padding: const EdgeInsets.only(left: 4, top: 6),
+                child: Text(
+                    _hasToken
+                        ? 'You can change it.'
+                        : 'The login HR gave you.',
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: AppTheme.outline)),
+              ),
+              if (!_hasToken) ...[
+                if (_showNewLogin) ...[
+                  const SizedBox(height: 20),
+                  LabeledField(
+                    key: const Key('activation_new_login'),
+                    label: 'New app login',
+                    controller: _newLoginController,
+                    hintText: 'Email, phone or username',
+                    prefixIcon: Icons.edit_outlined,
+                    keyboardType: TextInputType.text,
+                    textInputAction: TextInputAction.next,
+                  ),
+                ] else
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton(
+                      key: const Key('activation_use_different_login'),
+                      onPressed: () => setState(() => _showNewLogin = true),
+                      child: const Text('Use a different login'),
+                    ),
+                  ),
+              ],
               if (!_hasToken) ...[
                 const SizedBox(height: 20),
                 LabeledField(
