@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../../core/app_login.dart';
 import '../../core/constants.dart';
 import '../../core/theme.dart';
 import '../../core/error_messages.dart';
@@ -203,9 +204,13 @@ class _LoginScreenState extends State<LoginScreen> {
       );
       await session.saveLoginResponse(res);
       // Face ID follows the stored login, not the typed text (phones can
-      // be typed in any format; 2.47 connectors return the credential login).
+      // be typed in any format; 2.47 connectors return the credential
+      // login) — except the hidden Odoo user a 2.45/2.46 connector can
+      // still return, which the employee never typed or was invited with.
       final faceIdLogin =
-          session.userLogin.isNotEmpty ? session.userLogin : loginText;
+          session.userLogin.isNotEmpty && !isHiddenOdooLogin(session.userLogin)
+              ? session.userLogin
+              : loginText;
       await bio.adoptRefreshToken(session.refreshToken, login: faceIdLogin);
       if (!mounted) return;
       await _maybeOfferBiometricOptIn(

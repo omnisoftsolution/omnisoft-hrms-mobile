@@ -419,6 +419,35 @@ void main() {
       expect(find.text('Your app login is a@b.c.'), findsOneWidget);
     });
 
+    testWidgets(
+        'HR renamed the login after the QR was printed: no rename '
+        'requested, but the server login differs from the link',
+        (tester) async {
+      await pumpScreen(tester,
+          companyCode: 'NOVAWORKS', token: 'T', login: 'old.login',
+          onActivate: () async => _okRes(login: 'new.login'));
+      await fillAndSubmit(tester, login: ''); // field untouched
+      expect(api!.calls.single['new_login'], isNull);
+      expect(find.text('Your app login is new.login.'), findsOneWidget);
+    });
+
+    testWidgets(
+        'a hidden Odoo user login is never shown or adopted by Face ID',
+        (tester) async {
+      bio = BiometricAuthService(gate: FakeBiometricGate());
+      await bio.load();
+      await bio.enableWithRefreshToken(login: 'arjun', refreshToken: 'OLD');
+      await pumpScreen(tester,
+          companyCode: 'NOVAWORKS', token: 'T', login: '6591062006',
+          onActivate: () async =>
+              _okRes(login: 'omni+7@omnihr.invalid', rt: 'NEW'));
+      await fillAndSubmit(tester, login: 'arjun');
+      expect(api!.calls.single['new_login'], 'arjun');
+      expect(find.textContaining('omnihr.invalid'), findsNothing);
+      const s = FlutterSecureStorage();
+      expect(await s.read(key: 'biometric_refresh_token'), 'NEW');
+    });
+
     testWidgets('code path: login required; a different login is optional',
         (tester) async {
       await pumpScreen(tester, onActivate: () async => _okRes(login: 'new.one'));

@@ -12,3 +12,10 @@ String normalizeAppLogin(String raw) {
   }
   return s;
 }
+
+/// True for the hidden Odoo user login (`omni+<id>@omnihr.invalid`) a
+/// 2.45/2.46 connector can still return as `user.login` for an app
+/// session — never a real login the employee typed or was invited with.
+/// Callers use this to fall back to a login they know is real instead of
+/// keying Face ID (or a "your login is..." message) to it.
+bool isHiddenOdooLogin(String login) => login.endsWith('@omnihr.invalid');

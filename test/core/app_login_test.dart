@@ -14,4 +14,10 @@ void main() {
     cases.forEach((raw, expected) =>
         expect(normalizeAppLogin(raw), expected, reason: raw));
   });
+
+  test('isHiddenOdooLogin flags only the omnihr.invalid placeholder', () {
+    expect(isHiddenOdooLogin('omni+7@omnihr.invalid'), isTrue);
+    expect(isHiddenOdooLogin('say.puay@example.com'), isFalse);
+    expect(isHiddenOdooLogin(''), isFalse);
+  });
 }

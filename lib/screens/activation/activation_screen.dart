@@ -183,14 +183,23 @@ class _ActivationScreenState extends State<ActivationScreen> {
       }
       await session.saveLoginResponse(res);
       // The server's login is the truth (it applied, or an older connector
-      // ignored, the rename). Face ID is keyed to it, never to typed text.
-      final serverLogin = session.userLogin.isNotEmpty
-          ? session.userLogin
-          : (newLogin ?? login);
+      // ignored, the rename). Face ID is keyed to it, never to typed text —
+      // and never to the hidden Odoo user a 2.45/2.46 connector can still
+      // return, which is not a login the employee would recognise.
+      final returned = session.userLogin;
+      final serverLogin =
+          returned.isNotEmpty && !isHiddenOdooLogin(returned)
+              ? returned
+              : (newLogin ?? login);
       await bio.adoptRefreshToken(session.refreshToken, login: serverLogin);
       if (!mounted) return;
-      if (newLogin != null &&
-          normalizeAppLogin(newLogin) != normalizeAppLogin(serverLogin)) {
+      // Show whenever what the employee saw on screen differs from the
+      // server's login — not only on a requested rename. Covers HR
+      // renaming the login after the QR was printed, while the link
+      // still carries the old `l`.
+      final shown = typed.isNotEmpty ? typed : (widget.login ?? '');
+      if (shown.isNotEmpty &&
+          normalizeAppLogin(shown) != normalizeAppLogin(serverLogin)) {
         ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Your app login is $serverLogin.')));
       }

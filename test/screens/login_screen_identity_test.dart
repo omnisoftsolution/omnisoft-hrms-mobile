@@ -390,5 +390,28 @@ void main() {
       const s = FlutterSecureStorage();
       expect(await s.read(key: 'biometric_refresh_token'), 'B-R');
     });
+
+    testWidgets(
+        'a hidden Odoo user login falls back to the typed text for Face ID',
+        (tester) async {
+      // A 2.45/2.46 connector can still answer with the hidden
+      // omni+<id>@omnihr.invalid user — never key Face ID to that.
+      final api = _FakeApi(loginReplies: [
+        () async => _loginRes(rt: 'B-R', login: 'omni+7@omnihr.invalid'),
+      ]);
+      final session = _Session(api);
+      await session.load();
+      final bio = BiometricAuthService(gate: FakeBiometricGate());
+      await bio.load();
+      await bio.enableWithRefreshToken(login: 'alexa.lim', refreshToken: 'OLD');
+      await tester.pumpWidget(_host(session, bio, api: api));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).at(0), 'alexa.lim');
+      await tester.enterText(find.byType(TextField).at(1), 'longenough');
+      await tester.tap(find.byType(PrimaryButton));
+      await _pumpFrames(tester);
+      const s = FlutterSecureStorage();
+      expect(await s.read(key: 'biometric_refresh_token'), 'B-R');
+    });
   });
 }
