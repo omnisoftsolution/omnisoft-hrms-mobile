@@ -45,6 +45,8 @@ dependencies:
   image: ^4.1.7
   # omnihr://activate?c=<company>&t=<token> invite links (QR + email).
   app_links: ^6.3.2
+  # Invite QR scanner (Apple Vision on iOS, ML Kit barcode on Android).
+  mobile_scanner: ^7.4.2
 
 dev_dependencies:
   flutter_test:
