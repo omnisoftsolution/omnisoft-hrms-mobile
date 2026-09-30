@@ -139,3 +139,8 @@ iOS is still-frame-only for spoof texture (multi-frame raw-bytes P1.1 open, per 
 - Connector dependency: connector >= 2.45.0 (omnihrdemo runs 2.45.1). Known follow-up: the
   connector will return the credential login as `user.login` for app-credential sessions starting
   in 2.45.2 — not yet true on 2.45.1.
+- **App login is any string** (connector 2.47): email, phone or username. The
+  activation screen's "App login" is prefilled from the invite link's `l` and
+  sent as `new_login` only when changed (`normalizeAppLogin` in
+  `lib/core/app_login.dart` decides "changed"). Face ID is always keyed to the
+  server's `user.login`, never to typed text.

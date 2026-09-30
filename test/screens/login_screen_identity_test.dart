@@ -64,13 +64,13 @@ class _Session extends SessionService {
   }
 }
 
-Map<String, dynamic> _loginRes({String rt = 'B-R'}) => {
+Map<String, dynamic> _loginRes({String rt = 'B-R', String login = 'b@b.c'}) => {
       'success': true,
       'access_token': 'NEW-A',
       'expires_at': '2099-01-01 00:00:00',
       'refresh_token': rt,
       'auth_source': 'omni',
-      'user': {'id': 9, 'login': 'b@b.c', 'name': 'B'},
+      'user': {'id': 9, 'login': login, 'name': 'B'},
       'employee': {'id': 6, 'name': 'B'},
     };
 
@@ -316,6 +316,79 @@ void main() {
           login: '  Say.Puay@Example.com ');
       await tester.pumpAndSettle();
       expect(api.loginCalls.single['login'], 'Say.Puay@Example.com');
+    });
+  });
+
+  group('App login', () {
+    testWidgets('field asks for email, phone or username', (tester) async {
+      final session = SessionService();
+      await session.load();
+      final bio = BiometricAuthService(gate: FakeBiometricGate());
+      await bio.load();
+      await tester.pumpWidget(_host(session, bio));
+      await tester.pumpAndSettle();
+      expect(find.text('LOGIN'), findsOneWidget);
+      expect(find.text('Email, phone or username'), findsOneWidget);
+      expect(find.text('EMAIL OR LOGIN'), findsNothing);
+    });
+
+    testWidgets('invalid credentials read "Invalid login or password."',
+        (tester) async {
+      final api = _FakeApi(loginReplies: [
+        () async => throw ApiException('invalid_credentials'),
+      ]);
+      final session = _Session(api);
+      await session.load();
+      final bio = BiometricAuthService(gate: FakeBiometricGate());
+      await bio.load();
+      await tester.pumpWidget(_host(session, bio, api: api));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).at(0), '6591062006');
+      await tester.enterText(find.byType(TextField).at(1), 'wrong-pw');
+      await tester.tap(find.byType(PrimaryButton));
+      await _pumpFrames(tester);
+      expect(find.text('Invalid login or password.'), findsOneWidget);
+    });
+
+    testWidgets('device_verification_unavailable is explained, no code dialog',
+        (tester) async {
+      final api = _FakeApi(loginReplies: [
+        () async => throw ApiException('device_verification_unavailable'),
+      ]);
+      final session = _Session(api);
+      await session.load();
+      final bio = BiometricAuthService(gate: FakeBiometricGate());
+      await bio.load();
+      await tester.pumpWidget(_host(session, bio, api: api));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).at(0), '6591062006');
+      await tester.enterText(find.byType(TextField).at(1), 'longenough');
+      await tester.tap(find.byType(PrimaryButton));
+      await _pumpFrames(tester);
+      expect(find.textContaining('no email on file'), findsOneWidget);
+      expect(find.byType(AlertDialog), findsNothing);
+    });
+
+    testWidgets('Face ID is keyed to the login the server returned',
+        (tester) async {
+      // Formatted phone typed; Face ID enabled for the stored digits. Only
+      // keying on the server's user.login adopts the new token.
+      final api = _FakeApi(loginReplies: [
+        () async => _loginRes(rt: 'B-R', login: '6591062006'),
+      ]);
+      final session = _Session(api);
+      await session.load();
+      final bio = BiometricAuthService(gate: FakeBiometricGate());
+      await bio.load();
+      await bio.enableWithRefreshToken(login: '6591062006', refreshToken: 'OLD');
+      await tester.pumpWidget(_host(session, bio, api: api));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).at(0), '+65 9106 2006');
+      await tester.enterText(find.byType(TextField).at(1), 'longenough');
+      await tester.tap(find.byType(PrimaryButton));
+      await _pumpFrames(tester);
+      const s = FlutterSecureStorage();
+      expect(await s.read(key: 'biometric_refresh_token'), 'B-R');
     });
   });
 }

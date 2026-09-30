@@ -10,12 +10,12 @@ void main() {
         home: Builder(
             builder: (ctx) => TextButton(
                 onPressed: () async {
-                  result = await showDeviceCodeDialog(ctx, email: 'a@b.c');
+                  result = await showDeviceCodeDialog(ctx);
                 },
                 child: const Text('open')))));
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('a@b.c'), findsOneWidget);
+    expect(find.textContaining('your work email'), findsOneWidget);
     final submit = find.widgetWithText(FilledButton, 'Continue');
     expect(tester.widget<FilledButton>(submit).onPressed, isNull);
     await tester.enterText(find.byType(TextField), '123456');
@@ -31,7 +31,7 @@ void main() {
         home: Builder(
             builder: (ctx) => TextButton(
                 onPressed: () async {
-                  result = await showDeviceCodeDialog(ctx, email: 'a@b.c');
+                  result = await showDeviceCodeDialog(ctx);
                 },
                 child: const Text('open')))));
     await tester.tap(find.text('open'));
@@ -45,7 +45,7 @@ void main() {
     await tester.pumpWidget(MaterialApp(
         home: Builder(
             builder: (ctx) => TextButton(
-                onPressed: () => showDeviceCodeDialog(ctx, email: 'a@b.c'),
+                onPressed: () => showDeviceCodeDialog(ctx),
                 child: const Text('open')))));
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
@@ -62,7 +62,7 @@ void main() {
         home: Builder(
             builder: (ctx) => TextButton(
                 onPressed: () => showDeviceCodeDialog(ctx,
-                    email: 'a@b.c', error: 'That code is not right.'),
+                    error: 'That code is not right.'),
                 child: const Text('open')))));
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();

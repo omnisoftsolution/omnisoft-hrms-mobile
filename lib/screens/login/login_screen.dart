@@ -19,7 +19,7 @@ import '../home/home_shell.dart';
 import 'company_settings_screen.dart';
 import 'device_code_dialog.dart';
 
-/// Email/password login. Reached after CompanyCodeScreen has resolved
+/// Login (email, phone or username) + password. Reached after CompanyCodeScreen has resolved
 /// the SaaS routing (clientUrl + clientDb). On success, calls
 /// /api/v1/omni_mobile/login and persists the access token + user/
 /// employee details to SessionService. The top-level Consumer in
@@ -171,7 +171,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final loginText = _loginController.text.trim();
     final password = _passwordController.text;
     if (loginText.isEmpty || password.isEmpty) {
-      setState(() => _error = 'Enter your email and password.');
+      setState(() => _error = 'Enter your login and password.');
       return;
     }
     await _performLogin(loginText, password);
@@ -202,12 +202,14 @@ class _LoginScreenState extends State<LoginScreen> {
         emailCode: emailCode,
       );
       await session.saveLoginResponse(res);
-      // Migrate a password-mode biometric login to the refresh token,
-      // and keep an existing refresh-mode one current — only when this is
-      // the same login Face ID was enabled for.
-      await bio.adoptRefreshToken(session.refreshToken, login: loginText);
+      // Face ID follows the stored login, not the typed text (phones can
+      // be typed in any format; 2.47 connectors return the credential login).
+      final faceIdLogin =
+          session.userLogin.isNotEmpty ? session.userLogin : loginText;
+      await bio.adoptRefreshToken(session.refreshToken, login: faceIdLogin);
       if (!mounted) return;
-      await _maybeOfferBiometricOptIn(loginText, password, session.employeeName);
+      await _maybeOfferBiometricOptIn(
+          faceIdLogin, password, session.employeeName);
       if (!mounted) return;
       _goHome();
     } on ApiException catch (e) {
@@ -223,7 +225,6 @@ class _LoginScreenState extends State<LoginScreen> {
         // the dialog with the error; Cancel ends the loop.
         final code = await showDeviceCodeDialog(
           context,
-          email: loginText,
           error: e.errorCode == 'verification_code_invalid'
               ? friendlyErrorCode('verification_code_invalid')
               : null,
@@ -255,23 +256,25 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  /// "Forgot password?": ask for the email (prefilled from the form) and
-  /// request a reset link. The server answers the same way whether or
-  /// not the email has app access, so the confirmation stays neutral.
+  /// "Forgot password?": ask for the app login (prefilled from the form)
+  /// and request a reset link. The server answers the same way whether
+  /// or not that login has app access, so the confirmation stays neutral.
   Future<void> _forgotPassword() async {
-    final email = await showDialog<String>(
+    final login = await showDialog<String>(
       context: context,
       builder: (_) =>
-          _ForgotPasswordDialog(initialEmail: _loginController.text.trim()),
+          _ForgotPasswordDialog(initialLogin: _loginController.text.trim()),
     );
-    if (email == null || email.isEmpty || !mounted) return;
+    if (login == null || login.isEmpty || !mounted) return;
     final api = _anonApi(context.read<SessionService>());
     String message;
     try {
-      final body = await api.passwordResetRequest(email);
+      final body = await api.passwordResetRequest(login);
       message = body['error'] == 'mail_not_configured'
           ? friendlyErrorCode('mail_not_configured')
-          : 'If that email has app access, a reset link is on its way.';
+          : 'If that login has app access and an email on file, a reset '
+              'link is on its way. No email on file? Ask HR for a new QR '
+              'code.';
     } catch (e) {
       message = friendlyError(e);
     }
@@ -316,9 +319,9 @@ class _LoginScreenState extends State<LoginScreen> {
   String _humanize(ApiException e) {
     switch (e.errorCode) {
       case 'invalid_credentials':
-        return 'Invalid email or password.';
+        return 'Invalid login or password.';
       case 'missing_credentials':
-        return 'Enter your email and password.';
+        return 'Enter your login and password.';
       case 'no_employee_linked':
         return 'No employee record is linked to that user.';
       case 'mobile_not_enabled':
@@ -328,6 +331,8 @@ class _LoginScreenState extends State<LoginScreen> {
             'Contact your administrator to request access.';
       case 'rate_limit_exceeded':
         return 'Too many login attempts. Try again in a few minutes.';
+      case 'device_verification_unavailable':
+        return friendlyErrorCode(e.errorCode);
       default:
         // Friendly fallback for any error code we haven't explicitly
         // mapped — keeps cryptic snake_case codes off the UI.
@@ -380,12 +385,12 @@ class _LoginScreenState extends State<LoginScreen> {
                       const SizedBox(height: 40),
                       // Form
                       LabeledField(
-                        label: 'Email or login',
+                        label: 'Login',
                         controller: _loginController,
-                        hintText: 'name@company.com',
-                        prefixIcon: Icons.mail_outline_rounded,
-                        keyboardType: TextInputType.emailAddress,
-                        autofillHints: const [AutofillHints.email],
+                        hintText: 'Email, phone or username',
+                        prefixIcon: Icons.person_outline_rounded,
+                        keyboardType: TextInputType.text,
+                        autofillHints: const [AutofillHints.username],
                         textInputAction: TextInputAction.next,
                       ),
                       const SizedBox(height: 20),
@@ -628,20 +633,20 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 }
 
-/// Email prompt for "Forgot password?". Owns its controller so it is
+/// App login prompt for "Forgot password?". Owns its controller so it is
 /// disposed only after the dialog has fully closed. Pops the trimmed
-/// email, or null on cancel.
+/// login, or null on cancel.
 class _ForgotPasswordDialog extends StatefulWidget {
-  const _ForgotPasswordDialog({required this.initialEmail});
+  const _ForgotPasswordDialog({required this.initialLogin});
 
-  final String initialEmail;
+  final String initialLogin;
 
   @override
   State<_ForgotPasswordDialog> createState() => _ForgotPasswordDialogState();
 }
 
 class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
-  late final _ctrl = TextEditingController(text: widget.initialEmail);
+  late final _ctrl = TextEditingController(text: widget.initialLogin);
 
   @override
   void dispose() {
@@ -659,14 +664,14 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Enter your work email and we will send you a link to '
-              'set a new password.'),
+          const Text('Enter your app login. If HR has an email on file for '
+              'you, we will send a link to set a new password.'),
           const SizedBox(height: 12),
           TextField(
             controller: _ctrl,
-            keyboardType: TextInputType.emailAddress,
+            keyboardType: TextInputType.text,
             autofocus: true,
-            decoration: const InputDecoration(labelText: 'Work email'),
+            decoration: const InputDecoration(labelText: 'App login'),
             onChanged: (_) => setState(() {}),
             onSubmitted: (_) {
               if (_ctrl.text.trim().isNotEmpty) _submit();
