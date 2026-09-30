@@ -12,9 +12,9 @@ See `omnisoft-hrms-odoo-connector/docs/superpowers/plans/2026-09-12-app-identity
 
 ## Steps
 
-- [ ] **Step 1 — Phone A: fresh install + QR activation + Face ID**
+- [x] **Step 1 — Phone A: fresh install + QR activation + Face ID**
   Fresh install, scan QR from Odoo -> activation -> home. Enable Face ID. Kill app, reopen -> Face ID -> home.
-  Result:
+  Result: PASS 2026-09-28 (Arjun Patel, iPhone)
 
 - [ ] **Step 2 — Phone B: email link activation, same employee**
   Open the invite email link from Mail -> activation with the same employee -> both phones listed under Your devices.
@@ -67,3 +67,18 @@ See `omnisoft-hrms-odoo-connector/docs/superpowers/plans/2026-09-12-app-identity
 - [ ] **Step 14 — Another person signs in on a Face ID phone (C1)**
   Phone with Face ID on for employee A: sign out, sign in with employee B's password -> sign out -> Face ID still signs in as A (B's login did not take over A's Face ID).
   Result:
+
+- [ ] **Step 15 — Phone-only employee (2.47)**
+  In Odoo, pick an employee with no work email and a mobile number. App Access shows the
+  phone as App login. Send app invite -> scan the QR on the Android -> the App login field
+  shows the digits; change it to a username -> Activate -> home. Log out, log in with the
+  username. In Odoo the App login now shows the username and the chatter says
+  "App login changed to ... at activation."
+  Result:
+
+- [ ] **Step 16 — Reset password / new phone**
+  On an active employee, "Reset password / new phone" -> dialog titled
+  "App password reset / new phone" -> scan on a phone -> activation -> home.
+  Result:
+
+Before retesting on a phone that had Face ID enabled on an earlier build: turn Face ID off and on once in Profile, because the old build keyed it to the typed login.
