@@ -51,4 +51,16 @@ void main() {
       expect(d.shouldHandle(other, t0), isTrue);
     });
   });
+
+  test('carries the login from l, decoded', () {
+    final a = parseActivationLink(Uri.parse(
+        'omnihr://activate?c=NOVAWORKS&t=T&l=arjun.patel%40omnihr-sg.com'));
+    expect(a!.login, 'arjun.patel@omnihr-sg.com');
+  });
+  test('links without l (issued before 2.47) still parse', () {
+    final a = parseActivationLink(Uri.parse('omnihr://activate?c=N&t=T'));
+    expect(a!.login, isNull);
+    final b = parseActivationLink(Uri.parse('omnihr://activate?c=N&t=T&l='));
+    expect(b!.login, isNull);
+  });
 }

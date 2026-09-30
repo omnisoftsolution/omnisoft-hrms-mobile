@@ -30,4 +30,12 @@ void main() {
   test('refresh body', () {
     expect(buildRefreshBody(refreshToken: 'R', deviceId: 'd'), {'refresh_token': 'R', 'device_id': 'd'});
   });
+  test('activate body carries a trimmed new_login only when given', () {
+    final b = buildActivateBody(login: 'a@b.c', token: 'T', password: 'p',
+        deviceId: 'd', newLogin: '  Arjun ');
+    expect(b['new_login'], 'Arjun');
+    final c = buildActivateBody(login: 'a@b.c', token: 'T', password: 'p',
+        deviceId: 'd', newLogin: '  ');
+    expect(c.containsKey('new_login'), isFalse);
+  });
 }

@@ -25,6 +25,9 @@ const _identityCodes = {
   'password_too_short',
   'refresh_invalid',
   'mail_not_configured',
+  'login_invalid',
+  'login_taken',
+  'device_verification_unavailable',
 };
 
 /// Human message for an App Identity error code. [retryAfter] (seconds)
@@ -50,6 +53,13 @@ String friendlyErrorCode(String code, {int? retryAfter}) {
       return 'Please sign in again.';
     case 'mail_not_configured':
       return 'Password reset by email is not available here. Ask HR to reset it for you.';
+    case 'login_invalid':
+      return 'Use 3 to 64 characters without spaces.';
+    case 'login_taken':
+      return 'That login is already used. Choose another.';
+    case 'device_verification_unavailable':
+      return 'This phone needs a sign-in code, but there is no email on '
+          'file for you. Ask HR for a new QR code.';
     default:
       return 'Something went wrong ($code). Please try again.';
   }

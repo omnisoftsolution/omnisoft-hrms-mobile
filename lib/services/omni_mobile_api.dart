@@ -183,6 +183,7 @@ class OmniMobileApi {
     required String deviceId,
     String? deviceLabel,
     String? appVersion,
+    String? newLogin,
   }) =>
       _post('/auth/activate', buildActivateBody(
           login: login,
@@ -191,7 +192,8 @@ class OmniMobileApi {
           password: password,
           deviceId: deviceId,
           deviceLabel: deviceLabel,
-          appVersion: appVersion));
+          appVersion: appVersion,
+          newLogin: newLogin));
 
   Future<Map<String, dynamic>> refresh({
     required String refreshToken,

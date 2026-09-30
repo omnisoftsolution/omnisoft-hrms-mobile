@@ -2,20 +2,23 @@ import 'dart:async';
 
 import 'package:app_links/app_links.dart';
 
-/// Company code + one-time token carried by an invite link.
+/// Company code + one-time token (+ the app login, since 2.47) carried
+/// by an invite link.
 class ActivationArgs {
   final String companyCode;
   final String token;
-  const ActivationArgs(this.companyCode, this.token);
+  final String? login;
+  const ActivationArgs(this.companyCode, this.token, {this.login});
 }
 
-/// Parses `omnihr://activate?c=<company>&t=<token>`; null for any other
-/// link or when either parameter is missing/empty.
+/// Parses `omnihr://activate?c=<company>&t=<token>[&l=<login>]`; null for
+/// any other link or when c or t is missing/empty.
 ActivationArgs? parseActivationLink(Uri uri) {
   if (uri.scheme != 'omnihr' || uri.host != 'activate') return null;
   final c = uri.queryParameters['c'], t = uri.queryParameters['t'];
   if (c == null || c.isEmpty || t == null || t.isEmpty) return null;
-  return ActivationArgs(c, t);
+  final l = uri.queryParameters['l'];
+  return ActivationArgs(c, t, login: (l == null || l.isEmpty) ? null : l);
 }
 
 /// Some platforms deliver the launch link through both getInitialLink

@@ -43,6 +43,7 @@ class _FakeApi extends OmniMobileApi {
     required String deviceId,
     String? deviceLabel,
     String? appVersion,
+    String? newLogin,
   }) {
     calls.add({
       'login': login,
@@ -50,6 +51,7 @@ class _FakeApi extends OmniMobileApi {
       'code': code,
       'password': password,
       'device_id': deviceId,
+      'new_login': newLogin,
     });
     return onActivate();
   }

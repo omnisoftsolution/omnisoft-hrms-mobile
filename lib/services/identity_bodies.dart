@@ -26,6 +26,7 @@ Map<String, dynamic> buildActivateBody({
   required String deviceId,
   String? deviceLabel,
   String? appVersion,
+  String? newLogin,
 }) =>
     {
       'login': login.trim().toLowerCase(),
@@ -34,6 +35,8 @@ Map<String, dynamic> buildActivateBody({
       else
         'code': ?code,
       'password': password,
+      if (newLogin != null && newLogin.trim().isNotEmpty)
+        'new_login': newLogin.trim(),
       'device_id': deviceId,
       if (deviceLabel != null && deviceLabel.isNotEmpty)
         'device_label': deviceLabel,
