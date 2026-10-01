@@ -113,6 +113,14 @@ iOS is still-frame-only for spoof texture (multi-frame raw-bytes P1.1 open, per 
   `app_links` package; `lib/services/deep_link_service.dart` (`DeepLinkService` +
   `parseActivationLink`) delivers both the cold-start link and any link opened while running to
   `main.dart`'s `_navigatorKey`, which pushes the activation screen.
+  Since connector 2.48 invites are `https://<tenant>/omni/activate#c=…&t=…&l=…` (a tenant page whose
+  button hands off via `intent://` / `omnihr://`, because Samsung cameras and Gmail don't open custom
+  schemes). `parseActivationLink` reads both forms (also `?c=`) and IGNORES the host on purpose — the
+  server always comes from the company code. No https intent filter / universal link yet (later upgrade).
+- Invite QR scanner (1.25.0+86): `lib/screens/activation/invite_scan_screen.dart` (`mobile_scanner`
+  7.4.2; `classifyScan` in deep_link_service.dart; seams `scannerBuilder`, `openSettings`). Entry points
+  with seams `scanInvite` + `hasCamera`: company-code screen (`company_scan`), login field
+  (`login_scan`), invite screen (`activation_scan`); hidden when `cameraAvailable()` is false.
 - Testable seams (fake-subclass pattern — subclass, override the network call, no real HTTP):
   `SessionService.refreshAccessTokenWith`, `SessionService.refreshMeWith`,
   `SessionService.resolveCompanyWith`/`lookupCompanyWith`, and `apiBuilder` constructor params

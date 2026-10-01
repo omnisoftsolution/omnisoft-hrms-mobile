@@ -81,4 +81,38 @@ See `omnisoft-hrms-odoo-connector/docs/superpowers/plans/2026-09-12-app-identity
   "App password reset / new phone" -> scan on a phone -> activation -> home.
   Result:
 
+## Invite QR: cameras and in-app scanner (connector 2.48.0, app 1.25.0+86)
+
+Spec: connector repo `docs/superpowers/specs/2026-09-30-invite-https-link-and-scanner-design.md`.
+Invites are now `https://<tenant>/omni/activate#c=…&t=…&l=…`. Live tracker:
+https://claude.ai/artifact/MAwXbrNT6ejKcT2Jt4pY6a
+
+- [ ] **Step 17 — Samsung camera opens the invite** (retest of Step 15 with Budi): camera offers a link,
+  page "Activate Omni HR" opens, Open Omni HR -> prefilled activation screen.
+  Result:
+- [ ] **Step 18 — OPPO and iPhone cameras** -> page -> Open Omni HR -> prefilled activation.
+  Result:
+- [ ] **Step 19 — In-app scanner from the invite screen** (Scan invite QR above the company code):
+  haptic, scanner closes, prefilled activation; Enter code instead returns to the code fields.
+  Result:
+- [ ] **Step 20 — In-app scanner from the login field** (QR icon): prefilled activation;
+  Enter code instead -> manual activation.
+  Result:
+- [ ] **Step 21 — Wrong QR and torch**: "This is not an Omni HR invite QR." ~3 s, scanning continues; torch toggles.
+  Result:
+- [ ] **Step 22 — Camera refused, then allowed**: card "Camera access is off. Turn it on in Settings,
+  or enter the code instead." with Open Settings / Enter code; after allowing, the camera starts.
+  Result:
+- [ ] **Step 23 — Phone without Omni HR** (optional): page button -> Google Play.
+  Result:
+- [ ] **Step 24 — Older omnihr:// QR** still activates via in-app scanner and iPhone camera.
+  Result:
+- [ ] **Step 25 — Fresh install**: uninstall, install build 86; Scan invite QR on the company-code
+  screen -> prefilled activation without typing a code.
+  Result:
+- [ ] **Step 26 — Leave the scanner and come back** (Home, return): preview live, still reads QRs.
+  Result:
+- [ ] **Step 27 — Printed invite slip**: Samsung camera and in-app scanner both read the denser QR.
+  Result:
+
 Before retesting on a phone that had Face ID enabled on an earlier build: turn Face ID off and on once in Profile, because the old build keyed it to the typed login.
