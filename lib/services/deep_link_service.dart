@@ -11,14 +11,34 @@ class ActivationArgs {
   const ActivationArgs(this.companyCode, this.token, {this.login});
 }
 
-/// Parses `omnihr://activate?c=<company>&t=<token>[&l=<login>]`; null for
-/// any other link or when c or t is missing/empty.
+/// Reads an Omni HR invite:
+/// `omnihr://activate?c=<company>&t=<token>[&l=<login>]`, or (2.48+)
+/// `https://<any host>/omni/activate#c=…&t=…[&l=…]` (also `?c=…` when a
+/// mail app rewrote the `#`). The host is ignored on purpose: the tenant
+/// server comes from the company code via the SaaS lookup, so a QR naming
+/// another site cannot send the app anywhere. Null for anything else or
+/// when c or t is missing/empty.
 ActivationArgs? parseActivationLink(Uri uri) {
-  if (uri.scheme != 'omnihr' || uri.host != 'activate') return null;
-  final c = uri.queryParameters['c'], t = uri.queryParameters['t'];
-  if (c == null || c.isEmpty || t == null || t.isEmpty) return null;
-  final l = uri.queryParameters['l'];
-  return ActivationArgs(c, t, login: (l == null || l.isEmpty) ? null : l);
+  try {
+    final scheme = uri.scheme.toLowerCase();
+    final Map<String, String> q;
+    if (scheme == 'omnihr' && uri.host == 'activate') {
+      q = uri.queryParameters;
+    } else if (scheme == 'https' &&
+        (uri.path == '/omni/activate' || uri.path == '/omni/activate/')) {
+      q = uri.fragment.isNotEmpty
+          ? Uri.splitQueryString(uri.fragment)
+          : uri.queryParameters;
+    } else {
+      return null;
+    }
+    final c = q['c'], t = q['t'];
+    if (c == null || c.isEmpty || t == null || t.isEmpty) return null;
+    final l = q['l'];
+    return ActivationArgs(c, t, login: (l == null || l.isEmpty) ? null : l);
+  } on FormatException {
+    return null;
+  }
 }
 
 /// Some platforms deliver the launch link through both getInitialLink
@@ -71,4 +91,25 @@ class DeepLinkService {
   }
 
   void dispose() => _sub?.cancel();
+}
+
+/// What a scanned QR turned out to be.
+sealed class ScanResult {
+  const ScanResult();
+}
+
+class InviteScan extends ScanResult {
+  final ActivationArgs args;
+  const InviteScan(this.args);
+}
+
+class NotInviteScan extends ScanResult {
+  const NotInviteScan();
+}
+
+/// Classifies raw QR text for the invite scanner.
+ScanResult classifyScan(String raw) {
+  final uri = Uri.tryParse(raw.trim());
+  final a = uri == null ? null : parseActivationLink(uri);
+  return a == null ? const NotInviteScan() : InviteScan(a);
 }

@@ -63,4 +63,73 @@ void main() {
     final b = parseActivationLink(Uri.parse('omnihr://activate?c=N&t=T&l='));
     expect(b!.login, isNull);
   });
+
+  group('https invite links', () {
+    test('fragment form, host ignored', () {
+      for (final host in ['omnihrdemo.omnisoftsolution.com', 'evil.example']) {
+        final a = parseActivationLink(Uri.parse(
+            'https://$host/omni/activate#c=NOVAWORKS&t=Zx81kQ&l=1234567890'));
+        expect(a!.companyCode, 'NOVAWORKS');
+        expect(a.token, 'Zx81kQ');
+        expect(a.login, '1234567890');
+      }
+    });
+    test('query form (mail app rewrote #) and trailing slash', () {
+      expect(
+          parseActivationLink(Uri.parse(
+                  'https://h.example/omni/activate?c=NOVAWORKS&t=T'))!
+              .token,
+          'T');
+      expect(
+          parseActivationLink(Uri.parse(
+                  'https://h.example/omni/activate/#c=NOVAWORKS&t=T'))!
+              .companyCode,
+          'NOVAWORKS');
+    });
+    test('percent-encoded awkward login round-trips', () {
+      final a = parseActivationLink(Uri.parse(
+          'https://h.example/omni/activate#c=NOVAWORKS&t=T&l=a%26b%23c%20%2B1'));
+      expect(a!.login, 'a&b#c +1');
+    });
+    test('empty l means no login', () {
+      expect(
+          parseActivationLink(Uri.parse(
+                  'https://h.example/omni/activate#c=NOVAWORKS&t=T&l='))!
+              .login,
+          isNull);
+    });
+    test('rejects http, other paths, missing c or t', () {
+      for (final s in [
+        'http://h.example/omni/activate#c=NOVAWORKS&t=T',
+        'https://h.example/other#c=NOVAWORKS&t=T',
+        'https://h.example/omni/activate#c=NOVAWORKS',
+        'https://h.example/omni/activate#t=T',
+        'https://h.example/omni/activate',
+      ]) {
+        expect(parseActivationLink(Uri.parse(s)), isNull, reason: s);
+      }
+    });
+  });
+
+  group('classifyScan', () {
+    test('invite in both forms, whitespace trimmed', () {
+      expect(classifyScan('  omnihr://activate?c=NOVAWORKS&t=T\n'),
+          isA<InviteScan>());
+      final r = classifyScan(
+          'https://h.example/omni/activate#c=NOVAWORKS&t=T&l=budi.s');
+      expect((r as InviteScan).args.login, 'budi.s');
+    });
+    test('anything else is not an invite', () {
+      for (final s in [
+        'WIFI:S:Office;T:WPA;P:secret;;',
+        'hello',
+        'https://example.com',
+        'omnihr://activate?c=NOVAWORKS',
+        '%%%',
+        '',
+      ]) {
+        expect(classifyScan(s), isA<NotInviteScan>(), reason: s);
+      }
+    });
+  });
 }
