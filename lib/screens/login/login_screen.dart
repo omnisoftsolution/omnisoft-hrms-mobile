@@ -16,6 +16,7 @@ import '../../widgets/brand_logo.dart';
 import '../../widgets/labeled_field.dart';
 import '../../widgets/primary_button.dart';
 import '../activation/activation_screen.dart';
+import '../activation/invite_scan_screen.dart';
 import '../home/home_shell.dart';
 import 'company_settings_screen.dart';
 import 'device_code_dialog.dart';
@@ -26,7 +27,21 @@ import 'device_code_dialog.dart';
 /// employee details to SessionService. The top-level Consumer in
 /// OmniHrApp then renders HomeShell.
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key, this.apiBuilder, this.homeBuilder});
+  const LoginScreen({
+    super.key,
+    this.apiBuilder,
+    this.homeBuilder,
+    this.scanInvite,
+    this.hasCamera,
+  });
+
+  /// Test seam: opens the scanner. Defaults to [openInviteScanner].
+  @visibleForTesting
+  final Future<ScanOutcome?> Function(BuildContext)? scanInvite;
+
+  /// Test seam: whether a camera exists. Defaults to [cameraAvailable].
+  @visibleForTesting
+  final Future<bool> Function()? hasCamera;
 
   /// Test seam: builds the unauthenticated API client for a company's
   /// Odoo URL + database. Defaults to the real [OmniMobileApi].
@@ -53,11 +68,29 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _capable = false;
   bool _bioResolved = false;
   BiometricKind _bioKind = BiometricKind.none;
+  bool _canScan = false;
 
   @override
   void initState() {
     super.initState();
     _resolveBiometric();
+    (widget.hasCamera ?? cameraAvailable)().then((v) {
+      if (mounted && v) setState(() => _canScan = true);
+    });
+  }
+
+  Future<void> _scanInvite() async {
+    final outcome = await (widget.scanInvite ?? openInviteScanner)(context);
+    if (!mounted || outcome == null) return;
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => switch (outcome) {
+        ScannedInvite(:final args) => ActivationScreen(
+            companyCode: args.companyCode,
+            token: args.token,
+            login: args.login),
+        EnterCodeInstead() => const ActivationScreen(),
+      },
+    ));
   }
 
   Future<void> _resolveBiometric() async {
@@ -397,6 +430,14 @@ class _LoginScreenState extends State<LoginScreen> {
                         keyboardType: TextInputType.text,
                         autofillHints: const [AutofillHints.username],
                         textInputAction: TextInputAction.next,
+                        suffix: _canScan
+                            ? IconButton(
+                                key: const Key('login_scan'),
+                                tooltip: 'Scan invite QR',
+                                icon: const Icon(Icons.qr_code_scanner_rounded),
+                                onPressed: _submitting ? null : _scanInvite,
+                              )
+                            : null,
                       ),
                       const SizedBox(height: 20),
                       LabeledField(

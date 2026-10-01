@@ -13,6 +13,7 @@ import '../../services/session_service.dart';
 import '../../widgets/biometric_optin_sheet.dart';
 import '../../widgets/labeled_field.dart';
 import '../home/home_shell.dart';
+import 'invite_scan_screen.dart';
 
 /// First sign-in from an HR invite: the employee sets their own app
 /// password. Opened by an `omnihr://activate` link or QR (company code
@@ -40,6 +41,14 @@ class ActivationScreen extends StatefulWidget {
   @visibleForTesting
   final WidgetBuilder? homeBuilder;
 
+  /// Test seam: opens the scanner. Defaults to [openInviteScanner].
+  @visibleForTesting
+  final Future<ScanOutcome?> Function(BuildContext)? scanInvite;
+
+  /// Test seam: whether a camera exists. Defaults to [cameraAvailable].
+  @visibleForTesting
+  final Future<bool> Function()? hasCamera;
+
   const ActivationScreen({
     super.key,
     this.companyCode,
@@ -47,6 +56,8 @@ class ActivationScreen extends StatefulWidget {
     this.login,
     this.apiBuilder,
     this.homeBuilder,
+    this.scanInvite,
+    this.hasCamera,
   });
 
   @override
@@ -65,6 +76,7 @@ class _ActivationScreenState extends State<ActivationScreen> {
   bool _submitting = false;
   bool _codeLocked = false;
   bool _showNewLogin = false;
+  bool _canScan = false;
   String? _error;
 
   bool get _hasToken => widget.token != null && widget.token!.isNotEmpty;
@@ -78,6 +90,26 @@ class _ActivationScreenState extends State<ActivationScreen> {
     for (final c in _controllers) {
       c.addListener(_onChanged);
     }
+    if (!_hasToken) {
+      (widget.hasCamera ?? cameraAvailable)().then((v) {
+        if (mounted && v) setState(() => _canScan = true);
+      });
+    }
+  }
+
+  Future<void> _scan() async {
+    final outcome = await (widget.scanInvite ?? openInviteScanner)(context);
+    if (!mounted || outcome is! ScannedInvite) return;
+    final a = outcome.args;
+    Navigator.of(context).pushReplacement(MaterialPageRoute(
+      builder: (_) => ActivationScreen(
+        companyCode: a.companyCode,
+        token: a.token,
+        login: a.login,
+        apiBuilder: widget.apiBuilder,
+        homeBuilder: widget.homeBuilder,
+      ),
+    ));
   }
 
   List<TextEditingController> get _controllers => [
@@ -286,6 +318,18 @@ class _ActivationScreenState extends State<ActivationScreen> {
                   style: theme.textTheme.bodyMedium
                       ?.copyWith(color: AppTheme.outline)),
               const SizedBox(height: 28),
+              if (!_hasToken && _canScan) ...[
+                SizedBox(
+                  height: 52,
+                  child: FilledButton.tonalIcon(
+                    key: const Key('activation_scan'),
+                    onPressed: _submitting ? null : _scan,
+                    icon: const Icon(Icons.qr_code_scanner_rounded),
+                    label: const Text('Scan invite QR'),
+                  ),
+                ),
+                const SizedBox(height: 24),
+              ],
               if (_hasCompany) ...[
                 Text('Company',
                     style: theme.textTheme.labelMedium

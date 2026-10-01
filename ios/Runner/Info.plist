@@ -56,7 +56,7 @@
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.business</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Omni HR needs camera access to capture your face for attendance verification.</string>
+	<string>Omni HR uses the camera to capture your face for attendance and to scan your invite QR code.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Use Face ID to log in to Omni HR.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
