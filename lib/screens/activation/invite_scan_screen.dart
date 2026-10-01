@@ -44,6 +44,25 @@ Future<bool> cameraAvailable() async {
   }
 }
 
+/// What the camera area shows when the scanner fails. Permission denied keeps
+/// the black box (the screen swaps to its own explanation); any other error
+/// says so instead of leaving a blank screen.
+@visibleForTesting
+Widget cameraErrorView(
+    MobileScannerErrorCode code, VoidCallback onPermissionDenied) {
+  if (code == MobileScannerErrorCode.permissionDenied) {
+    WidgetsBinding.instance.addPostFrameCallback((_) => onPermissionDenied());
+    return const ColoredBox(color: Colors.black);
+  }
+  return const ColoredBox(
+    color: Colors.black,
+    child: Center(
+      child: ErrorStateView(
+          message: 'The camera could not start. Enter the code instead.'),
+    ),
+  );
+}
+
 /// Full-screen QR scanner for HR's invite. Accepts both invite link forms
 /// (see [classifyScan]); anything else shows a short note and keeps
 /// scanning.
@@ -141,13 +160,8 @@ class _InviteScanScreenState extends State<InviteScanScreen>
           if (v != null) onCode(v);
         }
       },
-      errorBuilder: (context, error) {
-        if (error.errorCode == MobileScannerErrorCode.permissionDenied) {
-          WidgetsBinding.instance
-              .addPostFrameCallback((_) => onPermissionDenied());
-        }
-        return const ColoredBox(color: Colors.black);
-      },
+      errorBuilder: (context, error) =>
+          cameraErrorView(error.errorCode, onPermissionDenied),
     );
   }
 
