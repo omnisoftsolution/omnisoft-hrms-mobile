@@ -28,6 +28,7 @@ const _identityCodes = {
   'login_invalid',
   'login_taken',
   'device_verification_unavailable',
+  'email_send_failed',
 };
 
 /// Human message for an App Identity error code. [retryAfter] (seconds)
@@ -60,6 +61,9 @@ String friendlyErrorCode(String code, {int? retryAfter}) {
     case 'device_verification_unavailable':
       return 'This phone needs a sign-in code, but there is no email on '
           'file for you. Ask HR for a new QR code.';
+    case 'email_send_failed':
+      return "We couldn't send the email right now. Try again in a few "
+          'minutes, or ask HR for a new QR code.';
     default:
       return 'Something went wrong ($code). Please try again.';
   }

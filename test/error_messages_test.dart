@@ -137,6 +137,13 @@ void main() {
           'Password reset by email is not available here. Ask HR to reset it for you.');
     });
 
+    test('email_send_failed', () {
+      const text = "We couldn't send the email right now. Try again in a few "
+          'minutes, or ask HR for a new QR code.';
+      expect(friendlyErrorCode('email_send_failed'), text);
+      expect(friendlyError(ApiException('email_send_failed')), text);
+    });
+
     test('friendlyError maps identity ApiExceptions via retry_after', () {
       final e = ApiException('account_locked',
           data: {'success': false, 'error': 'account_locked', 'retry_after': 120});

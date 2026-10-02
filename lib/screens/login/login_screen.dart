@@ -370,6 +370,7 @@ class _LoginScreenState extends State<LoginScreen> {
       case 'rate_limit_exceeded':
         return 'Too many login attempts. Try again in a few minutes.';
       case 'device_verification_unavailable':
+      case 'email_send_failed':
         return friendlyErrorCode(e.errorCode);
       default:
         // Friendly fallback for any error code we haven't explicitly

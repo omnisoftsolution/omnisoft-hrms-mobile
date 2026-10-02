@@ -369,6 +369,26 @@ void main() {
       expect(find.byType(AlertDialog), findsNothing);
     });
 
+    testWidgets('email_send_failed shows the could-not-send-email message',
+        (tester) async {
+      final api = _FakeApi(loginReplies: [
+        () async => throw ApiException('email_send_failed'),
+      ]);
+      final session = _Session(api);
+      await session.load();
+      final bio = BiometricAuthService(gate: FakeBiometricGate());
+      await bio.load();
+      await tester.pumpWidget(_host(session, bio, api: api));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).at(0), '6591062006');
+      await tester.enterText(find.byType(TextField).at(1), 'longenough');
+      await tester.tap(find.byType(PrimaryButton));
+      await _pumpFrames(tester);
+      expect(find.textContaining("couldn't send the email"), findsOneWidget);
+      expect(find.textContaining('Login failed'), findsNothing);
+      expect(find.byType(AlertDialog), findsNothing);
+    });
+
     testWidgets('Face ID is keyed to the login the server returned',
         (tester) async {
       // Formatted phone typed; Face ID enabled for the stored digits. Only
