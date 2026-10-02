@@ -308,8 +308,9 @@ class _LoginScreenState extends State<LoginScreen> {
     String message;
     try {
       final body = await api.passwordResetRequest(login);
-      message = body['error'] == 'mail_not_configured'
-          ? friendlyErrorCode('mail_not_configured')
+      final error = body['error'];
+      message = (error == 'mail_not_configured' || error == 'email_send_failed')
+          ? friendlyErrorCode(error as String)
           : 'If that login has app access and an email on file, a reset '
               'link is on its way. No email on file? Ask HR for a new QR '
               'code.';
