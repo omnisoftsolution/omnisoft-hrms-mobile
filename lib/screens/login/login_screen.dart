@@ -308,9 +308,8 @@ class _LoginScreenState extends State<LoginScreen> {
     String message;
     try {
       final body = await api.passwordResetRequest(login);
-      final error = body['error'];
-      message = (error == 'mail_not_configured' || error == 'email_send_failed')
-          ? friendlyErrorCode(error as String)
+      message = body['error'] == 'mail_not_configured'
+          ? friendlyErrorCode('mail_not_configured')
           : 'If that login has app access and an email on file, a reset '
               'link is on its way. No email on file? Ask HR for a new QR '
               'code.';
@@ -371,6 +370,7 @@ class _LoginScreenState extends State<LoginScreen> {
       case 'rate_limit_exceeded':
         return 'Too many login attempts. Try again in a few minutes.';
       case 'device_verification_unavailable':
+      case 'email_send_failed':
         return friendlyErrorCode(e.errorCode);
       default:
         // Friendly fallback for any error code we haven't explicitly
