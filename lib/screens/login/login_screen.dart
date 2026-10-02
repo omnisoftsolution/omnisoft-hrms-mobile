@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../../core/app_login.dart';
 import '../../core/constants.dart';
 import '../../core/theme.dart';
 import '../../core/error_messages.dart';
@@ -14,16 +15,43 @@ import '../../widgets/biometric_optin_sheet.dart';
 import '../../widgets/brand_logo.dart';
 import '../../widgets/labeled_field.dart';
 import '../../widgets/primary_button.dart';
+import '../activation/activation_screen.dart';
+import '../activation/invite_scan_screen.dart';
 import '../home/home_shell.dart';
 import 'company_settings_screen.dart';
+import 'device_code_dialog.dart';
 
-/// Email/password login. Reached after CompanyCodeScreen has resolved
+/// Login (email, phone or username) + password. Reached after CompanyCodeScreen has resolved
 /// the SaaS routing (clientUrl + clientDb). On success, calls
 /// /api/v1/omni_mobile/login and persists the access token + user/
 /// employee details to SessionService. The top-level Consumer in
 /// OmniHrApp then renders HomeShell.
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  const LoginScreen({
+    super.key,
+    this.apiBuilder,
+    this.homeBuilder,
+    this.scanInvite,
+    this.hasCamera,
+  });
+
+  /// Test seam: opens the scanner. Defaults to [openInviteScanner].
+  @visibleForTesting
+  final Future<ScanOutcome?> Function(BuildContext)? scanInvite;
+
+  /// Test seam: whether a camera exists. Defaults to [cameraAvailable].
+  @visibleForTesting
+  final Future<bool> Function()? hasCamera;
+
+  /// Test seam: builds the unauthenticated API client for a company's
+  /// Odoo URL + database. Defaults to the real [OmniMobileApi].
+  @visibleForTesting
+  final OmniMobileApi Function(String baseUrl, String db)? apiBuilder;
+
+  /// Test seam: the screen shown after signing in. Defaults to
+  /// [HomeShell].
+  @visibleForTesting
+  final WidgetBuilder? homeBuilder;
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -40,11 +68,29 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _capable = false;
   bool _bioResolved = false;
   BiometricKind _bioKind = BiometricKind.none;
+  bool _canScan = false;
 
   @override
   void initState() {
     super.initState();
     _resolveBiometric();
+    (widget.hasCamera ?? cameraAvailable)().then((v) {
+      if (mounted && v) setState(() => _canScan = true);
+    });
+  }
+
+  Future<void> _scanInvite() async {
+    final outcome = await (widget.scanInvite ?? openInviteScanner)(context);
+    if (!mounted || outcome == null) return;
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => switch (outcome) {
+        ScannedInvite(:final args) => ActivationScreen(
+            companyCode: args.companyCode,
+            token: args.token,
+            login: args.login),
+        EnterCodeInstead() => const ActivationScreen(),
+      },
+    ));
   }
 
   Future<void> _resolveBiometric() async {
@@ -64,8 +110,14 @@ class _LoginScreenState extends State<LoginScreen> {
     final res = await bio.authenticateAndRetrieve();
     if (!mounted) return;
     if (res.outcome == BiometricAuthOutcome.success && res.credential != null) {
-      await _performLogin(res.credential!.login, res.credential!.password,
-          fromBiometric: true);
+      final cred = res.credential!;
+      if (cred.isRefresh) {
+        await _refreshLogin(cred.login, cred.refreshToken!);
+      } else {
+        // Legacy password-mode credential: replay the password login.
+        await _performLogin(cred.login, cred.password ?? '',
+            fromBiometric: true);
+      }
       return;
     }
     if (res.outcome == BiometricAuthOutcome.lockedOut) {
@@ -76,6 +128,71 @@ class _LoginScreenState extends State<LoginScreen> {
     // canceled / failed / unavailable: stay on the login screen — the
     // password form and the Face ID button both remain available to retry.
   }
+
+  /// Biometric login backed by the device refresh token Face ID stored
+  /// (it survives sign-out, unlike the session's copy): trade it for a
+  /// fresh access token, re-pull the profile from /me, then go home.
+  /// If the server refuses the token, biometric login is turned off and
+  /// the user signs in with their password; a transient failure (e.g.
+  /// no network) keeps Face ID so they can simply retry.
+  Future<void> _refreshLogin(String login, String refreshToken) async {
+    final session = context.read<SessionService>();
+    final bio = context.read<BiometricAuthService>();
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+    try {
+      final deviceId = await _deviceService.getDeviceId();
+      final outcome = await session.refreshAccessToken(deviceId,
+          refreshToken: refreshToken);
+      switch (outcome) {
+        case RefreshOutcome.ok:
+          // The top-level Consumer may already be swapping this screen
+          // for HomeShell (the session is logged in now), so repopulate
+          // the profile a sign-out wiped before any mounted check. A
+          // failed /me is not fatal — cached/empty fields fill in on the
+          // next app resume, as in main.dart. The login is seeded from
+          // the Face ID credential first so the profile's password check
+          // works even when /me fails offline; /me overwrites it if sent.
+          await session.setUserLogin(login);
+          await session.refreshMe();
+          if (!mounted) return;
+          if (session.isLoggedIn) _goHome();
+        case RefreshOutcome.invalid:
+          await bio.disable();
+          if (!mounted) return;
+          setState(() {
+            _capable = false;
+            _error = friendlyErrorCode('refresh_invalid');
+          });
+        case RefreshOutcome.failed:
+          if (!mounted) return;
+          setState(() => _error = friendlyError(ApiException('network_error')));
+      }
+    } catch (e) {
+      if (mounted) setState(() => _error = friendlyError(e));
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  void _goHome() {
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(
+          builder: widget.homeBuilder ?? (_) => const HomeShell()),
+      (_) => false,
+    );
+  }
+
+  /// Unauthenticated client for the session's company (login, reset).
+  OmniMobileApi _anonApi(SessionService session) =>
+      widget.apiBuilder?.call(session.clientUrl, session.clientDb) ??
+      OmniMobileApi(
+        baseUrl: session.clientUrl,
+        db: session.clientDb,
+        token: '', // no auth header
+      );
 
   @override
   void dispose() {
@@ -88,45 +205,75 @@ class _LoginScreenState extends State<LoginScreen> {
     final loginText = _loginController.text.trim();
     final password = _passwordController.text;
     if (loginText.isEmpty || password.isEmpty) {
-      setState(() => _error = 'Enter your email and password.');
+      setState(() => _error = 'Enter your login and password.');
       return;
     }
     await _performLogin(loginText, password);
   }
 
   /// Shared login path for both the password form and biometric replay.
+  ///
+  /// [emailCode] is the 6-digit code from the new-device email, sent on
+  /// the retry after the server answered `device_verification_required`.
   Future<void> _performLogin(String loginText, String password,
-      {bool fromBiometric = false}) async {
+      {bool fromBiometric = false, String? emailCode}) async {
     setState(() {
       _submitting = true;
       _error = null;
     });
     try {
       final session = context.read<SessionService>();
-      final api = OmniMobileApi(
-        baseUrl: session.clientUrl,
-        db: session.clientDb,
-        token: '', // login has no auth header
-      );
+      final bio = context.read<BiometricAuthService>();
+      final api = _anonApi(session);
       final deviceId = await _deviceService.getDeviceId();
+      final deviceLabel = await _deviceService.getDeviceLabel();
       final res = await api.login(
         login: loginText,
         password: password,
         deviceId: deviceId,
+        deviceLabel: deviceLabel,
         appVersion: AppConstants.appVersion,
+        emailCode: emailCode,
       );
       await session.saveLoginResponse(res);
+      // Face ID follows the stored login, not the typed text (phones can
+      // be typed in any format; 2.47 connectors return the credential
+      // login) — except the hidden Odoo user a 2.45/2.46 connector can
+      // still return, which the employee never typed or was invited with.
+      final faceIdLogin =
+          session.userLogin.isNotEmpty && !isHiddenOdooLogin(session.userLogin)
+              ? session.userLogin
+              : loginText;
+      await bio.adoptRefreshToken(session.refreshToken, login: faceIdLogin);
       if (!mounted) return;
-      await _maybeOfferBiometricOptIn(loginText, password, session.employeeName);
+      await _maybeOfferBiometricOptIn(
+          faceIdLogin, password, session.employeeName);
       if (!mounted) return;
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const HomeShell()),
-        (_) => false,
-      );
+      _goHome();
     } on ApiException catch (e) {
       if (!mounted) return;
       final bio = context.read<BiometricAuthService>();
-      if (e.errorCode == 'invalid_credentials' &&
+      if (e.errorCode == 'account_locked') {
+        setState(() => _error = friendlyErrorCode('account_locked',
+            retryAfter: (e.data?['retry_after'] as num?)?.toInt()));
+      } else if (e.errorCode == 'device_verification_required' ||
+          e.errorCode == 'verification_code_invalid') {
+        // New phone: ask for the emailed code and retry with it. A wrong
+        // code comes back here as verification_code_invalid and re-opens
+        // the dialog with the error; Cancel ends the loop.
+        final code = await showDeviceCodeDialog(
+          context,
+          error: e.errorCode == 'verification_code_invalid'
+              ? friendlyErrorCode('verification_code_invalid')
+              : null,
+        );
+        if (code != null && mounted) {
+          // Awaited: an un-awaited return would let this attempt's
+          // `finally` re-enable Sign in while the retry is in flight.
+          return await _performLogin(loginText, password,
+              fromBiometric: fromBiometric, emailCode: code);
+        }
+      } else if (e.errorCode == 'invalid_credentials' &&
           fromBiometric &&
           bio.isEnabled) {
         await bio.disable();
@@ -141,10 +288,37 @@ class _LoginScreenState extends State<LoginScreen> {
         setState(() => _error = _humanize(e));
       }
     } catch (e) {
-      setState(() => _error = friendlyError(e));
+      if (mounted) setState(() => _error = friendlyError(e));
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
+  }
+
+  /// "Forgot password?": ask for the app login (prefilled from the form)
+  /// and request a reset link. The server answers the same way whether
+  /// or not that login has app access, so the confirmation stays neutral.
+  Future<void> _forgotPassword() async {
+    final login = await showDialog<String>(
+      context: context,
+      builder: (_) =>
+          _ForgotPasswordDialog(initialLogin: _loginController.text.trim()),
+    );
+    if (login == null || login.isEmpty || !mounted) return;
+    final api = _anonApi(context.read<SessionService>());
+    String message;
+    try {
+      final body = await api.passwordResetRequest(login);
+      message = body['error'] == 'mail_not_configured'
+          ? friendlyErrorCode('mail_not_configured')
+          : 'If that login has app access and an email on file, a reset '
+              'link is on its way. No email on file? Ask HR for a new QR '
+              'code.';
+    } catch (e) {
+      message = friendlyError(e);
+    }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   /// Offer to enable biometric login once, right after a successful
@@ -153,6 +327,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _maybeOfferBiometricOptIn(
       String loginText, String password, String displayName) async {
     final bio = context.read<BiometricAuthService>();
+    final refreshToken = context.read<SessionService>().refreshToken;
     if (bio.isEnabled) return;
     if (await bio.hasDismissedOptIn()) return;
     if (!await bio.isDeviceCapable()) return;
@@ -161,8 +336,15 @@ class _LoginScreenState extends State<LoginScreen> {
     final choice = await showBiometricOptInSheet(context, kind: kind);
     if (!mounted) return;
     if (choice == true) {
-      final ok = await bio.enable(
-          login: loginText, password: password, displayName: displayName);
+      // Prefer the device refresh token; a legacy connector that issues
+      // none still gets the old password-backed biometric login.
+      final ok = refreshToken.isNotEmpty
+          ? await bio.enableWithRefreshToken(
+              login: loginText,
+              refreshToken: refreshToken,
+              displayName: displayName)
+          : await bio.enable(
+              login: loginText, password: password, displayName: displayName);
       if (ok && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text('${biometricLabel(kind)} login enabled')));
@@ -175,9 +357,9 @@ class _LoginScreenState extends State<LoginScreen> {
   String _humanize(ApiException e) {
     switch (e.errorCode) {
       case 'invalid_credentials':
-        return 'Invalid email or password.';
+        return 'Invalid login or password.';
       case 'missing_credentials':
-        return 'Enter your email and password.';
+        return 'Enter your login and password.';
       case 'no_employee_linked':
         return 'No employee record is linked to that user.';
       case 'mobile_not_enabled':
@@ -187,6 +369,8 @@ class _LoginScreenState extends State<LoginScreen> {
             'Contact your administrator to request access.';
       case 'rate_limit_exceeded':
         return 'Too many login attempts. Try again in a few minutes.';
+      case 'device_verification_unavailable':
+        return friendlyErrorCode(e.errorCode);
       default:
         // Friendly fallback for any error code we haven't explicitly
         // mapped — keeps cryptic snake_case codes off the UI.
@@ -239,13 +423,21 @@ class _LoginScreenState extends State<LoginScreen> {
                       const SizedBox(height: 40),
                       // Form
                       LabeledField(
-                        label: 'Email or login',
+                        label: 'Login',
                         controller: _loginController,
-                        hintText: 'name@company.com',
-                        prefixIcon: Icons.mail_outline_rounded,
-                        keyboardType: TextInputType.emailAddress,
-                        autofillHints: const [AutofillHints.email],
+                        hintText: 'Email, phone or username',
+                        prefixIcon: Icons.person_outline_rounded,
+                        keyboardType: TextInputType.text,
+                        autofillHints: const [AutofillHints.username],
                         textInputAction: TextInputAction.next,
+                        suffix: _canScan
+                            ? IconButton(
+                                key: const Key('login_scan'),
+                                tooltip: 'Scan invite QR',
+                                icon: const Icon(Icons.qr_code_scanner_rounded),
+                                onPressed: _submitting ? null : _scanInvite,
+                              )
+                            : null,
                       ),
                       const SizedBox(height: 20),
                       LabeledField(
@@ -303,6 +495,31 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ),
                       ],
+                      const SizedBox(height: 8),
+                      Wrap(
+                        alignment: WrapAlignment.center,
+                        children: [
+                          // A pre-2.45 connector has no reset endpoint:
+                          // offer it only once this company's connector
+                          // has shown App Identity support.
+                          if (session.identityCapable)
+                            TextButton(
+                              onPressed: _submitting ? null : _forgotPassword,
+                              child: const Text('Forgot password?'),
+                            ),
+                          TextButton(
+                            onPressed: _submitting
+                                ? null
+                                : () => Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (_) =>
+                                            const ActivationScreen(),
+                                      ),
+                                    ),
+                            child: const Text('Activate with an invite'),
+                          ),
+                        ],
+                      ),
                       // Push the footer to the bottom of the safe area.
                       const Spacer(),
                       const SizedBox(height: 24),
@@ -457,6 +674,66 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ),
         ],
+      ],
+    );
+  }
+}
+
+/// App login prompt for "Forgot password?". Owns its controller so it is
+/// disposed only after the dialog has fully closed. Pops the trimmed
+/// login, or null on cancel.
+class _ForgotPasswordDialog extends StatefulWidget {
+  const _ForgotPasswordDialog({required this.initialLogin});
+
+  final String initialLogin;
+
+  @override
+  State<_ForgotPasswordDialog> createState() => _ForgotPasswordDialogState();
+}
+
+class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
+  late final _ctrl = TextEditingController(text: widget.initialLogin);
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _submit() => Navigator.of(context).pop(_ctrl.text.trim());
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Reset password'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Enter your app login. If HR has an email on file for '
+              'you, we will send a link to set a new password.'),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _ctrl,
+            keyboardType: TextInputType.text,
+            autofocus: true,
+            decoration: const InputDecoration(labelText: 'App login'),
+            onChanged: (_) => setState(() {}),
+            onSubmitted: (_) {
+              if (_ctrl.text.trim().isNotEmpty) _submit();
+            },
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(null),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _ctrl.text.trim().isEmpty ? null : _submit,
+          child: const Text('Send link'),
+        ),
       ],
     );
   }

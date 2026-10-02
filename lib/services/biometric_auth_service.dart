@@ -82,6 +82,7 @@ class BiometricAuthService extends ChangeNotifier {
 
   static const _sLogin = 'biometric_login';
   static const _sPassword = 'biometric_password';
+  static const _sRefresh = 'biometric_refresh_token';
   static const _kEnabled = 'biometric_enabled';
   static const _kOptInDismissed = 'biometric_optin_dismissed';
   static const _kDisplayName = 'biometric_display_name';
@@ -95,14 +96,17 @@ class BiometricAuthService extends ChangeNotifier {
 
   bool _enabled = false;
   String _displayName = '';
+  bool _usesRefresh = false;
 
   bool get isEnabled => _enabled;
   String get displayName => _displayName;
+  bool get usesRefreshToken => _usesRefresh;
 
   Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
     _enabled = prefs.getBool(_kEnabled) ?? false;
     _displayName = prefs.getString(_kDisplayName) ?? '';
+    _usesRefresh = (await _secure.read(key: _sRefresh))?.isNotEmpty == true;
     notifyListeners();
   }
 
@@ -116,6 +120,7 @@ class BiometricAuthService extends ChangeNotifier {
     if (outcome != BiometricAuthOutcome.success) return false;
     await _secure.write(key: _sLogin, value: login);
     await _secure.write(key: _sPassword, value: password);
+    await _secure.delete(key: _sRefresh);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_kEnabled, true);
     if (displayName != null && displayName.isNotEmpty) {
@@ -123,14 +128,83 @@ class BiometricAuthService extends ChangeNotifier {
       _displayName = displayName;
     }
     _enabled = true;
+    _usesRefresh = false;
     notifyListeners();
     return true;
+  }
+
+  /// Enable biometric login backed by a device refresh token rather than
+  /// the password. Preferred over [enable] for all new opt-ins.
+  Future<bool> enableWithRefreshToken({
+    required String login,
+    required String refreshToken,
+    String? displayName,
+  }) async {
+    if (refreshToken.isEmpty) return false;
+    final outcome = await _gate
+        .authenticate('Confirm your identity to enable biometric login');
+    if (outcome != BiometricAuthOutcome.success) return false;
+    await _secure.write(key: _sLogin, value: login);
+    await _secure.write(key: _sRefresh, value: refreshToken);
+    await _secure.delete(key: _sPassword);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kEnabled, true);
+    if (displayName != null && displayName.isNotEmpty) {
+      await prefs.setString(_kDisplayName, displayName);
+      _displayName = displayName;
+    }
+    _enabled = true;
+    _usesRefresh = true;
+    notifyListeners();
+    return true;
+  }
+
+  /// Migrate an existing password-mode biometric login to refresh-token
+  /// mode, e.g. right after a password login returns a fresh token.
+  Future<void> replacePasswordWithRefreshToken(String refreshToken) async {
+    if (!_enabled || refreshToken.isEmpty) return;
+    await _secure.write(key: _sRefresh, value: refreshToken);
+    await _secure.delete(key: _sPassword);
+    _usesRefresh = true;
+    notifyListeners();
+  }
+
+  /// Hand a freshly issued device refresh token (password login or
+  /// activation) to an already-enabled biometric login: migrates a
+  /// legacy password credential, then keeps a refresh-mode one current.
+  ///
+  /// Login-scoped: the token is adopted only when [login] matches the
+  /// login biometric login was enabled for (trimmed, case-insensitive).
+  /// Another person signing in on this phone must never rebind the
+  /// enabled user's Face ID to their own account. Returns true when the
+  /// token was adopted; false (and no change) when biometric login is
+  /// off, [refreshToken] is empty or the login differs.
+  Future<bool> adoptRefreshToken(String refreshToken,
+      {required String login}) async {
+    if (!_enabled || refreshToken.isEmpty) return false;
+    final stored = await _secure.read(key: _sLogin);
+    if (stored == null || _normLogin(stored) != _normLogin(login)) {
+      return false;
+    }
+    await replacePasswordWithRefreshToken(refreshToken);
+    await updateRefreshToken(refreshToken);
+    return true;
+  }
+
+  static String _normLogin(String login) => login.trim().toLowerCase();
+
+  /// Refresh the stored token in place. No-op unless already enabled in
+  /// refresh-token mode.
+  Future<void> updateRefreshToken(String refreshToken) async {
+    if (!_enabled || !_usesRefresh || refreshToken.isEmpty) return;
+    await _secure.write(key: _sRefresh, value: refreshToken);
   }
 
   Future<void> disable() async {
     try {
       await _secure.delete(key: _sLogin);
       await _secure.delete(key: _sPassword);
+      await _secure.delete(key: _sRefresh);
     } catch (_) {
       // Continue — prefs cleanup below must always run.
     }
@@ -139,6 +213,7 @@ class BiometricAuthService extends ChangeNotifier {
     await prefs.remove(_kDisplayName);
     _enabled = false;
     _displayName = '';
+    _usesRefresh = false;
     notifyListeners();
   }
 
@@ -152,12 +227,20 @@ class BiometricAuthService extends ChangeNotifier {
       return BiometricAuthResult(outcome);
     }
     final login = await _secure.read(key: _sLogin);
+    final refresh = await _secure.read(key: _sRefresh);
     final password = await _secure.read(key: _sPassword);
-    if (login == null || login.isEmpty || password == null || password.isEmpty) {
+    if (login == null || login.isEmpty) {
       return const BiometricAuthResult(BiometricAuthOutcome.failed);
     }
-    return BiometricAuthResult(
-        BiometricAuthOutcome.success, BiometricCredential(login, password));
+    if (refresh != null && refresh.isNotEmpty) {
+      return BiometricAuthResult(BiometricAuthOutcome.success,
+          BiometricCredential(login, refreshToken: refresh));
+    }
+    if (password != null && password.isNotEmpty) {
+      return BiometricAuthResult(BiometricAuthOutcome.success,
+          BiometricCredential(login, password: password));
+    }
+    return const BiometricAuthResult(BiometricAuthOutcome.failed);
   }
 
   Future<bool> hasDismissedOptIn() async {

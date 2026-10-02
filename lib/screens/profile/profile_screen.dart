@@ -6,7 +6,9 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants.dart';
 import '../../core/datetime_utils.dart';
+import '../../core/error_messages.dart';
 import '../../core/theme.dart';
+import '../../services/biometric_auth_service.dart';
 import '../../services/face_recognition_service.dart';
 import '../../services/omni_mobile_api.dart';
 import '../../services/device_service.dart';
@@ -78,31 +80,18 @@ class ProfileScreen extends StatelessWidget {
           SecurityPrivacyCard(
             login: session.userLogin,
             displayName: session.employeeName,
+            authSource: session.authSource,
+            refreshTokenProvider: () => session.refreshToken,
             verifyPassword: (password) async {
               final api = OmniMobileApi(
                 baseUrl: session.clientUrl,
                 db: session.clientDb,
                 token: '',
               );
-              final deviceId = await DeviceService().getDeviceId();
-              try {
-                final res = await api.login(
-                  login: session.userLogin,
-                  password: password,
-                  deviceId: deviceId,
-                  appVersion: AppConstants.appVersion,
-                );
-                await session.saveLoginResponse(res);
-                return PasswordCheck.ok;
-              } on ApiException catch (e) {
-                return switch (e.errorCode) {
-                  'invalid_credentials' => PasswordCheck.wrongPassword,
-                  'rate_limit_exceeded' => PasswordCheck.rateLimited,
-                  _ => PasswordCheck.error,
-                };
-              } catch (_) {
-                return PasswordCheck.error;
-              }
+              final devices = DeviceService();
+              return checkPasswordWith(api, session, password,
+                  deviceId: await devices.getDeviceId(),
+                  deviceLabel: await devices.getDeviceLabel());
             },
           ),
           const SizedBox(height: 32),
@@ -110,7 +99,7 @@ class ProfileScreen extends StatelessWidget {
             label: 'LOGOUT',
             icon: Icons.logout_rounded,
             variant: PrimaryButtonVariant.danger,
-            onPressed: () => _logout(context, session),
+            onPressed: () => _onLogoutPressed(context, session),
           ),
           // App Store / Play Store policy: account deletion path
           // must be reachable from within the app. Kept as a low-key
@@ -718,34 +707,52 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
-  Future<void> _logout(BuildContext context, SessionService session) async {
-    // Best-effort server-side revocation; even if it fails (network
-    // down, expired session), we still wipe the local copy.
-    try {
-      final api = OmniMobileApi(
+  /// App Identity ('omni') accounts choose between a plain sign-out and
+  /// "forget this phone"; everyone else signs out directly as before.
+  Future<void> _onLogoutPressed(
+      BuildContext context, SessionService session) async {
+    if (!(session.supportsIdentity && session.authSource == 'omni')) {
+      return _logout(context, session);
+    }
+    final forget = await showModalBottomSheet<bool>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.logout_rounded),
+              title: const Text('Sign out'),
+              onTap: () => Navigator.pop(ctx, false),
+            ),
+            ListTile(
+              leading: const Icon(Icons.phonelink_erase_outlined),
+              title: const Text('Sign out and forget this phone'),
+              subtitle:
+                  const Text('This phone will need your password next time.'),
+              onTap: () => Navigator.pop(ctx, true),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (forget == null || !context.mounted) return;
+    return _logout(context, session, forgetDevice: forget);
+  }
+
+  Future<void> _logout(BuildContext context, SessionService session,
+      {bool forgetDevice = false}) {
+    return logoutWith(
+      context,
+      session: session,
+      bio: context.read<BiometricAuthService>(),
+      api: OmniMobileApi(
         baseUrl: session.clientUrl,
         db: session.clientDb,
         token: session.token,
-      );
-      await api.logout();
-    } catch (_) {
-      // ignored — local clear runs regardless
-    }
-    // clearSession (not signOut) so a deliberate Log out ends the session
-    // but KEEPS the biometric credential — the user can sign back in with
-    // Face ID. Delete account / company-change still use signOut().
-    await session.clearSession();
-    if (context.mounted) {
-      // Root navigator: tear down the entire HomeShell (including all
-      // tab Navigators and the persistent bottom nav). The tab-scoped
-      // Navigator.of(context) here would only clear this tab's stack.
-      // The Face ID button is still available on the login screen; the
-      // credential is kept, so the user can sign back in with Face ID.
-      Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const LoginScreen()),
-        (_) => false,
-      );
-    }
+      ),
+      forgetDevice: forgetDevice,
+    );
   }
 
   Future<void> _openEnroll(BuildContext context,
@@ -760,5 +767,85 @@ class ProfileScreen extends StatelessWidget {
     if (context.mounted) {
       await face.refreshEnrolledStatus(session);
     }
+  }
+}
+
+/// Re-verifies the signed-in user's password with /login (Profile →
+/// enable Face ID) and saves the fresh session on success. Account
+/// lockout comes back as a [PasswordCheck.failed] carrying the wait.
+@visibleForTesting
+Future<PasswordCheck> checkPasswordWith(
+    OmniMobileApi api, SessionService session, String password,
+    {required String deviceId, String? deviceLabel}) async {
+  try {
+    final res = await api.login(
+      login: session.userLogin,
+      password: password,
+      deviceId: deviceId,
+      deviceLabel: deviceLabel,
+      appVersion: AppConstants.appVersion,
+    );
+    await session.saveLoginResponse(res);
+    return PasswordCheck.ok;
+  } on ApiException catch (e) {
+    return switch (e.errorCode) {
+      'invalid_credentials' => PasswordCheck.wrongPassword,
+      'rate_limit_exceeded' => PasswordCheck.rateLimited,
+      'account_locked' => PasswordCheck.failed(friendlyErrorCode(
+          'account_locked',
+          retryAfter: (e.data?['retry_after'] as num?)?.toInt())),
+      _ => PasswordCheck.error,
+    };
+  } catch (_) {
+    return PasswordCheck.error;
+  }
+}
+
+/// Signs out via [api] (best effort), clears the local session and goes
+/// to the login screen ([loginBuilder], default [LoginScreen]) on the
+/// root navigator. With [forgetDevice] the Face ID credential is dropped
+/// too; if the server could not be reached the phone stays trusted
+/// server-side, so the user is told to remove it later.
+@visibleForTesting
+Future<void> logoutWith(
+  BuildContext context, {
+  required SessionService session,
+  required BiometricAuthService bio,
+  required OmniMobileApi api,
+  bool forgetDevice = false,
+  WidgetBuilder? loginBuilder,
+}) async {
+  // Captured before any await/navigation: the app-level messenger
+  // outlives this screen, so the warning shows over the login screen.
+  final messenger = ScaffoldMessenger.maybeOf(context);
+  var reached = true;
+  // Best-effort server-side revocation; even if it fails (network
+  // down, expired session), we still wipe the local copy.
+  try {
+    await api.logout(forgetDevice: forgetDevice);
+  } catch (_) {
+    reached = false;
+  }
+  // Forgetting the phone revokes its device trust server-side, so the
+  // local Face ID credential (refresh token) is useless — drop it.
+  if (forgetDevice) await bio.disable();
+  // clearSession (not signOut) so a deliberate Log out ends the session
+  // but KEEPS the biometric credential — the user can sign back in with
+  // Face ID. Delete account / company-change still use signOut().
+  await session.clearSession();
+  if (forgetDevice && !reached) {
+    messenger?.showSnackBar(const SnackBar(
+        content: Text('Could not reach the server. Remove this phone later '
+            'under Your devices.')));
+  }
+  if (context.mounted) {
+    // Root navigator: tear down the entire HomeShell (including all
+    // tab Navigators and the persistent bottom nav). The tab-scoped
+    // Navigator.of(context) here would only clear this tab's stack.
+    Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+      MaterialPageRoute(
+          builder: loginBuilder ?? (_) => const LoginScreen()),
+      (_) => false,
+    );
   }
 }

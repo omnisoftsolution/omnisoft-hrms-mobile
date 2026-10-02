@@ -5,12 +5,43 @@ import 'package:url_launcher/url_launcher.dart';
 import '../core/constants.dart';
 import '../core/theme.dart';
 import '../services/biometric_auth_service.dart';
+import '../screens/profile/change_password_screen.dart';
+import '../screens/profile/devices_screen.dart';
 import '../services/biometric_types.dart';
 import 'biometric_optin_sheet.dart' show biometricLabel;
 
 /// Outcome of verifying the signed-in user's password against the server
-/// before enabling biometric login.
-enum PasswordCheck { ok, wrongPassword, rateLimited, error }
+/// before enabling biometric login. The fixed outcomes are constants;
+/// [PasswordCheck.failed] carries a ready-to-show server message (e.g.
+/// the account lockout wait).
+class PasswordCheck {
+  const PasswordCheck._(this._kind, [this.message]);
+
+  /// A refusal whose [message] the card shows as is.
+  const PasswordCheck.failed(String message) : this._('failed', message);
+
+  final String _kind;
+
+  /// User-facing text for a [PasswordCheck.failed] outcome; null otherwise.
+  final String? message;
+
+  static const ok = PasswordCheck._('ok');
+  static const wrongPassword = PasswordCheck._('wrong_password');
+  static const rateLimited = PasswordCheck._('rate_limited');
+  static const error = PasswordCheck._('error');
+
+  @override
+  bool operator ==(Object other) =>
+      other is PasswordCheck &&
+      other._kind == _kind &&
+      other.message == message;
+
+  @override
+  int get hashCode => Object.hash(_kind, message);
+
+  @override
+  String toString() => 'PasswordCheck($_kind${message == null ? '' : ': $message'})';
+}
 
 /// Verifies [password] for the signed-in user against the server. Returns
 /// [PasswordCheck.ok] only when the server accepts it.
@@ -27,11 +58,22 @@ class SecurityPrivacyCard extends StatefulWidget {
     required this.login,
     required this.displayName,
     required this.verifyPassword,
+    this.refreshTokenProvider,
+    this.authSource = '',
   });
 
   final String login;
   final String displayName;
   final PasswordVerifier verifyPassword;
+
+  /// Returns the session's device refresh token (App Identity). When it
+  /// yields a non-empty token, enabling biometric login stores that token
+  /// instead of the password.
+  final String Function()? refreshTokenProvider;
+
+  /// The session's auth source: 'omni' shows "Your devices" and "Change
+  /// password"; 'odoo' shows an app-invite note; '' shows neither.
+  final String authSource;
 
   @override
   State<SecurityPrivacyCard> createState() => _SecurityPrivacyCardState();
@@ -83,23 +125,29 @@ class _SecurityPrivacyCardState extends State<SecurityPrivacyCard> {
 
     if (check != PasswordCheck.ok) {
       setState(() => _busy = false);
-      final message = switch (check) {
-        PasswordCheck.wrongPassword =>
-          'Incorrect password — ${biometricLabel(_bioKind)} not enabled.',
-        PasswordCheck.rateLimited =>
-          'Too many attempts — please try again in a few minutes.',
-        _ => "Couldn't verify — check your connection.",
-      };
+      final message = check.message ??
+          (check == PasswordCheck.wrongPassword
+              ? 'Incorrect password — ${biometricLabel(_bioKind)} not enabled.'
+              : check == PasswordCheck.rateLimited
+                  ? 'Too many attempts — please try again in a few minutes.'
+                  : "Couldn't verify — check your connection.");
       messenger.showSnackBar(
           SnackBar(content: Text(message), backgroundColor: AppTheme.error));
       return;
     }
 
-    final ok = await bio.enable(
-      login: widget.login,
-      password: password,
-      displayName: widget.displayName,
-    );
+    final refreshToken = widget.refreshTokenProvider?.call() ?? '';
+    final ok = refreshToken.isNotEmpty
+        ? await bio.enableWithRefreshToken(
+            login: widget.login,
+            refreshToken: refreshToken,
+            displayName: widget.displayName,
+          )
+        : await bio.enable(
+            login: widget.login,
+            password: password,
+            displayName: widget.displayName,
+          );
     if (!mounted) return;
     setState(() => _busy = false);
     messenger.showSnackBar(ok
@@ -178,6 +226,33 @@ class _SecurityPrivacyCardState extends State<SecurityPrivacyCard> {
                     'when your session expires.'),
                 value: context.watch<BiometricAuthService>().isEnabled,
                 onChanged: _busy ? null : _toggleBiometric,
+              ),
+            ],
+            if (widget.authSource == 'omni') ...[
+              const SizedBox(height: 6),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.devices_outlined),
+                title: const Text('Your devices'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => const DevicesScreen())),
+              ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.lock_outline),
+                title: const Text('Change password'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => const ChangePasswordScreen())),
+              ),
+            ] else if (widget.authSource == 'odoo') ...[
+              const SizedBox(height: 6),
+              const ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.info_outline),
+                title: Text('Signed in with your Odoo password. '
+                    'HR will send you an app invite.'),
               ),
             ],
             const SizedBox(height: 12),

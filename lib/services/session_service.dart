@@ -2,7 +2,16 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/constants.dart';
+import '../models/company_info.dart';
+import 'omni_mobile_api.dart';
 import 'saas_service.dart';
+
+/// Result of [SessionService.refreshAccessToken]: `ok` = new access
+/// token saved; `invalid` = the server refused the refresh token (or
+/// there was none), so the user must sign in with a password; `failed`
+/// = transient error (network, timeout, server error), token kept.
+enum RefreshOutcome { ok, invalid, failed }
 
 /// Session state for the mobile app. Persists across launches.
 ///
@@ -40,6 +49,11 @@ class SessionService extends ChangeNotifier {
   static const _keyCompanyName = 'company_name';
   static const _keyCompanyLogoB64 = 'company_logo_b64';
   static const _keyShowConnectionDetails = 'show_connection_details';
+  // True once this company's connector has answered with `auth_source`
+  // (App Identity 2.45+). Kept with the routing keys so the signed-out
+  // login screen knows whether to offer "Forgot password?"; reset when
+  // the company changes and by the full logout().
+  static const _keyIdentityCapable = 'identity_capable';
 
   // Keys: login session (cleared on logout)
   static const _keyAccessToken = 'access_token';
@@ -64,6 +78,13 @@ class SessionService extends ChangeNotifier {
       'employee_attendance_approver';
   static const _keyEmployeeExpenseApprover = 'employee_expense_approver';
 
+  // Keys: App Identity (device refresh token + auth source). Cleared
+  // by clearSession() same as the rest of the login session.
+  static const _kRefreshToken = 'refresh_token';
+  static const _kRefreshExpiresAt = 'refresh_expires_at';
+  static const _kAuthSource = 'auth_source';
+  static const _kDeviceLabel = 'device_label';
+
   String _saasUrl = '';
   String _companyCode = '';
   String _clientUrl = '';
@@ -78,6 +99,7 @@ class SessionService extends ChangeNotifier {
   String _companyName = '';
   String _companyLogoB64 = '';
   bool _showConnectionDetails = false;
+  bool _identityCapable = false;
 
   String _accessToken = '';
   DateTime? _expiresAt;
@@ -100,6 +122,12 @@ class SessionService extends ChangeNotifier {
   String _employeeAttendanceApprover = '';
   String _employeeExpenseApprover = '';
 
+  // App Identity: device refresh token + auth source
+  String _refreshToken = '';
+  DateTime? _refreshExpiresAt;
+  String _authSource = '';
+  String _deviceLabel = '';
+
   // SaaS routing
   String get saasUrl => _saasUrl;
   String get companyCode => _companyCode;
@@ -120,6 +148,12 @@ class SessionService extends ChangeNotifier {
   String get companyName => _companyName;
   String get companyLogoB64 => _companyLogoB64;
   bool get showConnectionDetails => _showConnectionDetails;
+
+  /// Whether this company's connector supports App Identity (it has
+  /// answered /login or /me with `auth_source`). Unlike
+  /// [supportsIdentity] it survives sign-out, so the login screen can
+  /// gate identity-only actions such as "Forgot password?".
+  bool get identityCapable => _identityCapable;
 
   // Auth session
   String get accessToken => _accessToken;
@@ -144,6 +178,16 @@ class SessionService extends ChangeNotifier {
   String get employeeTimeOffApprover => _employeeTimeOffApprover;
   String get employeeAttendanceApprover => _employeeAttendanceApprover;
   String get employeeExpenseApprover => _employeeExpenseApprover;
+
+  // App Identity
+  String get refreshToken => _refreshToken;
+  DateTime? get refreshExpiresAt => _refreshExpiresAt;
+  String get authSource => _authSource;
+  /// True once the connector has told us which auth source this
+  /// account uses ('omni' | 'odoo'). False for a legacy connector
+  /// that predates the /login `auth_source` field.
+  bool get supportsIdentity => _authSource.isNotEmpty;
+  String get deviceLabel => _deviceLabel;
 
   bool get isLoggedIn =>
       _accessToken.isNotEmpty &&
@@ -170,6 +214,7 @@ class SessionService extends ChangeNotifier {
     _companyLogoB64 = prefs.getString(_keyCompanyLogoB64) ?? '';
     _showConnectionDetails =
         prefs.getBool(_keyShowConnectionDetails) ?? false;
+    _identityCapable = prefs.getBool(_keyIdentityCapable) ?? false;
     _accessToken = await _readTokenWithMigration(prefs);
     final exp = prefs.getString(_keyExpiresAt);
     _expiresAt = exp != null && exp.isNotEmpty ? DateTime.tryParse(exp) : null;
@@ -195,6 +240,11 @@ class SessionService extends ChangeNotifier {
         prefs.getString(_keyEmployeeAttendanceApprover) ?? '';
     _employeeExpenseApprover =
         prefs.getString(_keyEmployeeExpenseApprover) ?? '';
+    _refreshToken = await _secure.read(key: _kRefreshToken) ?? '';
+    final rx = prefs.getString(_kRefreshExpiresAt) ?? '';
+    _refreshExpiresAt = rx.isNotEmpty ? DateTime.tryParse(rx) : null;
+    _authSource = prefs.getString(_kAuthSource) ?? '';
+    _deviceLabel = prefs.getString(_kDeviceLabel) ?? '';
     notifyListeners();
   }
 
@@ -232,6 +282,13 @@ class SessionService extends ChangeNotifier {
     String companyLogoB64 = '',
     bool showConnectionDetails = false,
   }) async {
+    // A different company (or tenant) may run a pre-identity connector:
+    // forget what the previous one supported until it answers again.
+    final companyChanged =
+        companyCode.toUpperCase() != _companyCode.toUpperCase() ||
+            clientUrl != _clientUrl ||
+            clientDb != _clientDb;
+    if (companyChanged) _identityCapable = false;
     _saasUrl = saasUrl;
     _companyCode = companyCode;
     _clientUrl = clientUrl;
@@ -270,7 +327,56 @@ class SessionService extends ChangeNotifier {
     await prefs.setString(_keyCompanyName, _companyName);
     await prefs.setString(_keyCompanyLogoB64, _companyLogoB64);
     await prefs.setBool(_keyShowConnectionDetails, _showConnectionDetails);
+    await prefs.setBool(_keyIdentityCapable, _identityCapable);
     notifyListeners();
+  }
+
+  /// The SaaS URL a company lookup uses: [saasUrl] when given (the
+  /// company-code screen's typed URL — used as typed, even empty, so
+  /// SaasService reports it as invalid as that screen always did), else
+  /// the session's SaaS URL, else [DevConstants.defaultSaasUrl] (an
+  /// invite link on a fresh install has none yet).
+  String effectiveSaasUrl([String? saasUrl]) =>
+      saasUrl ?? (_saasUrl.isNotEmpty ? _saasUrl : DevConstants.defaultSaasUrl);
+
+  /// Resolve [code] on the SaaS WITHOUT saving anything, so a caller can
+  /// stage a company switch and commit it (via [saveCompanyInfo]) only
+  /// once the follow-up step succeeds. URL fallback as [effectiveSaasUrl].
+  /// Throws the [SaasService] exception unchanged.
+  Future<CompanyInfo> lookupCompany(String code, {String? saasUrl}) =>
+      lookupCompanyWith(SaasService(), code, saasUrl: saasUrl);
+
+  @visibleForTesting
+  Future<CompanyInfo> lookupCompanyWith(SaasService saas, String code,
+          {String? saasUrl}) =>
+      saas.resolveCompany(effectiveSaasUrl(saasUrl), code);
+
+  /// Save a company returned by [lookupCompany], with the same arguments
+  /// the company-code screen passes to [saveCompany].
+  Future<void> saveCompanyInfo(CompanyInfo info, {required String saasUrl}) =>
+      saveCompany(
+        saasUrl: saasUrl,
+        companyCode: info.companyCode,
+        clientUrl: info.odooUrl,
+        clientDb: info.database,
+        features: info.features,
+        companyName: info.name,
+        companyLogoB64: info.companyLogoB64,
+        showConnectionDetails: info.showConnectionDetails,
+      );
+
+  /// Resolve [code] on the SaaS and save the company routing
+  /// ([lookupCompany] + [saveCompanyInfo]). Throws the [SaasService]
+  /// exception unchanged; nothing is saved on failure.
+  Future<void> resolveCompany(String code, {String? saasUrl}) =>
+      resolveCompanyWith(SaasService(), code, saasUrl: saasUrl);
+
+  @visibleForTesting
+  Future<void> resolveCompanyWith(SaasService saas, String code,
+      {String? saasUrl}) async {
+    final url = effectiveSaasUrl(saasUrl);
+    final info = await lookupCompanyWith(saas, code, saasUrl: url);
+    await saveCompanyInfo(info, saasUrl: url);
   }
 
   /// Re-resolve the company from the SaaS and refresh cached feature
@@ -334,6 +440,40 @@ class SessionService extends ChangeNotifier {
       employeeExpenseApprover:
           employee['expense_approver_name']?.toString() ?? '',
     );
+    _authSource = res['auth_source']?.toString() ?? '';
+    _deviceLabel = _labelOf(res);
+    final rt = res['refresh_token']?.toString() ?? '';
+    final rx = res['refresh_expires_at']?.toString() ?? '';
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kAuthSource, _authSource);
+    await prefs.setString(_kDeviceLabel, _deviceLabel);
+    if (_authSource.isNotEmpty) await _markIdentityCapable(prefs);
+    if (rt.isNotEmpty) {
+      _refreshToken = rt;
+      _refreshExpiresAt = rx.isNotEmpty ? DateTime.tryParse(rx) : null;
+      await _secure.write(key: _kRefreshToken, value: rt);
+      await prefs.setString(_kRefreshExpiresAt, rx);
+    }
+    notifyListeners();
+  }
+
+  /// Persist just the access token + expiry. Shared by [saveSession]
+  /// (full /login payload) and [refreshAccessToken] (/auth/refresh
+  /// only returns a new access token — the rest of the session is
+  /// untouched).
+  Future<void> _saveAccessToken(String accessToken, DateTime? expiresAt) async {
+    _accessToken = accessToken;
+    _expiresAt = expiresAt;
+    final prefs = await SharedPreferences.getInstance();
+    try {
+      await _secure.write(key: _keyAccessToken, value: accessToken);
+    } catch (_) {
+      // Secure-storage write failed (exotic OS/Keychain error). The in-memory
+      // token is already set above, so the session is live for this launch.
+      // Proceed — prefs cleanup below must always run.
+    }
+    await prefs.remove(_keyAccessToken);
+    await prefs.setString(_keyExpiresAt, expiresAt?.toIso8601String() ?? '');
   }
 
   /// Persist everything returned by /login in one call.
@@ -359,8 +499,7 @@ class SessionService extends ChangeNotifier {
     String employeeAttendanceApprover = '',
     String employeeExpenseApprover = '',
   }) async {
-    _accessToken = accessToken;
-    _expiresAt = expiresAt;
+    await _saveAccessToken(accessToken, expiresAt);
     _userId = userId;
     _userLogin = userLogin;
     _userName = userName;
@@ -380,15 +519,6 @@ class SessionService extends ChangeNotifier {
     _employeeAttendanceApprover = employeeAttendanceApprover;
     _employeeExpenseApprover = employeeExpenseApprover;
     final prefs = await SharedPreferences.getInstance();
-    try {
-      await _secure.write(key: _keyAccessToken, value: accessToken);
-    } catch (_) {
-      // Secure-storage write failed (exotic OS/Keychain error). The in-memory
-      // token is already set above, so the session is live for this launch.
-      // Proceed — prefs cleanup below must always run.
-    }
-    await prefs.remove(_keyAccessToken);
-    await prefs.setString(_keyExpiresAt, expiresAt?.toIso8601String() ?? '');
     await prefs.setInt(_keyUserId, userId);
     await prefs.setString(_keyUserLogin, userLogin);
     await prefs.setString(_keyUserName, userName);
@@ -415,11 +545,16 @@ class SessionService extends ChangeNotifier {
   }
 
   /// Refresh employee + approver fields from a /me response without
-  /// touching auth (token, expiresAt, userId, userLogin). Used by
+  /// touching the token or expiresAt. Used by
   /// _refreshMeInBackground on app start + resume so HR-side edits
   /// (manager change, new approver, etc.) flow into the app without
   /// a logout cycle.
+  ///
+  /// [userId]/[userLogin] are applied only when present and non-empty,
+  /// so a /me from an older connector that omits `user` keeps them.
   Future<void> updateEmployeeFromMe({
+    int? userId,
+    String? userLogin,
     String? userName,
     int? employeeId,
     String? employeeName,
@@ -438,6 +573,14 @@ class SessionService extends ChangeNotifier {
     String? employeeExpenseApprover,
   }) async {
     final prefs = await SharedPreferences.getInstance();
+    if (userId != null && userId > 0) {
+      _userId = userId;
+      await prefs.setInt(_keyUserId, userId);
+    }
+    if (userLogin != null && userLogin.isNotEmpty) {
+      _userLogin = userLogin;
+      await prefs.setString(_keyUserLogin, userLogin);
+    }
     if (userName != null) {
       _userName = userName;
       await prefs.setString(_keyUserName, userName);
@@ -532,6 +675,10 @@ class SessionService extends ChangeNotifier {
     _employeeTimeOffApprover = '';
     _employeeAttendanceApprover = '';
     _employeeExpenseApprover = '';
+    _refreshToken = '';
+    _refreshExpiresAt = null;
+    _authSource = '';
+    _deviceLabel = '';
     final prefs = await SharedPreferences.getInstance();
     try {
       await _secure.delete(key: _keyAccessToken);
@@ -539,7 +686,15 @@ class SessionService extends ChangeNotifier {
       // Secure-storage delete failed (exotic OS/Keychain error).
       // Continue — the prefs cleanup chain below must always run.
     }
+    try {
+      await _secure.delete(key: _kRefreshToken);
+    } catch (_) {
+      // Same rationale as above — continue the cleanup chain.
+    }
     await prefs.remove(_keyAccessToken);
+    await prefs.remove(_kRefreshExpiresAt);
+    await prefs.remove(_kAuthSource);
+    await prefs.remove(_kDeviceLabel);
     await prefs.remove(_keyExpiresAt);
     await prefs.remove(_keyUserId);
     await prefs.remove(_keyUserLogin);
@@ -562,6 +717,156 @@ class SessionService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Exchange a device refresh token for a new access session via
+  /// /auth/refresh. Uses [refreshToken] when given (the token Face ID
+  /// stored, which survives sign-out) and otherwise the session's own.
+  ///
+  /// - [RefreshOutcome.ok]: new access token saved; the token used is
+  ///   persisted as the session refresh token.
+  /// - [RefreshOutcome.invalid]: the server refused it (`refresh_invalid`,
+  ///   e.g. device revoked or token expired) or there was no token to
+  ///   use; the session refresh token is forgotten.
+  /// - [RefreshOutcome.failed]: any other error (network, timeout,
+  ///   server error); the refresh token is kept so a retry can succeed.
+  ///
+  /// Thin wrapper: builds the real [OmniMobileApi] and delegates to
+  /// [refreshAccessTokenWith], which holds all the logic and is
+  /// unit-testable with a fake api (no real HTTP).
+  Future<RefreshOutcome> refreshAccessToken(String deviceId,
+      {String? refreshToken}) {
+    final api = OmniMobileApi(baseUrl: _clientUrl, db: _clientDb, token: '');
+    return refreshAccessTokenWith(api, deviceId, refreshToken: refreshToken);
+  }
+
+  @visibleForTesting
+  Future<RefreshOutcome> refreshAccessTokenWith(
+      OmniMobileApi api, String deviceId,
+      {String? refreshToken}) async {
+    final token = (refreshToken != null && refreshToken.isNotEmpty)
+        ? refreshToken
+        : _refreshToken;
+    if (token.isEmpty) return RefreshOutcome.invalid;
+    try {
+      final res = await api.refresh(refreshToken: token, deviceId: deviceId);
+      final expiresAtStr = res['expires_at']?.toString() ?? '';
+      final expiresAt =
+          expiresAtStr.isNotEmpty ? DateTime.tryParse(expiresAtStr) : null;
+      await _saveAccessToken(res['access_token']?.toString() ?? '', expiresAt);
+      // /auth/refresh exists only on identity connectors and names the
+      // auth source; record it so the identity tiles show even if the
+      // follow-up /me fails.
+      final src = res['auth_source'];
+      if (src is String && src.isNotEmpty) {
+        _authSource = src;
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_kAuthSource, src);
+        await _markIdentityCapable(prefs);
+      }
+      if (token != _refreshToken) {
+        // Face ID's token after a sign-out: adopt it as the session's.
+        // refresh_expires_at is unknown here, so it is left as it was.
+        _refreshToken = token;
+        try {
+          await _secure.write(key: _kRefreshToken, value: token);
+        } catch (_) {
+          // Secure-storage write failed — the in-memory token is set.
+        }
+      }
+      notifyListeners();
+      return RefreshOutcome.ok;
+    } on ApiException catch (e) {
+      if (e.errorCode != 'refresh_invalid') return RefreshOutcome.failed;
+      _refreshToken = '';
+      try {
+        await _secure.delete(key: _kRefreshToken);
+      } catch (_) {
+        // Secure-storage delete failed (exotic OS/Keychain error) — the
+        // in-memory token is already cleared above.
+      }
+      notifyListeners();
+      return RefreshOutcome.invalid;
+    } catch (_) {
+      return RefreshOutcome.failed;
+    }
+  }
+
+  /// Re-pull the user/employee/approver fields and the identity fields
+  /// from /me using the current access token. Shared by the app-start/
+  /// resume refresh in main.dart and the Face ID refresh login (which
+  /// arrives with the profile wiped by a sign-out). Returns false on any
+  /// error; cached fields stay as they were.
+  Future<bool> refreshMe() => refreshMeWith(
+      OmniMobileApi(baseUrl: _clientUrl, db: _clientDb, token: _accessToken));
+
+  /// Seed the user login (e.g. from the Face ID credential after a
+  /// sign-out wiped it) so screens that need it work even if /me fails.
+  /// Goes through [updateEmployeeFromMe] — the one persistence path.
+  Future<void> setUserLogin(String login) =>
+      updateEmployeeFromMe(userLogin: login);
+
+  @visibleForTesting
+  Future<bool> refreshMeWith(OmniMobileApi api) async {
+    try {
+      final res = await api.me();
+      final user = res['user'] as Map<String, dynamic>? ?? {};
+      final employee = res['employee'] as Map<String, dynamic>? ?? {};
+      await updateEmployeeFromMe(
+        userId: (user['id'] as num?)?.toInt(),
+        userLogin: user['login']?.toString(),
+        userName: user['name']?.toString(),
+        employeeId: (employee['id'] as num?)?.toInt(),
+        employeeName: employee['name']?.toString(),
+        employeeAvatarB64: employee['avatar_b64']?.toString(),
+        employeeJobTitle: employee['job_title']?.toString(),
+        employeeJobPosition: employee['job_position']?.toString(),
+        employeeDepartment: employee['department_name']?.toString(),
+        employeeManager: employee['manager_name']?.toString(),
+        employeeWorkEmail: employee['work_email']?.toString(),
+        employeeWorkPhone: employee['work_phone']?.toString(),
+        employeeCompanyName: employee['company_name']?.toString(),
+        employeeCompanyLogoB64: employee['company_logo_b64']?.toString(),
+        employeeHrApprover: employee['hr_approver_name']?.toString(),
+        employeeTimeOffApprover:
+            employee['time_off_approver_name']?.toString(),
+        employeeAttendanceApprover:
+            employee['attendance_approver_name']?.toString(),
+        employeeExpenseApprover: employee['expense_approver_name']?.toString(),
+      );
+      await updateFromMe(res);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Refresh `authSource`/`deviceLabel` from a raw `/me` response.
+  /// No-op when the map lacks `auth_source` — a legacy connector that
+  /// predates App Identity never sends it, so `supportsIdentity` must
+  /// stay whatever it already was rather than flipping to false.
+  Future<void> updateFromMe(Map<String, dynamic> me) async {
+    if (!me.containsKey('auth_source')) return;
+    _authSource = me['auth_source']?.toString() ?? '';
+    _deviceLabel = _labelOf(me);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kAuthSource, _authSource);
+    await prefs.setString(_kDeviceLabel, _deviceLabel);
+    if (_authSource.isNotEmpty) await _markIdentityCapable(prefs);
+    notifyListeners();
+  }
+
+  /// `device.label` from a /login or /me body. Odoo serialises an empty
+  /// Char as `false`, which must read as '' (not the string "false").
+  static String _labelOf(Map<String, dynamic> body) {
+    final device = body['device'];
+    final label = device is Map ? device['label'] : null;
+    return label is String ? label : '';
+  }
+
+  Future<void> _markIdentityCapable(SharedPreferences prefs) async {
+    _identityCapable = true;
+    await prefs.setBool(_keyIdentityCapable, true);
+  }
+
   /// Deliberate, user-initiated sign-out: wipe the login session AND fire
   /// [onLogout] so a chosen sign-out also forgets the biometric credential.
   /// Use this for Log out / Delete account / forced re-login on company
@@ -580,12 +885,14 @@ class SessionService extends ChangeNotifier {
     _companyCode = '';
     _clientUrl = '';
     _clientDb = '';
+    _identityCapable = false;
     await clearSession();
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_keySaasUrl);
     await prefs.remove(_keyCompanyCode);
     await prefs.remove(_keyClientUrl);
     await prefs.remove(_keyClientDb);
+    await prefs.remove(_keyIdentityCapable);
     onLogout?.call();
     notifyListeners();
   }

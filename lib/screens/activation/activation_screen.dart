@@ -1,0 +1,467 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
+import '../../core/app_login.dart';
+import '../../core/constants.dart';
+import '../../core/error_messages.dart';
+import '../../core/theme.dart';
+import '../../models/company_info.dart';
+import '../../services/biometric_auth_service.dart';
+import '../../services/device_service.dart';
+import '../../services/omni_mobile_api.dart';
+import '../../services/session_service.dart';
+import '../../widgets/biometric_optin_sheet.dart';
+import '../../widgets/labeled_field.dart';
+import '../home/home_shell.dart';
+import 'invite_scan_screen.dart';
+
+/// First sign-in from an HR invite: the employee sets their own app
+/// password. Opened by an `omnihr://activate` link or QR (company code
+/// and token prefilled) or from the login screen's "Activate with an
+/// invite" (manual mode: company code + App login + the 6-digit code
+/// from the invite email). On success the device is signed in and lands
+/// on home.
+///
+/// Providers are read only inside the submit handler, so the form
+/// builds without any provider above it.
+class ActivationScreen extends StatefulWidget {
+  final String? companyCode;
+  final String? token;
+
+  /// Login carried by the invite link (`l`), prefilled and editable.
+  final String? login;
+
+  /// Test seam: builds the unauthenticated API client for a company's
+  /// Odoo URL + database. Defaults to the real [OmniMobileApi].
+  @visibleForTesting
+  final OmniMobileApi Function(String baseUrl, String db)? apiBuilder;
+
+  /// Test seam: the screen shown after a successful activation.
+  /// Defaults to [HomeShell].
+  @visibleForTesting
+  final WidgetBuilder? homeBuilder;
+
+  /// Test seam: opens the scanner. Defaults to [openInviteScanner].
+  @visibleForTesting
+  final Future<ScanOutcome?> Function(BuildContext)? scanInvite;
+
+  /// Test seam: whether a camera exists. Defaults to [cameraAvailable].
+  @visibleForTesting
+  final Future<bool> Function()? hasCamera;
+
+  const ActivationScreen({
+    super.key,
+    this.companyCode,
+    this.token,
+    this.login,
+    this.apiBuilder,
+    this.homeBuilder,
+    this.scanInvite,
+    this.hasCamera,
+  });
+
+  @override
+  State<ActivationScreen> createState() => _ActivationScreenState();
+}
+
+class _ActivationScreenState extends State<ActivationScreen> {
+  final _companyController = TextEditingController();
+  final _loginController = TextEditingController();
+  final _newLoginController = TextEditingController();
+  final _codeController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _password2Controller = TextEditingController();
+  final _deviceService = DeviceService();
+  bool _obscurePassword = true;
+  bool _submitting = false;
+  bool _codeLocked = false;
+  bool _showNewLogin = false;
+  bool _canScan = false;
+  String? _error;
+
+  bool get _hasToken => widget.token != null && widget.token!.isNotEmpty;
+  bool get _hasCompany =>
+      widget.companyCode != null && widget.companyCode!.isNotEmpty;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.login != null) _loginController.text = widget.login!;
+    for (final c in _controllers) {
+      c.addListener(_onChanged);
+    }
+    if (!_hasToken) {
+      (widget.hasCamera ?? cameraAvailable)().then((v) {
+        if (mounted && v) setState(() => _canScan = true);
+      });
+    }
+  }
+
+  Future<void> _scan() async {
+    final outcome = await (widget.scanInvite ?? openInviteScanner)(context);
+    if (!mounted || outcome is! ScannedInvite) return;
+    final a = outcome.args;
+    Navigator.of(context).pushReplacement(MaterialPageRoute(
+      builder: (_) => ActivationScreen(
+        companyCode: a.companyCode,
+        token: a.token,
+        login: a.login,
+        apiBuilder: widget.apiBuilder,
+        homeBuilder: widget.homeBuilder,
+      ),
+    ));
+  }
+
+  List<TextEditingController> get _controllers => [
+        _companyController,
+        _loginController,
+        _newLoginController,
+        _codeController,
+        _passwordController,
+        _password2Controller,
+      ];
+
+  void _onChanged() => setState(() {});
+
+  @override
+  void dispose() {
+    for (final c in _controllers) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  bool get _canSubmit {
+    final password = _passwordController.text;
+    // Token path: an empty field keeps HR's login. Code path: the login
+    // identifies the invite, so it is required.
+    final loginOk = _hasToken || _loginController.text.trim().isNotEmpty;
+    return loginOk &&
+        password.length >= 8 &&
+        password == _password2Controller.text &&
+        (_hasToken ||
+            (!_codeLocked && _codeController.text.trim().length == 6)) &&
+        (_hasCompany || _companyController.text.trim().isNotEmpty);
+  }
+
+  /// What to send as `new_login`, or null for "keep HR's login".
+  String? get _requestedNewLogin {
+    if (_hasToken) {
+      final typed = _loginController.text.trim();
+      if (typed.isEmpty) return null;
+      final fromLink = widget.login ?? '';
+      return normalizeAppLogin(typed) == normalizeAppLogin(fromLink)
+          ? null
+          : typed;
+    }
+    final alt = _newLoginController.text.trim();
+    return _showNewLogin && alt.isNotEmpty ? alt : null;
+  }
+
+  Future<void> _activate() async {
+    final session = context.read<SessionService>();
+    final bio = context.read<BiometricAuthService>();
+    final companyCode = (_hasCompany
+            ? widget.companyCode!
+            : _companyController.text)
+        .trim();
+    final typed = _loginController.text.trim();
+    final login = (_hasToken && widget.login != null ? widget.login! : typed)
+        .toLowerCase();
+    final newLogin = _requestedNewLogin;
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+    try {
+      // Another company's invite: look it up but stage the switch — the
+      // saved company and any live session change only once activation
+      // succeeds, so a failed or abandoned attempt leaves them intact.
+      final sameCompany = session.hasCompany &&
+          companyCode.toUpperCase() == session.companyCode.toUpperCase();
+      CompanyInfo? staged;
+      String stagedSaasUrl = '';
+      var baseUrl = session.clientUrl;
+      var db = session.clientDb;
+      if (!sameCompany) {
+        stagedSaasUrl = session.effectiveSaasUrl();
+        staged = await session.lookupCompany(companyCode,
+            saasUrl: stagedSaasUrl);
+        baseUrl = staged.odooUrl;
+        db = staged.database;
+      }
+      final deviceId = await _deviceService.getDeviceId();
+      final deviceLabel = await _deviceService.getDeviceLabel();
+      final api = widget.apiBuilder?.call(baseUrl, db) ??
+          OmniMobileApi(
+            baseUrl: baseUrl,
+            db: db,
+            token: '', // activation has no auth header
+          );
+      final res = await api.activate(
+        login: login,
+        token: _hasToken ? widget.token : null,
+        code: _hasToken ? null : _codeController.text.trim(),
+        password: _passwordController.text,
+        deviceId: deviceId,
+        deviceLabel: deviceLabel,
+        appVersion: AppConstants.appVersion,
+        newLogin: newLogin,
+      );
+      if (staged != null) {
+        // Commit the switch: drop the other company's session first.
+        if (session.accessToken.isNotEmpty) await session.clearSession();
+        await session.saveCompanyInfo(staged, saasUrl: stagedSaasUrl);
+      }
+      await session.saveLoginResponse(res);
+      // The server's login is the truth (it applied, or an older connector
+      // ignored, the rename). Face ID is keyed to it, never to typed text —
+      // and never to the hidden Odoo user a 2.45/2.46 connector can still
+      // return, which is not a login the employee would recognise.
+      final returned = session.userLogin;
+      final serverLogin =
+          returned.isNotEmpty && !isHiddenOdooLogin(returned)
+              ? returned
+              : (newLogin ?? login);
+      await bio.adoptRefreshToken(session.refreshToken, login: serverLogin);
+      if (!mounted) return;
+      // Show whenever what the employee saw on screen differs from the
+      // server's login — not only on a requested rename. Covers HR
+      // renaming the login after the QR was printed, while the link
+      // still carries the old `l`.
+      final shown = typed.isNotEmpty ? typed : (widget.login ?? '');
+      if (shown.isNotEmpty &&
+          normalizeAppLogin(shown) != normalizeAppLogin(serverLogin)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Your app login is $serverLogin.')));
+      }
+      await _maybeOfferBiometricOptIn(
+          bio, serverLogin, session.refreshToken, session.employeeName);
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(
+            builder: widget.homeBuilder ?? (_) => const HomeShell()),
+        (_) => false,
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        if (e.errorCode == 'activation_attempts_exceeded') _codeLocked = true;
+        _error = _humanize(e);
+      });
+    } catch (e) {
+      if (mounted) setState(() => _error = friendlyError(e));
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  /// Same one-time offer as the login screen, refresh-token mode only
+  /// (activation always issues a refresh token).
+  Future<void> _maybeOfferBiometricOptIn(BiometricAuthService bio,
+      String login, String refreshToken, String displayName) async {
+    if (refreshToken.isEmpty || bio.isEnabled) return;
+    if (await bio.hasDismissedOptIn()) return;
+    if (!await bio.isDeviceCapable()) return;
+    final kind = await bio.deviceBiometricKind();
+    if (!mounted) return;
+    final choice = await showBiometricOptInSheet(context, kind: kind);
+    if (!mounted) return;
+    if (choice == true) {
+      final ok = await bio.enableWithRefreshToken(
+          login: login, refreshToken: refreshToken, displayName: displayName);
+      if (ok && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('${biometricLabel(kind)} login enabled')));
+      }
+    } else if (choice == false) {
+      await bio.markOptInDismissed();
+    }
+  }
+
+  String _humanize(ApiException e) {
+    switch (e.errorCode) {
+      case 'mobile_not_enabled':
+        return 'Mobile access is not enabled for this employee. '
+            'Ask HR to enable it.';
+      case 'seat_limit_exceeded':
+        return 'Your organization has reached its mobile seat limit. '
+            'Contact your administrator to request access.';
+      case 'missing_fields':
+        return 'Fill in every field.';
+      case 'server_error':
+        // A pre-2.45 connector has no /auth/activate: Odoo answers with
+        // an HTML 404, which the API layer reports as server_error.
+        return 'Activation is not available for your company yet. Ask HR.';
+      default:
+        // Activation codes route through friendlyErrorCode.
+        return friendlyError(e);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Scaffold(
+      appBar: AppBar(),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('Activate Omni HR',
+                  style: theme.textTheme.headlineSmall
+                      ?.copyWith(fontWeight: FontWeight.w800)),
+              const SizedBox(height: 8),
+              Text('Use the link or code HR sent you.',
+                  style: theme.textTheme.bodyMedium
+                      ?.copyWith(color: AppTheme.outline)),
+              const SizedBox(height: 28),
+              if (!_hasToken && _canScan) ...[
+                SizedBox(
+                  height: 52,
+                  child: FilledButton.tonalIcon(
+                    key: const Key('activation_scan'),
+                    onPressed: _submitting ? null : _scan,
+                    icon: const Icon(Icons.qr_code_scanner_rounded),
+                    label: const Text('Scan invite QR'),
+                  ),
+                ),
+                const SizedBox(height: 24),
+              ],
+              if (_hasCompany) ...[
+                Text('Company',
+                    style: theme.textTheme.labelMedium
+                        ?.copyWith(color: AppTheme.outline)),
+                const SizedBox(height: 4),
+                Text(widget.companyCode!,
+                    style: theme.textTheme.titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w700)),
+              ] else
+                LabeledField(
+                  key: const Key('activation_company'),
+                  label: 'Company code',
+                  controller: _companyController,
+                  prefixIcon: Icons.business_outlined,
+                  textCapitalization: TextCapitalization.characters,
+                  textInputAction: TextInputAction.next,
+                ),
+              const SizedBox(height: 20),
+              LabeledField(
+                key: const Key('activation_login'),
+                label: 'App login',
+                controller: _loginController,
+                hintText: 'Email, phone or username',
+                prefixIcon: Icons.person_outline_rounded,
+                keyboardType: TextInputType.text,
+                autofillHints: const [AutofillHints.username],
+                textInputAction: TextInputAction.next,
+              ),
+              Padding(
+                padding: const EdgeInsets.only(left: 4, top: 6),
+                child: Text(
+                    _hasToken
+                        ? 'You can change it.'
+                        : 'The login HR gave you.',
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: AppTheme.outline)),
+              ),
+              if (!_hasToken) ...[
+                if (_showNewLogin) ...[
+                  const SizedBox(height: 20),
+                  LabeledField(
+                    key: const Key('activation_new_login'),
+                    label: 'New app login',
+                    controller: _newLoginController,
+                    hintText: 'Email, phone or username',
+                    prefixIcon: Icons.edit_outlined,
+                    keyboardType: TextInputType.text,
+                    textInputAction: TextInputAction.next,
+                  ),
+                ] else
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton(
+                      key: const Key('activation_use_different_login'),
+                      onPressed: () => setState(() => _showNewLogin = true),
+                      child: const Text('Use a different login'),
+                    ),
+                  ),
+              ],
+              if (!_hasToken) ...[
+                const SizedBox(height: 20),
+                LabeledField(
+                  key: const Key('activation_code'),
+                  label: 'Invite code',
+                  controller: _codeController,
+                  hintText: '6 digits',
+                  prefixIcon: Icons.pin_outlined,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                    LengthLimitingTextInputFormatter(6),
+                  ],
+                  enabled: !_codeLocked,
+                  textInputAction: TextInputAction.next,
+                ),
+              ],
+              const SizedBox(height: 20),
+              LabeledField(
+                key: const Key('activation_password'),
+                label: 'New password',
+                controller: _passwordController,
+                prefixIcon: Icons.lock_outline_rounded,
+                obscureText: _obscurePassword,
+                autofillHints: const [AutofillHints.newPassword],
+                textInputAction: TextInputAction.next,
+                suffix: IconButton(
+                  tooltip: _obscurePassword ? 'Show password' : 'Hide password',
+                  icon: Icon(_obscurePassword
+                      ? Icons.visibility_outlined
+                      : Icons.visibility_off_outlined),
+                  onPressed: () =>
+                      setState(() => _obscurePassword = !_obscurePassword),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(left: 4, top: 6),
+                child: Text('At least 8 characters',
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: AppTheme.outline)),
+              ),
+              const SizedBox(height: 20),
+              LabeledField(
+                key: const Key('activation_password2'),
+                label: 'Confirm password',
+                controller: _password2Controller,
+                prefixIcon: Icons.lock_outline_rounded,
+                obscureText: _obscurePassword,
+                autofillHints: const [AutofillHints.newPassword],
+                textInputAction: TextInputAction.done,
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 16),
+                Text(_error!,
+                    style: TextStyle(color: AppTheme.error, fontSize: 13)),
+              ],
+              const SizedBox(height: 28),
+              FilledButton(
+                onPressed: _submitting || !_canSubmit ? null : _activate,
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: const StadiumBorder(),
+                ),
+                child: const Text('Activate'),
+              ),
+              if (_submitting) ...[
+                const SizedBox(height: 16),
+                const Center(child: CircularProgressIndicator()),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

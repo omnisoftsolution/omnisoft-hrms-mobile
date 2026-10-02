@@ -4,15 +4,22 @@ import 'package:provider/provider.dart';
 import '../../core/constants.dart';
 import '../../core/theme.dart';
 import '../../core/error_messages.dart';
-import '../../services/saas_service.dart';
 import '../../services/session_service.dart';
 import '../../widgets/brand_logo.dart';
 import '../../widgets/labeled_field.dart';
 import '../../widgets/primary_button.dart';
+import '../activation/activation_screen.dart';
+import '../activation/invite_scan_screen.dart';
 import '../login/login_screen.dart';
 
 class CompanyCodeScreen extends StatefulWidget {
-  const CompanyCodeScreen({super.key});
+  const CompanyCodeScreen({super.key, this.scanInvite, this.hasCamera});
+
+  @visibleForTesting
+  final Future<ScanOutcome?> Function(BuildContext)? scanInvite;
+
+  @visibleForTesting
+  final Future<bool> Function()? hasCamera;
 
   @override
   State<CompanyCodeScreen> createState() => _CompanyCodeScreenState();
@@ -25,6 +32,29 @@ class _CompanyCodeScreenState extends State<CompanyCodeScreen> {
       TextEditingController(text: DevConstants.defaultSaasUrl);
   bool _loading = false;
   String? _error;
+  bool _canScan = false;
+
+  @override
+  void initState() {
+    super.initState();
+    (widget.hasCamera ?? cameraAvailable)().then((v) {
+      if (mounted && v) setState(() => _canScan = true);
+    });
+  }
+
+  Future<void> _scanInvite() async {
+    final outcome = await (widget.scanInvite ?? openInviteScanner)(context);
+    if (!mounted || outcome == null) return;
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => switch (outcome) {
+        ScannedInvite(:final args) => ActivationScreen(
+            companyCode: args.companyCode,
+            token: args.token,
+            login: args.login),
+        EnterCodeInstead() => const ActivationScreen(),
+      },
+    ));
+  }
 
   Future<void> _resolve() async {
     setState(() {
@@ -32,24 +62,10 @@ class _CompanyCodeScreenState extends State<CompanyCodeScreen> {
       _error = null;
     });
     try {
-      final saas = SaasService();
-      final info = await saas.resolveCompany(
-        _saasUrlController.text.trim(),
-        _codeController.text.trim(),
-      );
-      if (!mounted) return;
-
-      final session = context.read<SessionService>();
-      await session.saveCompany(
-        saasUrl: _saasUrlController.text.trim(),
-        companyCode: info.companyCode,
-        clientUrl: info.odooUrl,
-        clientDb: info.database,
-        features: info.features,
-        companyName: info.name,
-        companyLogoB64: info.companyLogoB64,
-        showConnectionDetails: info.showConnectionDetails,
-      );
+      await context.read<SessionService>().resolveCompany(
+            _codeController.text.trim(),
+            saasUrl: _saasUrlController.text.trim(),
+          );
 
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
@@ -154,6 +170,18 @@ class _CompanyCodeScreenState extends State<CompanyCodeScreen> {
                         loading: _loading,
                         onPressed: _loading ? null : _resolve,
                       ),
+                      if (_canScan) ...[
+                        const SizedBox(height: 16),
+                        SizedBox(
+                          height: 52,
+                          child: FilledButton.tonalIcon(
+                            key: const Key('company_scan'),
+                            onPressed: _loading ? null : _scanInvite,
+                            icon: const Icon(Icons.qr_code_scanner_rounded),
+                            label: const Text('Scan invite QR'),
+                          ),
+                        ),
+                      ],
                       const Spacer(),
                       const SizedBox(height: 24),
                       Center(
