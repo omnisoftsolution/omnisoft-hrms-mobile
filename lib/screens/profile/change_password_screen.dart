@@ -26,6 +26,8 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
   final _current = TextEditingController();
   final _new = TextEditingController();
   final _confirm = TextEditingController();
+  // Field keys whose text is currently shown (eye toggled on).
+  final _revealed = <String>{};
   bool _busy = false;
   String? _error;
 
@@ -90,13 +92,24 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
   }
 
   Widget _field(String key, String label, TextEditingController c) {
+    final obscure = !_revealed.contains(key);
     return TextField(
       key: Key(key),
       controller: c,
-      obscureText: true,
+      obscureText: obscure,
       enabled: !_busy,
       onChanged: (_) => setState(() {}),
-      decoration: InputDecoration(labelText: label),
+      decoration: InputDecoration(
+        labelText: label,
+        suffixIcon: IconButton(
+          tooltip: obscure ? 'Show password' : 'Hide password',
+          icon: Icon(obscure
+              ? Icons.visibility_outlined
+              : Icons.visibility_off_outlined),
+          onPressed: () => setState(
+              () => obscure ? _revealed.add(key) : _revealed.remove(key)),
+        ),
+      ),
     );
   }
 

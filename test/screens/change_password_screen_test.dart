@@ -87,4 +87,30 @@ void main() {
     await tester.pump();
     expect(tester.widget<FilledButton>(btn).onPressed, isNull);
   });
+
+  testWidgets('each password field has its own show/hide eye', (tester) async {
+    await tester.pumpWidget(const MaterialApp(home: ChangePasswordScreen()));
+    bool obscured(String key) => tester
+        .widget<EditableText>(find.descendant(
+            of: find.byKey(Key(key)), matching: find.byType(EditableText)))
+        .obscureText;
+    Finder eye(String key, String tooltip) => find.descendant(
+        of: find.byKey(Key(key)), matching: find.byTooltip(tooltip));
+
+    for (final key in ['pw_current', 'pw_new', 'pw_new2']) {
+      expect(obscured(key), isTrue, reason: key);
+      expect(eye(key, 'Show password'), findsOneWidget, reason: key);
+    }
+
+    await tester.tap(eye('pw_new', 'Show password'));
+    await tester.pump();
+    expect(obscured('pw_new'), isFalse);
+    expect(obscured('pw_current'), isTrue);
+    expect(obscured('pw_new2'), isTrue);
+    expect(eye('pw_new', 'Hide password'), findsOneWidget);
+
+    await tester.tap(eye('pw_new', 'Hide password'));
+    await tester.pump();
+    expect(obscured('pw_new'), isTrue);
+  });
 }
