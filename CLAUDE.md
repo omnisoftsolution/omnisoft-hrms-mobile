@@ -23,6 +23,13 @@ Android + iOS employee app for Omni HR (version in pubspec.yaml). Backend = Odoo
 - Signing: android/key.properties (gitignored) points at a keystore OUTSIDE the repo; absent → debug-keystore
   fallback so `flutter run --release` still works. iOS bundle com.omnisoftsolution.omnihr; Android appId
   com.omnisoft.omnihr (Gradle namespace stays com.omnisoft.omni_hr — do not "fix").
+- Building from a git worktree: copy `android/key.properties` from the primary checkout first (gitignored, so
+  absent in a worktree → debug-signed AAB → Play rejects "signed with the wrong key").
+- Run fastlane with `LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8` — without a UTF-8 locale `fastlane beta` crashes in
+  gym's output handling (`"sk" on UTF-16 (Encoding::InvalidByteSequenceError)`).
+- iOS export failing with `PLA Update available` / `No signing certificate "iOS Distribution"` = Apple's
+  updated Program License Agreement is unaccepted; only the Account Holder can accept it at
+  developer.apple.com/account (+ App Store Connect → Business). Then re-run `fastlane beta`.
 
 ## Wi-Fi egress gate (attendance, spec 2026-08-03)
 - Android: `ACCESS_WIFI_STATE` + `ACCESS_NETWORK_STATE` in AndroidManifest.xml (with existing
