@@ -57,6 +57,9 @@ TESTFLIGHT_CHANGELOG = <<~NOTES.freeze
     one.
   - Your Odoo password still works to sign in until you activate your
     Omni HR account.
+  - Build 87: invite, reset and sign-in code emails now come from
+    "<Company> via Omni HR" <no-reply@omnisoftsolution.com>. If the
+    sign-in code email can't be sent, the app now says so clearly.
 
   Please test:
   1. Open the invite link (or scan the QR code) from HR, activate,
