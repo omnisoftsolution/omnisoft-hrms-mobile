@@ -27,7 +27,7 @@ Future<bool> showRefuseReasonSheet(
     useRootNavigator: true,
     // No drag-to-dismiss: a drag would bypass the in-flight lock below.
     enableDrag: false,
-    backgroundColor: Colors.white,
+    backgroundColor: AppTheme.surfaceContainerLowest,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
     ),
@@ -157,7 +157,7 @@ class _RefuseReasonSheetState extends State<RefuseReasonSheet> {
                   child: FilledButton(
                     style: FilledButton.styleFrom(
                       backgroundColor: AppTheme.error,
-                      foregroundColor: Colors.white,
+                      foregroundColor: AppTheme.onPrimary,
                       shape: const StadiumBorder(),
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),

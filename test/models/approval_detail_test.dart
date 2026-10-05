@@ -116,6 +116,19 @@ void main() {
       expect(ApprovalBalance.fromJson(false), isNull);
     });
 
+    test('exactly one day left uses the singular', () {
+      expect(
+          ApprovalBalance.fromJson(
+                  {'unit': 'day', 'total': 14.0, 'remaining': 1.0})!
+              .label,
+          '1 day left of 14');
+      expect(
+          ApprovalBalance.fromJson(
+                  {'unit': 'day', 'total': 14.0, 'remaining': 0.0})!
+              .label,
+          '0 days left of 14');
+    });
+
     test('a sparse payload does not throw', () {
       final d = ApprovalDetail.fromJson({'id': 1, 'state': 'confirm'});
       expect(d.note, '');

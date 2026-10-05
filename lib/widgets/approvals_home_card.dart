@@ -61,7 +61,7 @@ class ApprovalsHomeCard extends StatelessWidget {
               child: Row(
                 children: [
                   const Icon(Icons.fact_check_outlined,
-                      color: Colors.white, size: 24),
+                      color: AppTheme.onPrimary, size: 24),
                   const SizedBox(width: 14),
                   Expanded(
                     child: Column(
@@ -72,7 +72,7 @@ class ApprovalsHomeCard extends StatelessWidget {
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w500,
-                            color: Colors.white.withValues(alpha: 0.85),
+                            color: AppTheme.onPrimary.withValues(alpha: 0.85),
                           ),
                         ),
                         const SizedBox(height: 2),
@@ -82,7 +82,7 @@ class ApprovalsHomeCard extends StatelessWidget {
                             fontSize: 20,
                             fontWeight: FontWeight.w800,
                             letterSpacing: -0.3,
-                            color: Colors.white,
+                            color: AppTheme.onPrimary,
                           ),
                         ),
                         if (count > 0 && breakdown.isNotEmpty) ...[
@@ -93,14 +93,14 @@ class ApprovalsHomeCard extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontSize: 12,
-                              color: Colors.white.withValues(alpha: 0.85),
+                              color: AppTheme.onPrimary.withValues(alpha: 0.85),
                             ),
                           ),
                         ],
                       ],
                     ),
                   ),
-                  const Icon(Icons.chevron_right_rounded, color: Colors.white),
+                  const Icon(Icons.chevron_right_rounded, color: AppTheme.onPrimary),
                 ],
               ),
             ),

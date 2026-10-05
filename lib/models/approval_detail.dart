@@ -28,7 +28,8 @@ class ApprovalBalance {
   String get label {
     final r = ApprovalItem.fmtNum(remaining);
     final t = ApprovalItem.fmtNum(total);
-    return unit == 'hour' ? '${r}h left of ${t}h' : '$r days left of $t';
+    if (unit == 'hour') return '${r}h left of ${t}h';
+    return '$r ${remaining == 1 ? 'day' : 'days'} left of $t';
   }
 }
 

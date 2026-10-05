@@ -134,7 +134,7 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
             else
               Container(
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: AppTheme.surfaceContainerLowest,
                   borderRadius: BorderRadius.circular(24),
                   boxShadow: AppTheme.glassShadow,
                 ),
@@ -193,7 +193,7 @@ class _Segments extends StatelessWidget {
                 child: Container(
                   padding: const EdgeInsets.symmetric(vertical: 10),
                   decoration: BoxDecoration(
-                    color: i == value ? Colors.white : Colors.transparent,
+                    color: i == value ? AppTheme.surfaceContainerLowest : Colors.transparent,
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Text(
