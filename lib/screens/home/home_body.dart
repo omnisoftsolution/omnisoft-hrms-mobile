@@ -28,14 +28,23 @@ class HomeBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!attendanceEnabled) {
-      return Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-            child: approvalsCard,
-          ),
-          Expanded(child: lockedPane),
-        ],
+      // Scrollable so the locked pane (a non-scrolling Column) can never
+      // overflow under the card, large text or its error banner; it stays
+      // centred when there is room. Pull-to-refresh works here too.
+      return RefreshIndicator(
+        onRefresh: onRefresh,
+        child: CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: approvalsCard,
+              ),
+            ),
+            SliverFillRemaining(hasScrollBody: false, child: lockedPane),
+          ],
+        ),
       );
     }
     return RefreshIndicator(

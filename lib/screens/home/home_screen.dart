@@ -559,6 +559,8 @@ class HomeScreenState extends State<HomeScreen> {
         approvalsCard: ApprovalsHomeCard(
           breakdown: _approvalsBreakdown,
           onTap: _openApprovals,
+          // The locked path has no list padding; the list path does.
+          topGap: session.featureAttendance ? 0 : 16,
         ),
         lockedPane: const FeatureLockedPane(
           featureName: 'Attendance',

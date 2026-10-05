@@ -86,6 +86,11 @@ void main() {
           isNot(contains('x.test')));
     });
 
+    test('the default code for a body without an error key is not shown', () {
+      expect(friendlyDecisionError(ApiException('Unknown error')),
+          'Something went wrong. Please try again.');
+    });
+
     test('keeps the friendly text for known codes', () {
       expect(friendlyDecisionError(ApiException('network_error')),
           'No internet connection. Check your network and try again.');

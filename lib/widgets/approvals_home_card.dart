@@ -30,12 +30,21 @@ String approvalsBreakdown(List<ApprovalItem> items) {
 /// Sits at the top of Home and carries its own bottom spacing, so the
 /// caller needs no conditional gap.
 class ApprovalsHomeCard extends StatelessWidget {
-  const ApprovalsHomeCard({super.key, required this.onTap, this.breakdown = ''});
+  const ApprovalsHomeCard({
+    super.key,
+    required this.onTap,
+    this.breakdown = '',
+    this.topGap = 0,
+  });
 
   final VoidCallback onTap;
 
   /// Per-type line under the count, from [approvalsBreakdown].
   final String breakdown;
+
+  /// Space above the card, for a parent that has no top padding of its
+  /// own. Only applied while the card is shown.
+  final double topGap;
 
   @override
   Widget build(BuildContext context) {
@@ -44,7 +53,7 @@ class ApprovalsHomeCard extends StatelessWidget {
     final count = session.leaveApprovalsPendingCount;
     final value = count == 0 ? 'Nothing waiting' : '$count waiting for you';
     return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
+      padding: EdgeInsets.only(top: topGap, bottom: 16),
       child: DecoratedBox(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(24),

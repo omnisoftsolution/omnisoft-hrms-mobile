@@ -225,7 +225,10 @@ String? _approvalMessage(Object e) {
 String friendlyDecisionError(Object e) {
   if (e is ApiException) {
     final raw = e.errorCode.trim();
+    // 'Unknown error' is ApiException.fromBody's default when the body
+    // has no `error` key; it is not a sentence from Odoo.
     final safe = raw.contains(' ') &&
+        raw != 'Unknown error' &&
         raw.length <= 300 &&
         !raw.contains('://') &&
         !raw.contains('=');
