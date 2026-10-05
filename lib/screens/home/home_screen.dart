@@ -19,12 +19,14 @@ import '../../services/location_service.dart';
 import '../../services/omni_mobile_api.dart';
 import '../../services/session_service.dart';
 import '../../services/wifi_info_service.dart';
+import '../../widgets/approvals_home_card.dart';
 import '../../widgets/big_check_button.dart';
 import '../../widgets/error_state_view.dart';
 import '../../widgets/feature_locked_pane.dart';
 import '../../widgets/info_card.dart';
 import '../../widgets/omni_app_bar.dart';
 import '../../widgets/silent_face_capture.dart';
+import '../approvals/approvals_screen.dart';
 import '../face_scan/face_enrollment_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -77,6 +79,10 @@ class HomeScreenState extends State<HomeScreen> {
   Timer? _gpsTimer;
   double? _currentDistanceMeters; // null = unknown / outside coverage
   bool _gpsCoarseFailed = false;
+
+  // Per-type line on the Leave approvals card ("2 Annual Leave · 1 Sick
+  // Leave"). Empty until loaded; only loaded for approvers.
+  String _approvalsBreakdown = '';
 
   OmniMobileApi _api(SessionService s) => OmniMobileApi(
         baseUrl: s.clientUrl,
@@ -141,6 +147,10 @@ class HomeScreenState extends State<HomeScreen> {
 
   Future<void> refresh() async {
     final session = context.read<SessionService>();
+    // Leave approvals card: re-pull /me on every Home refresh (first
+    // build, Home tab tap, pull-to-refresh). Fire-and-forget, so it
+    // never delays the attendance status below.
+    unawaited(_refreshApprovals());
     // SaaS-gated: when Attendance is off, the build() body shows
     // FeatureLockedPane instead of the attendance content. No point
     // calling the connector — early-return and clear loading so a
@@ -495,6 +505,40 @@ class HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  /// Re-pulls /me (approvals flag + count live in SessionService) and,
+  /// for an approver with something waiting, the per-type breakdown.
+  /// Best-effort: on any failure the card keeps what it had.
+  Future<void> _refreshApprovals() async {
+    final session = context.read<SessionService>();
+    if (!session.isLoggedIn) return;
+    await session.refreshMe();
+    if (!mounted) return;
+    if (!session.leaveApprovalsEnabled ||
+        session.leaveApprovalsPendingCount == 0) {
+      if (_approvalsBreakdown.isNotEmpty) {
+        setState(() => _approvalsBreakdown = '');
+      }
+      return;
+    }
+    try {
+      final items = await _api(session).getPendingApprovals();
+      if (mounted) {
+        setState(() => _approvalsBreakdown = approvalsBreakdown(items));
+      }
+    } catch (_) {
+      // Keep the last breakdown; the count on the card is still right.
+    }
+  }
+
+  /// Home card tap. Pushed on this tab's Navigator so the bottom nav
+  /// stays visible; the count is refreshed again on the way back.
+  Future<void> _openApprovals() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const ApprovalsScreen()),
+    );
+    if (mounted) unawaited(_refreshApprovals());
+  }
+
   void _showError(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(msg), backgroundColor: AppTheme.error),
@@ -596,6 +640,11 @@ class HomeScreenState extends State<HomeScreen> {
               Expanded(child: _validationCard(s, session)),
             ],
           ),
+        ),
+        // Approvers only; the card hides itself for everyone else.
+        ApprovalsHomeCard(
+          breakdown: _approvalsBreakdown,
+          onTap: _openApprovals,
         ),
         if (_autoClosedPrevious != null) ...[
           const SizedBox(height: 16),
