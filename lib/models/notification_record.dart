@@ -29,8 +29,25 @@ class NotificationRecord {
     return null;
   }
 
+  /// A notice about the user's OWN leave request: tapping it opens their
+  /// leave history on that request. `leave_first_approved` (connector
+  /// 2.43.0+) is the "first approval done, now waiting for HR" notice.
   bool get isLeaveKind =>
-      kind == 'leave_approved' || kind == 'leave_refused';
+      kind == 'leave_approved' ||
+      kind == 'leave_refused' ||
+      kind == 'leave_first_approved';
+
+  /// "Approval needed": someone else's request waits for this user's
+  /// decision. Tapping it opens the request for approval ([leaveIdHint]).
+  bool get isApprovalRequestKind => kind == 'leave_approval_requested';
+
+  /// Label of the snackbar action shown when this notification arrives
+  /// while the app is open; null when it has nowhere to go.
+  String? get snackActionLabel {
+    if (isApprovalRequestKind) return 'Review';
+    if (isLeaveKind || isExpenseKind) return 'VIEW';
+    return null;
+  }
 
   bool get isExpenseKind =>
       kind == 'expense_approved' || kind == 'expense_refused';

@@ -18,10 +18,14 @@ class NotificationsScreen extends StatefulWidget {
   /// Called when the user taps an expense-kind notification.
   final void Function(int expenseId)? onExpenseTap;
 
+  /// Called when an approver taps an "Approval needed" notification.
+  final void Function(int leaveId)? onApprovalTap;
+
   const NotificationsScreen({
     super.key,
     this.onLeaveTap,
     this.onExpenseTap,
+    this.onApprovalTap,
   });
 
   @override
@@ -41,7 +45,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     final svc = context.read<NotificationService>();
     if (!n.read) await svc.markRead(n.id);
     if (!mounted) return;
-    if (n.isLeaveKind) {
+    if (n.isApprovalRequestKind) {
+      final leaveId = n.leaveIdHint;
+      if (leaveId != null && widget.onApprovalTap != null) {
+        widget.onApprovalTap!(leaveId);
+        return;
+      }
+    } else if (n.isLeaveKind) {
       final leaveId = n.leaveIdHint;
       if (leaveId != null && widget.onLeaveTap != null) {
         widget.onLeaveTap!(leaveId);
@@ -137,14 +147,18 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   Widget _tile(NotificationRecord n) {
     final iconData = switch (n.kind) {
       'leave_approved' => Icons.event_available_rounded,
+      'leave_first_approved' => Icons.event_available_rounded,
       'leave_refused' => Icons.event_busy_rounded,
+      'leave_approval_requested' => Icons.fact_check_outlined,
       'expense_approved' => Icons.receipt_long_rounded,
       'expense_refused' => Icons.receipt_long_rounded,
       _ => Icons.notifications_rounded,
     };
     final iconColor = switch (n.kind) {
       'leave_approved' => AppTheme.primary,
+      'leave_first_approved' => AppTheme.secondary,
       'leave_refused' => AppTheme.error,
+      'leave_approval_requested' => AppTheme.primary,
       'expense_approved' => AppTheme.primary,
       'expense_refused' => AppTheme.error,
       _ => AppTheme.outline,

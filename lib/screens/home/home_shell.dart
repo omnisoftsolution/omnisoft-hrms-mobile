@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'home_screen.dart';
+import '../approvals/approval_detail_screen.dart';
 import '../expenses/expenses_screen.dart';
 import '../history/history_shell.dart';
 import '../leave/leave_screen.dart';
@@ -85,6 +86,12 @@ class HomeShellState extends State<HomeShell> {
   void _onNotificationChange() {
     final fresh = _notifSvc?.consumeFreshArrival();
     if (fresh == null || !mounted) return;
+    if (fresh.isApprovalRequestKind) {
+      // A new request waits for this user: re-pull /me so the approvals
+      // count in SessionService (Home card) is current.
+      // ignore: discarded_futures — fire-and-forget
+      context.read<SessionService>().refreshMe();
+    }
     final messenger = _scaffoldMessengerKey.currentState;
     if (messenger == null) return;
     messenger
@@ -131,12 +138,18 @@ class HomeShellState extends State<HomeShell> {
               ),
             ],
           ),
-          action: (fresh.isLeaveKind || fresh.isExpenseKind)
+          action: fresh.snackActionLabel != null
               ? SnackBarAction(
-                  label: 'VIEW',
+                  label: fresh.snackActionLabel!,
                   textColor: Colors.white,
                   onPressed: () {
-                    if (fresh.isLeaveKind) {
+                    if (fresh.isApprovalRequestKind) {
+                      final id = fresh.leaveIdHint;
+                      if (id != null) {
+                        _notifSvc?.markRead(fresh.id);
+                        navigateToApproval(id);
+                      }
+                    } else if (fresh.isLeaveKind) {
                       final id = fresh.leaveIdHint;
                       if (id != null) {
                         _notifSvc?.markRead(fresh.id);
@@ -208,6 +221,22 @@ class HomeShellState extends State<HomeShell> {
     setState(() => _index = 3);
     await WidgetsBinding.instance.endOfFrame;
     await _expensesKey.currentState?.refresh();
+  }
+
+  /// Reached from an "Approval needed" notification (snackbar "Review"
+  /// or the bell list). Switches to the Home tab and opens the request
+  /// on that tab's Navigator, so the bottom nav stays visible and Back
+  /// returns to Home. Home is refreshed once the request is closed.
+  Future<void> navigateToApproval(int leaveId) async {
+    _homeNavKey.currentState?.popUntil((r) => r.isFirst);
+    if (_index != 0) setState(() => _index = 0);
+    await WidgetsBinding.instance.endOfFrame;
+    final nav = _homeNavKey.currentState;
+    if (nav == null) return;
+    await nav.push(MaterialPageRoute(
+      builder: (_) => ApprovalDetailScreen(leaveId: leaveId),
+    ));
+    _homeKey.currentState?.refresh();
   }
 
   /// Wraps the given root screen in its own Navigator so that pushes
