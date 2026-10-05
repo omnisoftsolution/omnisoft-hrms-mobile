@@ -67,6 +67,25 @@ void main() {
       expect(friendlyDecisionError(ApiException(odoo)), odoo);
     });
 
+    test('an Odoo sentence wins over the app keyword rules', () {
+      const odoo = 'The dates overlap with another time off for this employee.';
+      expect(friendlyError(ApiException(odoo)),
+          'You already have a leave request on these dates.');
+      expect(friendlyDecisionError(ApiException(odoo)), odoo);
+    });
+
+    test('a sentence carrying a URL is still not shown', () {
+      expect(
+          friendlyDecisionError(
+              ApiException('dates overlap, see https://x.test/leave/12')),
+          friendlyError(
+              ApiException('dates overlap, see https://x.test/leave/12')));
+      expect(
+          friendlyDecisionError(
+              ApiException('dates overlap, see https://x.test/leave/12')),
+          isNot(contains('x.test')));
+    });
+
     test('keeps the friendly text for known codes', () {
       expect(friendlyDecisionError(ApiException('network_error')),
           'No internet connection. Check your network and try again.');

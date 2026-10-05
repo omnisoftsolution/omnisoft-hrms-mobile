@@ -213,16 +213,17 @@ String? _approvalMessage(Object e) {
   return null;
 }
 
-/// Text for the dialog after a failed approve or refuse. Known codes get
-/// their [friendlyError] text. When Odoo refused the change with a
-/// validation message, the connector passes that sentence through as the
-/// error code; it is shown as it is, because it tells the approver what
-/// to fix. Only an [ApiException] qualifies (its text came from a JSON
-/// body, never from a raw network exception), and anything that looks
-/// like a URL or a query string still collapses to the generic message.
+/// Text for the dialog after a failed approve or refuse. When Odoo
+/// refused the change with a validation message, the connector passes
+/// that sentence through as the error code; it is shown as it is, ahead
+/// of the app's keyword rules (a sentence mentioning "overlap" must not
+/// become employee wording), because it tells the approver what to fix.
+/// Only an [ApiException] qualifies (its text came from a JSON body,
+/// never from a raw network exception), and anything that looks like a
+/// URL or a query string falls through to [friendlyError]. Mapped codes
+/// are single tokens without spaces, so they keep their own text.
 String friendlyDecisionError(Object e) {
-  final friendly = friendlyError(e);
-  if (e is ApiException && friendly == _genericMessage) {
+  if (e is ApiException) {
     final raw = e.errorCode.trim();
     final safe = raw.contains(' ') &&
         raw.length <= 300 &&
@@ -230,5 +231,5 @@ String friendlyDecisionError(Object e) {
         !raw.contains('=');
     if (safe) return raw;
   }
-  return friendly;
+  return friendlyError(e);
 }
