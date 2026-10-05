@@ -85,6 +85,11 @@ class SessionService extends ChangeNotifier {
   static const _kAuthSource = 'auth_source';
   static const _kDeviceLabel = 'device_label';
 
+  // Keys: leave approvals capability from /me (connector 2.43.0+).
+  // Part of the login session: cleared by clearSession().
+  static const _kLeaveApprovalsEnabled = 'leave_approvals_enabled';
+  static const _kLeaveApprovalsPendingCount = 'leave_approvals_pending_count';
+
   String _saasUrl = '';
   String _companyCode = '';
   String _clientUrl = '';
@@ -127,6 +132,11 @@ class SessionService extends ChangeNotifier {
   DateTime? _refreshExpiresAt;
   String _authSource = '';
   String _deviceLabel = '';
+
+  // Leave approvals: can this user approve anything, and how many
+  // requests wait for their step.
+  bool _leaveApprovalsEnabled = false;
+  int _leaveApprovalsPendingCount = 0;
 
   // SaaS routing
   String get saasUrl => _saasUrl;
@@ -189,6 +199,15 @@ class SessionService extends ChangeNotifier {
   bool get supportsIdentity => _authSource.isNotEmpty;
   String get deviceLabel => _deviceLabel;
 
+  /// True when the connector says this user can approve leave (Time Off
+  /// Officer, or Time Off Approver of at least one active employee).
+  /// False on a connector older than 2.43.0, which sends no
+  /// `leave_approvals` block in /me.
+  bool get leaveApprovalsEnabled => _leaveApprovalsEnabled;
+
+  /// Requests waiting for this user's own step. Refresh with [refreshMe].
+  int get leaveApprovalsPendingCount => _leaveApprovalsPendingCount;
+
   bool get isLoggedIn =>
       _accessToken.isNotEmpty &&
       _clientUrl.isNotEmpty &&
@@ -245,6 +264,9 @@ class SessionService extends ChangeNotifier {
     _refreshExpiresAt = rx.isNotEmpty ? DateTime.tryParse(rx) : null;
     _authSource = prefs.getString(_kAuthSource) ?? '';
     _deviceLabel = prefs.getString(_kDeviceLabel) ?? '';
+    _leaveApprovalsEnabled = prefs.getBool(_kLeaveApprovalsEnabled) ?? false;
+    _leaveApprovalsPendingCount =
+        prefs.getInt(_kLeaveApprovalsPendingCount) ?? 0;
     notifyListeners();
   }
 
@@ -679,6 +701,8 @@ class SessionService extends ChangeNotifier {
     _refreshExpiresAt = null;
     _authSource = '';
     _deviceLabel = '';
+    _leaveApprovalsEnabled = false;
+    _leaveApprovalsPendingCount = 0;
     final prefs = await SharedPreferences.getInstance();
     try {
       await _secure.delete(key: _keyAccessToken);
@@ -695,6 +719,8 @@ class SessionService extends ChangeNotifier {
     await prefs.remove(_kRefreshExpiresAt);
     await prefs.remove(_kAuthSource);
     await prefs.remove(_kDeviceLabel);
+    await prefs.remove(_kLeaveApprovalsEnabled);
+    await prefs.remove(_kLeaveApprovalsPendingCount);
     await prefs.remove(_keyExpiresAt);
     await prefs.remove(_keyUserId);
     await prefs.remove(_keyUserLogin);
@@ -832,6 +858,7 @@ class SessionService extends ChangeNotifier {
             employee['attendance_approver_name']?.toString(),
         employeeExpenseApprover: employee['expense_approver_name']?.toString(),
       );
+      await updateLeaveApprovalsFromMe(res);
       await updateFromMe(res);
       return true;
     } catch (_) {
@@ -852,6 +879,31 @@ class SessionService extends ChangeNotifier {
     await prefs.setString(_kDeviceLabel, _deviceLabel);
     if (_authSource.isNotEmpty) await _markIdentityCapable(prefs);
     notifyListeners();
+  }
+
+  /// Store the `leave_approvals` block of a raw `/me` response:
+  /// `{enabled: bool, pending_count: int}`. A response without the key
+  /// (connector before 2.43.0) or with a malformed one means "not an
+  /// approver": disabled, count 0. Unlike [updateFromMe] this does not
+  /// keep the old value when the key is missing, because a missing key
+  /// is the old connector's way of saying there is nothing to approve.
+  Future<void> updateLeaveApprovalsFromMe(Map<String, dynamic> me) async {
+    final raw = me['leave_approvals'];
+    var enabled = false;
+    var count = 0;
+    if (raw is Map) {
+      enabled = raw['enabled'] == true;
+      final n = raw['pending_count'];
+      if (enabled && n is num && n > 0) count = n.toInt();
+    }
+    final changed = enabled != _leaveApprovalsEnabled ||
+        count != _leaveApprovalsPendingCount;
+    _leaveApprovalsEnabled = enabled;
+    _leaveApprovalsPendingCount = count;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kLeaveApprovalsEnabled, enabled);
+    await prefs.setInt(_kLeaveApprovalsPendingCount, count);
+    if (changed) notifyListeners();
   }
 
   /// `device.label` from a /login or /me body. Odoo serialises an empty
