@@ -302,6 +302,7 @@ void main() {
     expect(api.calls, ['get:148', 'approve:148:confirm', 'get:148']);
     expect(approveButton, findsNothing);
     expect(popped, isEmpty);
+    expect(session.refreshMeCalls, 1);
   });
 
   testWidgets('a request that is gone goes back to the list with a message',
@@ -313,6 +314,7 @@ void main() {
     expect(find.text('This request no longer exists.'), findsOneWidget);
     expect(find.byType(ApprovalDetailScreen), findsNothing);
     expect(popped, [true]);
+    expect(session.refreshMeCalls, 1);
   });
 
   testWidgets('not_found on Approve also goes back to the list',
@@ -416,6 +418,7 @@ void main() {
     expect(find.text('Already refused'), findsOneWidget);
     expect(refuseButton, findsNothing);
     expect(popped, isEmpty);
+    expect(session.refreshMeCalls, 1);
   });
 
   testWidgets('attachments are listed and a refused download is explained',

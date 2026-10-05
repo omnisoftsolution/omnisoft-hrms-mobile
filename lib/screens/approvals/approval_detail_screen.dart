@@ -68,12 +68,15 @@ class _ApprovalDetailScreenState extends State<ApprovalDetailScreen> {
         _loading = false;
       });
     } catch (e) {
-      if (!mounted) return;
       if (e is ApiException && e.errorCode == 'not_found') {
+        // The request is gone: the pending count may be stale too.
+        _refreshCount();
+        if (!mounted) return;
         _toast(friendlyError(e), error: true);
         Navigator.of(context).pop(true);
         return;
       }
+      if (!mounted) return;
       setState(() {
         _error = friendlyError(e);
         _loading = false;
@@ -335,7 +338,7 @@ class _ApprovalDetailScreenState extends State<ApprovalDetailScreen> {
   Widget _card(List<Widget> children) => Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: AppTheme.surfaceContainerLowest,
           borderRadius: BorderRadius.circular(24),
           boxShadow: AppTheme.glassShadow,
         ),
