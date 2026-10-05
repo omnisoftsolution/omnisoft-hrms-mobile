@@ -27,7 +27,8 @@ String approvalsBreakdown(List<ApprovalItem> items) {
 /// companies on a connector older than 2.43.0 never see it. An approver
 /// with nothing waiting still gets the card, to reach Recent.
 ///
-/// Carries its own top spacing so the caller needs no conditional gap.
+/// Sits at the top of Home and carries its own bottom spacing, so the
+/// caller needs no conditional gap.
 class ApprovalsHomeCard extends StatelessWidget {
   const ApprovalsHomeCard({super.key, required this.onTap, this.breakdown = ''});
 
@@ -43,7 +44,7 @@ class ApprovalsHomeCard extends StatelessWidget {
     final count = session.leaveApprovalsPendingCount;
     final value = count == 0 ? 'Nothing waiting' : '$count waiting for you';
     return Padding(
-      padding: const EdgeInsets.only(top: 16),
+      padding: const EdgeInsets.only(bottom: 16),
       child: DecoratedBox(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(24),

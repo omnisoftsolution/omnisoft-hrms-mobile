@@ -169,7 +169,7 @@ iOS is still-frame-only for spoof texture (multi-frame raw-bytes P1.1 open, per 
   decision, and when a `leave_approval_requested` notification arrives.
 - Screens in lib/screens/approvals/: `ApprovalsScreen` (Pending / Recent),
   `ApprovalDetailScreen` (Approve / Refuse), `showRefuseReasonSheet` (reason 3 to 500
-  characters, root navigator). Entry points: `ApprovalsHomeCard` on the classic Home,
+  characters, root navigator). Entry points: `ApprovalsHomeCard` at the top of the classic Home (shown even when Attendance is off),
   and `HomeShellState.navigateToApproval(leaveId)` for notifications.
 - The app never decides who may act: buttons follow the connector's `can_approve` /
   `can_refuse`, and approve/refuse send `expected_state` so a request someone else already

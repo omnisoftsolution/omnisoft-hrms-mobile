@@ -28,6 +28,7 @@ import '../../widgets/omni_app_bar.dart';
 import '../../widgets/silent_face_capture.dart';
 import '../approvals/approvals_screen.dart';
 import '../face_scan/face_enrollment_screen.dart';
+import 'home_body.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -550,30 +551,34 @@ class HomeScreenState extends State<HomeScreen> {
     final session = context.watch<SessionService>();
     return Scaffold(
       appBar: const OmniAppBar(title: 'Attendance'),
-      body: !session.featureAttendance
-          ? const FeatureLockedPane(
-              featureName: 'Attendance',
-              subtitle: 'Your subscription does not include '
-                  'attendance tracking. Contact your administrator '
-                  'to upgrade.',
+      body: HomeBody(
+        attendanceEnabled: session.featureAttendance,
+        // Approvers only; the card hides itself for everyone else. It
+        // sits above the attendance content so it survives the
+        // locked / loading / error states.
+        approvalsCard: ApprovalsHomeCard(
+          breakdown: _approvalsBreakdown,
+          onTap: _openApprovals,
+        ),
+        lockedPane: const FeatureLockedPane(
+          featureName: 'Attendance',
+          subtitle: 'Your subscription does not include '
+              'attendance tracking. Contact your administrator '
+              'to upgrade.',
+        ),
+        onRefresh: refresh,
+        children: [
+          if (_loading)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 80),
+              child: Center(child: CircularProgressIndicator()),
             )
-          : RefreshIndicator(
-              onRefresh: refresh,
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-                children: [
-                  if (_loading)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 80),
-                      child: Center(child: CircularProgressIndicator()),
-                    )
-                  else if (_error != null)
-                    _buildError()
-                  else
-                    _buildContent(session),
-                ],
-              ),
-            ),
+          else if (_error != null)
+            _buildError()
+          else
+            _buildContent(session),
+        ],
+      ),
     );
   }
 
@@ -640,11 +645,6 @@ class HomeScreenState extends State<HomeScreen> {
               Expanded(child: _validationCard(s, session)),
             ],
           ),
-        ),
-        // Approvers only; the card hides itself for everyone else.
-        ApprovalsHomeCard(
-          breakdown: _approvalsBreakdown,
-          onTap: _openApprovals,
         ),
         if (_autoClosedPrevious != null) ...[
           const SizedBox(height: 16),
