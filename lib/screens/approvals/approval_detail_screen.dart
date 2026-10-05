@@ -171,8 +171,13 @@ class _ApprovalDetailScreenState extends State<ApprovalDetailScreen> {
           refused = true;
           return null;
         } on ApiException catch (e) {
-          // The one error the approver fixes inside the sheet.
-          if (e.errorCode == 'reason_required') return friendlyError(e);
+          // Errors the approver can fix or retry inside the sheet: the
+          // sheet stays open and the typed reason is kept.
+          if (e.errorCode == 'reason_required' ||
+              e.errorCode == 'network_error' ||
+              e.errorCode == 'timeout') {
+            return friendlyError(e);
+          }
           failure = e;
           return null;
         } catch (e) {

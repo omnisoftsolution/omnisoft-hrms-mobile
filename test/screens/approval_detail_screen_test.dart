@@ -400,6 +400,30 @@ void main() {
     expect(popped, isEmpty);
   });
 
+  for (final code in ['network_error', 'timeout']) {
+    testWidgets('$code on Refuse keeps the sheet open and the typed reason',
+        (tester) async {
+      api.refuseError = ApiException(code);
+      await tester.pumpWidget(host(api, session, popped));
+      await open(tester);
+      await tapVisible(tester, refuseButton);
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'Coverage issue');
+      await tester.pump();
+      await tester.tap(sheetRefuseButton);
+      await tester.pumpAndSettle();
+
+      final message = code == 'network_error'
+          ? 'No internet connection. Check your network and try again.'
+          : 'The server is taking too long to respond. Please try again.';
+      expect(find.text(message), findsOneWidget);
+      expect(find.text('Refuse this request'), findsOneWidget);
+      expect(find.text('Coverage issue'), findsOneWidget);
+      expect(popped, isEmpty);
+      expect(session.refreshMeCalls, 0);
+    });
+  }
+
   testWidgets('state_changed on Refuse closes the sheet and reloads',
       (tester) async {
     await tester.pumpWidget(host(api, session, popped));
