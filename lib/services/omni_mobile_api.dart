@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
+import '../models/approval_detail.dart';
+import '../models/approval_item.dart';
 import '../models/attendance_record.dart';
 import '../models/attendance_status.dart';
 import '../models/currency_option.dart';
@@ -76,6 +78,30 @@ Map<String, dynamic> buildLeavePreviewBody({
     'date_to_period': ?dateToPeriod,
     'hour_from': ?hourFrom,
     'hour_to': ?hourTo,
+  };
+}
+
+/// Body for /leave/approvals/approve. `expected_state` is the state the
+/// approver was looking at; the connector answers `state_changed` when
+/// someone else decided first. Top-level so it is unit-testable.
+Map<String, dynamic> buildApproveBody({
+  required int leaveId,
+  required String expectedState,
+}) {
+  return {'leave_id': leaveId, 'expected_state': expectedState};
+}
+
+/// Body for /leave/approvals/refuse. The reason is trimmed here; the
+/// connector requires 3 to 500 characters after trimming.
+Map<String, dynamic> buildRefuseBody({
+  required int leaveId,
+  required String expectedState,
+  required String reason,
+}) {
+  return {
+    'leave_id': leaveId,
+    'expected_state': expectedState,
+    'reason': reason.trim(),
   };
 }
 
@@ -659,6 +685,67 @@ class OmniMobileApi {
       'hour_to': ?hourTo,
       'attachment': ?attachment,
     });
+  }
+
+  // -- Leave approvals (connector 2.43.0+) --
+  //
+  // On an older connector these routes do not exist and every call
+  // throws ApiException('server_error'). The app never reaches them
+  // there: /me has no `leave_approvals` key, so the entry points stay
+  // hidden.
+
+  /// Requests the user can act on now, "my step" first.
+  Future<List<ApprovalItem>> getPendingApprovals() async {
+    final data = await _post('/leave/approvals/pending');
+    return _approvalItems(data);
+  }
+
+  /// The user's own decisions of the last 30 days, newest first.
+  Future<List<ApprovalItem>> getRecentApprovals() async {
+    final data = await _post('/leave/approvals/recent');
+    return _approvalItems(data);
+  }
+
+  static List<ApprovalItem> _approvalItems(Map<String, dynamic> data) {
+    final list = (data['items'] as List<dynamic>?) ?? const [];
+    return list
+        .whereType<Map>()
+        .map((e) => ApprovalItem.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+  }
+
+  /// One request with everything needed to decide. Throws
+  /// ApiException('not_found') when it is gone or not visible to the user.
+  Future<ApprovalDetail> getApprovalDetail(int leaveId) async {
+    final data = await _post('/leave/approvals/get', {'leave_id': leaveId});
+    final leave = data['leave'];
+    return ApprovalDetail.fromJson(
+        leave is Map ? Map<String, dynamic>.from(leave) : <String, dynamic>{});
+  }
+
+  /// Approve as the signed-in user. Returns the new Odoo state
+  /// ('validate1' when HR still has to approve, else 'validate').
+  Future<String> approveLeave({
+    required int leaveId,
+    required String expectedState,
+  }) async {
+    final data = await _post('/leave/approvals/approve',
+        buildApproveBody(leaveId: leaveId, expectedState: expectedState));
+    return data['state']?.toString() ?? '';
+  }
+
+  /// Refuse as the signed-in user; [reason] is posted to the request's
+  /// chatter. Returns the new Odoo state ('refuse').
+  Future<String> refuseLeave({
+    required int leaveId,
+    required String expectedState,
+    required String reason,
+  }) async {
+    final data = await _post(
+        '/leave/approvals/refuse',
+        buildRefuseBody(
+            leaveId: leaveId, expectedState: expectedState, reason: reason));
+    return data['state']?.toString() ?? '';
   }
 }
 
