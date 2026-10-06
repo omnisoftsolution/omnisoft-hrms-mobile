@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../../../core/theme.dart';
 import '../../../models/my_day.dart';
 import 'my_day_colors.dart';
 import 'my_day_display.dart';
@@ -111,4 +112,75 @@ DaySummary daySummaryOf(MyDayWeekDay d) {
         icon: Icons.wb_sunny_outlined,
       );
   }
+}
+
+/// The short sheet behind a tap on a week-strip day (spec §8.2).
+///
+/// Deliberately pushed on the TAB navigator, not the root one: HomeShell
+/// gives every tab its own Navigator inside the Scaffold body, so a sheet
+/// on that navigator rises from the bottom bar and stops at it — Home,
+/// Leave, History and Expenses stay visible and tappable. (showKioskSheet
+/// is the opposite case and uses the root navigator on purpose.)
+Future<void> showDaySheet(BuildContext context, MyDayWeekDay day) {
+  final summary = daySummaryOf(day);
+  return showModalBottomSheet<void>(
+    context: context,
+    useRootNavigator: false,
+    showDragHandle: true,
+    builder: (sheetContext) {
+      final text = Theme.of(sheetContext).textTheme;
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              summary.title,
+              key: const ValueKey('day-sheet-title'),
+              style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: summary.tone.tint,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(summary.icon, size: 22, color: summary.tone.dot),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        summary.head,
+                        style: text.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      if (summary.sub.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          summary.sub,
+                          style: text.bodySmall?.copyWith(
+                            color: AppTheme.outline,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    },
+  );
 }

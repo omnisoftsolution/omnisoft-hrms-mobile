@@ -197,4 +197,46 @@ void main() {
       );
     });
   });
+
+  testWidgets('showDaySheet renders title, head and sub', (tester) async {
+    late BuildContext ctx;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          // Like HomeShell: the tab's own Navigator lives in the body, the bar
+          // belongs to the Scaffold outside it.
+          body: Navigator(
+            onGenerateRoute: (_) => MaterialPageRoute<void>(
+              builder: (c) {
+                ctx = c;
+                return const SizedBox.shrink();
+              },
+            ),
+          ),
+          bottomNavigationBar: const SizedBox(key: ValueKey('nav'), height: 80),
+        ),
+      ),
+    );
+    showDaySheet(
+      ctx,
+      _day({
+        'date': '2026-10-05',
+        'kind': 'worked',
+        'verdict': 'ok',
+        'first_in': '08:02',
+        'last_out': '17:05',
+        'worked_minutes': 498,
+        'place': 'Front desk',
+      }),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Monday 5 October'), findsOneWidget);
+    expect(find.text('Worked 8h 18m · on time'), findsOneWidget);
+    expect(find.text('08:02 – 17:05 · Front desk'), findsOneWidget);
+    // The sheet stops above the bottom bar: its bottom edge is at or above
+    // the bar's top edge.
+    final sheetBottom = tester.getBottomLeft(find.byType(BottomSheet)).dy;
+    final navTop = tester.getTopLeft(find.byKey(const ValueKey('nav'))).dy;
+    expect(sheetBottom, lessThanOrEqualTo(navTop + 0.01));
+  });
 }

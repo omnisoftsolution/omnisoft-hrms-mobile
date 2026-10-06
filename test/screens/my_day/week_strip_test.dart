@@ -27,7 +27,7 @@ List<Map<String, dynamic>> _week() => [
 ];
 
 void main() {
-  testWidgets('seven cells, each kind tinted, legend chips', (tester) async {
+  testWidgets('seven cells, each kind tinted, no legend chips', (tester) async {
     await tester.pumpWidget(_host(sampleMyDay(week: _week())));
     for (final name in ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']) {
       expect(find.text(name), findsOneWidget);
@@ -42,8 +42,8 @@ void main() {
     expect(_cellFill(tester, '2026-10-09'), MyDayColors.leave.tint);
     expect(_cellFill(tester, '2026-10-10'), Colors.white);
     expect(_cellFill(tester, '2026-10-11'), Colors.transparent);
-    expect(find.text('Thu · Deepavali'), findsOneWidget);
-    expect(find.text('Fri · Annual leave'), findsOneWidget);
+    expect(find.text('Thu · Deepavali'), findsNothing);
+    expect(find.text('Fri · Annual leave'), findsNothing);
     expect(find.text('2 days worked so far'), findsOneWidget);
   });
 
@@ -91,5 +91,39 @@ void main() {
       ),
       '1 day worked so far',
     );
+  });
+
+  testWidgets('tapping a past day opens the sheet above the body', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_host(sampleMyDay(week: _week())));
+    await tester.tap(find.byKey(const ValueKey('week-tap-2026-10-08')));
+    await tester.pumpAndSettle();
+    expect(find.text('Thursday 8 October'), findsOneWidget);
+    expect(find.text('Public holiday'), findsOneWidget);
+    expect(find.text('Deepavali'), findsOneWidget);
+    // Dismiss by tapping the barrier (above the sheet).
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pumpAndSettle();
+    expect(find.text('Thursday 8 October'), findsNothing);
+  });
+
+  testWidgets('tapping today does nothing', (tester) async {
+    await tester.pumpWidget(_host(sampleMyDay(week: _week())));
+    await tester.tap(find.byKey(const ValueKey('week-tap-2026-10-06')));
+    await tester.pumpAndSettle();
+    expect(find.text('Tuesday 6 October'), findsNothing);
+    expect(find.byType(BottomSheet), findsNothing);
+  });
+
+  testWidgets('every non-today cell is a button for accessibility', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_host(sampleMyDay(week: _week())));
+    expect(
+      find.bySemanticsLabel(RegExp(r'^Thu, public holiday')),
+      findsOneWidget,
+    );
+    expect(find.bySemanticsLabel(RegExp(r'^Tue, today')), findsNothing);
   });
 }
