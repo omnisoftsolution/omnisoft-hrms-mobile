@@ -97,11 +97,29 @@ class MyDayWeekDay {
   final String verdict;
   final String name;
 
+  /// 2.52.1 (spec §8.1) — the day sheet's summary; '' / 0 on older connectors.
+  final String shift;
+  final String firstIn;
+  final String lastOut;
+  final int workedMinutes;
+  final int lateMinutes;
+  final int earlyMinutes;
+  final String place;
+  final String approver;
+
   const MyDayWeekDay({
     required this.date,
     required this.kind,
     this.verdict = '',
     this.name = '',
+    this.shift = '',
+    this.firstIn = '',
+    this.lastOut = '',
+    this.workedMinutes = 0,
+    this.lateMinutes = 0,
+    this.earlyMinutes = 0,
+    this.place = '',
+    this.approver = '',
   });
 
   factory MyDayWeekDay.fromJson(Map<String, dynamic> json) => MyDayWeekDay(
@@ -109,6 +127,14 @@ class MyDayWeekDay {
     kind: _str(json['kind']),
     verdict: _str(json['verdict']),
     name: _str(json['name']),
+    shift: _str(json['shift']),
+    firstIn: _str(json['first_in']),
+    lastOut: _str(json['last_out']),
+    workedMinutes: _int(json['worked_minutes']),
+    lateMinutes: _int(json['late_minutes']),
+    earlyMinutes: _int(json['early_minutes']),
+    place: _str(json['place']),
+    approver: _str(json['approver']),
   );
 }
 

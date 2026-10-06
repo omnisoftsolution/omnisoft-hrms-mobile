@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 
 import '../../../core/theme.dart';
 import '../../../models/my_day.dart';
+import 'day_sheet.dart';
 import 'my_day_colors.dart';
 import 'my_day_display.dart';
 
@@ -32,8 +33,8 @@ class _Cell {
   final double ringWidth;
 }
 
-/// "This week": one cell per day, Monday first, with a legend for the
-/// holidays and leave in the week (spec 2026-10-06 §4.3).
+/// "This week": one cell per day, Monday first. A tap on any day but today
+/// opens the day sheet (spec 2026-10-06 §4.3, §8.2).
 class WeekStrip extends StatelessWidget {
   const WeekStrip({super.key, required this.day});
 
@@ -43,6 +44,28 @@ class WeekStrip extends StatelessWidget {
     final parsed = DateTime.tryParse(date);
     return parsed == null ? '' : DateFormat('EEE', 'en_US').format(parsed);
   }
+
+  static String _kindLabel(MyDayWeekDay d) {
+    switch (d.kind) {
+      case 'today':
+        return 'today';
+      case 'worked':
+        return 'worked';
+      case 'absent':
+        return 'no check-in';
+      case 'public_holiday':
+        return d.name.isEmpty ? 'public holiday' : 'public holiday, ${d.name}';
+      case 'leave':
+        return d.name.isEmpty ? 'leave' : 'leave, ${d.name}';
+      case 'scheduled':
+        return 'scheduled';
+      default:
+        return 'no shift';
+    }
+  }
+
+  static String semanticLabel(MyDayWeekDay d) =>
+      '${_dayName(d.date)}, ${_kindLabel(d)}';
 
   static bool _todayCounts(MyDay day) => day.state != 'not_in';
 
@@ -130,16 +153,6 @@ class WeekStrip extends StatelessWidget {
     final text = Theme.of(context).textTheme;
     final today = toneOf(displayOf(day));
     final cells = day.week.map((d) => _cell(d, today)).toList();
-    final legend = [
-      for (final d in day.week)
-        if (d.kind == 'public_holiday' || d.kind == 'leave')
-          (
-            text:
-                '${_dayName(d.date)} · ${d.name.isEmpty ? (d.kind == 'leave' ? 'Leave' : 'Public holiday') : d.name}',
-            tone: d.kind == 'leave' ? MyDayColors.leave : MyDayColors.holiday,
-            icon: d.kind == 'leave' ? Icons.event_outlined : Icons.star_outline,
-          ),
-    ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -167,50 +180,16 @@ class WeekStrip extends StatelessWidget {
             children: [
               for (var i = 0; i < cells.length; i++) ...[
                 if (i > 0) const SizedBox(width: 6),
-                Expanded(child: _cellWidget(text, cells[i])),
+                Expanded(child: _cellWidget(context, text, cells[i])),
               ],
             ],
           ),
         ),
-        if (legend.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              for (final item in legend)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: item.tone.tint,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(item.icon, size: 13, color: item.tone.onTint),
-                      const SizedBox(width: 6),
-                      Text(
-                        item.text,
-                        style: text.labelMedium?.copyWith(
-                          color: item.tone.onTint,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-            ],
-          ),
-        ],
       ],
     );
   }
 
-  Widget _cellWidget(TextTheme text, _Cell cell) {
+  Widget _cellWidget(BuildContext context, TextTheme text, _Cell cell) {
     final Widget mark;
     switch (cell.mark) {
       case _Mark.calendar:
@@ -229,29 +208,46 @@ class WeekStrip extends StatelessWidget {
           ),
         );
     }
-    return Container(
+    final box = Container(
       key: ValueKey('week-${cell.day.date}'),
       alignment: Alignment.center,
       constraints: const BoxConstraints(minHeight: 52),
-      decoration: BoxDecoration(
-        color: cell.fill,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: cell.ring, width: cell.ringWidth),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            _dayName(cell.day.date),
-            style: text.labelMedium?.copyWith(
-              color: cell.text,
-              fontWeight: FontWeight.w600,
+      child: ExcludeSemantics(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              _dayName(cell.day.date),
+              style: text.labelMedium?.copyWith(
+                color: cell.text,
+                fontWeight: FontWeight.w600,
+              ),
             ),
-          ),
-          const SizedBox(height: 6),
-          mark,
-        ],
+            const SizedBox(height: 6),
+            mark,
+          ],
+        ),
+      ),
+    );
+    final tappable = cell.day.kind != 'today';
+    // Fill and ring live on the Material so the InkWell splash paints above
+    // them (a child decoration would cover the ripple).
+    return Semantics(
+      button: tappable,
+      label: semanticLabel(cell.day),
+      child: Material(
+        color: cell.fill,
+        shape: RoundedRectangleBorder(
+          side: BorderSide(color: cell.ring, width: cell.ringWidth),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          key: ValueKey('week-tap-${cell.day.date}'),
+          onTap: tappable ? () => showDaySheet(context, cell.day) : null,
+          child: box,
+        ),
       ),
     );
   }

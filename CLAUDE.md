@@ -234,3 +234,16 @@ Spec + plan live in the connector repo:
   live state, not "Day off".
 - Copy stays literal in the widgets; `DateFormat` pinned to `en_US`.
 - Tests: `test/screens/my_day/{my_day_display,status_tile,week_strip,day_timeline,for_you_list,my_day_screen}_test.dart`.
+
+### 1.28.0 — Tap a day (spec §8 of the My day v2 spec, connector 2.52.1)
+- `lib/screens/home/my_day/day_sheet.dart`: pure `daySummaryOf(MyDayWeekDay)` → `DaySummary`
+  (title / head / sub / tone / icon per kind) and `showDaySheet(context, day)`. The sheet is
+  **deliberately on the tab navigator** (`useRootNavigator: false`) so it rises from the bottom
+  bar and stops there — the bar stays visible and tappable. `showKioskSheet` keeps the root
+  navigator; that remains the rule for every other modal in a tab.
+- `week_strip.dart`: every non-today cell is an `InkWell` (`week-tap-<date>`) with a `Semantics`
+  button label "<Day>, <kind>"; today is not tappable; the legend chips are gone.
+- `MyDayWeekDay` parses the 2.52.1 keys (`shift`, `first_in`, `last_out`, `worked_minutes`,
+  `late_minutes`, `early_minutes`, `place`, `approver`); on a 2.52.0 connector the sheet shows
+  the kind only ("Worked · on time", "Public holiday", …).
+- Tests: `test/screens/my_day/day_sheet_test.dart`, `week_strip_test.dart`, `test/models/my_day_test.dart`.
