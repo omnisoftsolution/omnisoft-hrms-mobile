@@ -100,6 +100,89 @@ void main() {
     expect(buildTimeline(exempt).any((e) => e.kind == TimelineKind.lunch), isTrue);
   });
 
+  test('finished ordinary day: the rail has no gap down to the last row', () {
+    final ev = buildTimeline(sampleMyDay(state: 'checked_out', punches: [
+      _p('check_in', '2026-10-05 01:02:00'),
+      _p('break_start', '2026-10-05 05:05:00'),
+      _p('break_end', '2026-10-05 05:50:00'),
+      _p('check_out', '2026-10-05 10:02:00'),
+    ]));
+    expect(ev.map((e) => e.title),
+        ['Shift starts', 'Check in', 'Break start', 'Break end', 'Shift ends', 'Check out']);
+    final ends = ev.firstWhere((e) => e.title == 'Shift ends');
+    expect(ends.rail, RailStyle.solid);
+    expect(ends.railColor, MyDayColors.work.dot);
+    expect(ev.where((e) => e.rail == RailStyle.none).toList(), [ev.last]);
+  });
+
+  test('a second check-in carries no badge and the normal tone', () {
+    final ev = buildTimeline(sampleMyDay(lateMinutes: 17, punches: [
+      _p('check_in', '2026-10-05 01:17:00'),
+      _p('check_out', '2026-10-05 04:00:00'),
+      _p('check_in', '2026-10-05 06:00:00'),
+    ]));
+    final ins = ev.where((e) => e.title == 'Check in').toList();
+    expect(ins.length, 2);
+    expect(ins[0].badge, '17 min late');
+    expect(ins[1].badge, '');
+    expect(ins[1].tone, MyDayColors.work);
+  });
+
+  test('open break shows how long it has run', () {
+    final day = sampleMyDay(state: 'on_break', punches: [
+      _p('check_in', '2026-10-05 01:02:00'),
+      _p('break_start', '2026-10-05 03:30:00'),
+    ]);
+    final ev = buildTimeline(day, now: DateTime.utc(2026, 10, 5, 3, 42));
+    expect(ev.firstWhere((e) => e.title == 'Break start').badge, '12 min so far');
+    // A clock before the punch never shows a negative count.
+    final early = buildTimeline(day, now: DateTime.utc(2026, 10, 5, 3, 0));
+    expect(early.firstWhere((e) => e.title == 'Break start').badge, '0 min so far');
+  });
+
+  test('an open break that began inside the lunch window hides the planned lunch', () {
+    final ev = buildTimeline(
+        sampleMyDay(state: 'on_break', punches: [
+          _p('check_in', '2026-10-05 01:02:00'),
+          _p('break_start', '2026-10-05 05:10:00'),
+        ]),
+        now: DateTime.utc(2026, 10, 5, 5, 20));
+    expect(ev.any((e) => e.kind == TimelineKind.lunch), isFalse);
+  });
+
+  test('break-exempt finished day keeps the lunch row inside a solid teal rail', () {
+    final ev = buildTimeline(sampleMyDay(state: 'checked_out', breakExempt: true, punches: [
+      _p('check_in', '2026-10-05 01:02:00'),
+      _p('check_out', '2026-10-05 10:02:00'),
+    ]));
+    final lunch = ev.firstWhere((e) => e.kind == TimelineKind.lunch);
+    expect(lunch.rail, RailStyle.solid);
+    expect(lunch.railColor, MyDayColors.work.dot);
+  });
+
+  test('check-out inside the grace window: dotted grey before Shift ends', () {
+    final ev = buildTimeline(sampleMyDay(state: 'checked_out', punches: [
+      _p('check_in', '2026-10-05 01:02:00'),
+      _p('check_out', '2026-10-05 09:55:00'),
+    ]));
+    expect(ev.map((e) => e.title),
+        ['Shift starts', 'Check in', 'Check out', 'Shift ends']);
+    final out = ev.firstWhere((e) => e.title == 'Check out');
+    expect(out.rail, RailStyle.dotted);
+    expect(out.railColor, MyDayColors.waiting.dot);
+    expect(ev.last.rail, RailStyle.none);
+  });
+
+  test('Shift ends is passed once the clock reaches it, but an open day still says check out', () {
+    final open = sampleMyDay(punches: [_p('check_in', '2026-10-05 01:02:00')]);
+    final before = buildTimeline(open, now: DateTime.utc(2026, 10, 5, 9, 59)).last;
+    final after = buildTimeline(open, now: DateTime.utc(2026, 10, 5, 10, 1)).last;
+    expect(before.upcoming, isTrue);
+    expect(after.upcoming, isFalse);
+    expect(after.sub, 'Check out at the kiosk');
+    expect(after.tone, MyDayColors.work);
+  });
+
   test('no shift and no punches: nothing', () {
     expect(buildTimeline(sampleMyDay(withShift: false, state: 'not_in', punches: [])), isEmpty);
   });

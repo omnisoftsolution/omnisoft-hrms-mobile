@@ -53,19 +53,21 @@ bool _overlaps(String aStart, String aEnd, String bStart, String bEnd) =>
     aStart.compareTo(bEnd) < 0 && bStart.compareTo(aEnd) < 0;
 
 /// The rows of the timeline in time order (spec 2026-10-06 §4.4). Pure,
-/// so the tests check the data and not the paint.
+/// so the tests check the data and not the paint. [now] only matters for
+/// the open-break badge and whether the shift end has passed.
 @visibleForTesting
-List<TimelineEvent> buildTimeline(MyDay day) {
+List<TimelineEvent> buildTimeline(MyDay day, {DateTime? now}) {
   final shift = day.shift;
   final punches = day.punches;
   if (shift == null && punches.isEmpty) return const [];
+  final nowUtc = (now ?? DateTime.now()).toUtc();
   final display = displayOf(day);
   final open = day.state == 'checked_in' || day.state == 'on_break';
   final events = <TimelineEvent>[];
+  final punchKinds = Map<TimelineEvent, String>.identity();
 
   if (shift != null) {
     final missing = display == MyDayDisplay.missing;
-    final late = day.lateMinutes > 0;
     events.add(TimelineEvent(
       at: shift.start,
       title: 'Shift starts',
@@ -75,33 +77,29 @@ List<TimelineEvent> buildTimeline(MyDay day) {
       kind: TimelineKind.anchor,
       tone: missing ? MyDayColors.missing : (punches.isEmpty ? _grey : MyDayColors.work),
       badge: missing ? 'Missing' : '',
-      rail: missing || late ? RailStyle.dashed : (punches.isEmpty ? RailStyle.dotted : RailStyle.solid),
-      railColor: missing
-          ? MyDayColors.missing.dot
-          : (late ? MyDayColors.late.dot : (punches.isEmpty ? _grey.dot : MyDayColors.work.dot)),
       upcoming: punches.isEmpty && !missing,
     ));
     if (missing) {
       events.add(TimelineEvent(
-        at: '',
+        at: shift.start,
         title: 'Now',
         sub: 'If you are at work, check in at the kiosk',
         kind: TimelineKind.now,
         tone: MyDayColors.missing,
-        rail: RailStyle.dotted,
-        railColor: _grey.dot,
         current: true,
       ));
     }
   }
 
+  final firstCheckIn = punches.indexWhere((p) => p.kind == 'check_in');
   for (var i = 0; i < punches.length; i++) {
     final p = punches[i];
     final last = i == punches.length - 1;
-    final isBreak = p.kind == 'break_start';
-    var tone = isBreak ? MyDayColors.brk : MyDayColors.work;
+    var tone = p.kind == 'break_start' ? MyDayColors.brk : MyDayColors.work;
     var badge = '';
-    if (p.kind == 'check_in') {
+    // Lateness belongs to the first check-in of the day only; a return
+    // after an early check-out is just work.
+    if (p.kind == 'check_in' && i == firstCheckIn) {
       if (day.lateMinutes > 0) {
         tone = MyDayColors.late;
         badge = '${minutesLabel(day.lateMinutes)} late';
@@ -118,46 +116,39 @@ List<TimelineEvent> buildTimeline(MyDay day) {
         badge = '${minutesLabel(day.overtimeMinutes)} overtime';
       }
     }
-    // Rail under this punch: what happens between it and the next event.
-    RailStyle rail;
-    Color railColor;
-    if (last && open) {
-      rail = RailStyle.dotted;
-      railColor = _grey.dot;
-    } else if (p.kind == 'check_in' || p.kind == 'break_end') {
-      rail = RailStyle.solid;
-      railColor = MyDayColors.work.dot;
-    } else if (p.kind == 'break_start') {
-      rail = RailStyle.dashed;
-      railColor = MyDayColors.brk.dot;
-    } else if (day.earlyMinutes > 0) {
-      rail = RailStyle.dashed;
-      railColor = MyDayColors.late.dot;
-    } else {
-      rail = RailStyle.none;
-      railColor = Colors.transparent;
+    if (p.kind == 'break_start' && last && day.state == 'on_break') {
+      final started = DateTimeUtils.parseOdooUtc(p.at);
+      final minutes = started == null ? 0 : nowUtc.difference(started).inMinutes;
+      badge = '${minutesLabel(minutes < 0 ? 0 : minutes)} so far';
     }
-    events.add(TimelineEvent(
+    final event = TimelineEvent(
       at: p.at,
       title: p.label,
       sub: p.placeLabel,
       kind: TimelineKind.punch,
       tone: tone,
       badge: badge,
-      rail: rail,
-      railColor: railColor,
       current: last && open,
-    ));
+    );
+    punchKinds[event] = p.kind;
+    events.add(event);
   }
 
-  // The scheduled lunch, unless a punched break overlaps it or the day is
-  // over for someone who punches breaks.
+  // The scheduled lunch, unless a punched break overlaps it (also an open
+  // one that started inside it) or the day is over for someone who punches
+  // breaks.
   final lunch = day.lunch;
   if (lunch != null) {
     var punchedOver = false;
     for (var i = 0; i + 1 < punches.length; i++) {
       if (punches[i].kind == 'break_start' &&
           _overlaps(punches[i].at, punches[i + 1].at, lunch.start, lunch.end)) {
+        punchedOver = true;
+      }
+    }
+    if (punches.isNotEmpty && punches.last.kind == 'break_start') {
+      final at = punches.last.at;
+      if (at.compareTo(lunch.start) >= 0 && at.compareTo(lunch.end) <= 0) {
         punchedOver = true;
       }
     }
@@ -169,60 +160,122 @@ List<TimelineEvent> buildTimeline(MyDay day) {
         sub: '${lunch.label} · from your work schedule',
         kind: TimelineKind.lunch,
         tone: _grey,
-        rail: RailStyle.dotted,
-        railColor: _grey.dot,
         upcoming: true,
       ));
     }
   }
 
   if (shift != null) {
-    final overtime = day.overtimeMinutes > 0;
-    final passed = day.state == 'checked_out' && day.earlyMinutes == 0;
+    final shiftEnd = DateTimeUtils.parseOdooUtc(shift.end);
+    final passed = (day.state == 'checked_out' && day.earlyMinutes == 0) ||
+        (shiftEnd != null && !nowUtc.isBefore(shiftEnd));
     events.add(TimelineEvent(
       at: shift.end,
       title: 'Shift ends',
       sub: display == MyDayDisplay.early
           ? 'Coming back? This counts as a break.'
-          : (passed ? shift.label : 'Check out at the kiosk'),
+          : (passed && !open ? shift.label : 'Check out at the kiosk'),
       kind: TimelineKind.anchor,
       tone: passed ? MyDayColors.work : _grey,
-      rail: overtime ? RailStyle.solid : RailStyle.none,
-      railColor: overtime ? MyDayColors.overtime.dot : Colors.transparent,
       upcoming: !passed,
     ));
   }
 
-  // Stable sort by time; the "Now" row (no time) keeps its place after
-  // the start anchor. UTC strings sort as text.
+  // Stable sort by time (UTC strings sort as text). The "Now" row carries
+  // the shift start so it keeps its place right after the start anchor.
   final order = List<int>.generate(events.length, (i) => i)
     ..sort((a, b) {
-      final ea = events[a];
-      final eb = events[b];
-      if (ea.at.isEmpty || eb.at.isEmpty) return a.compareTo(b);
-      final byTime = ea.at.compareTo(eb.at);
+      final byTime = events[a].at.compareTo(events[b].at);
       return byTime != 0 ? byTime : a.compareTo(b);
     });
   final sorted = [for (final i in order) events[i]];
-  // The last row never draws a rail.
-  if (sorted.isNotEmpty) {
-    sorted[sorted.length - 1] =
-        sorted.last.copyWith(rail: RailStyle.none, railColor: Colors.transparent);
+  return _withRails(day, sorted, punchKinds);
+}
+
+enum _Phase { beforeIn, working, onBreak, afterOut }
+
+/// One pass over the sorted rows: the rail under a row shows what is
+/// happening between it and the next row, not what kind of row it is.
+List<TimelineEvent> _withRails(
+    MyDay day, List<TimelineEvent> rows, Map<TimelineEvent, String> punchKinds) {
+  final shift = day.shift;
+  final open = day.state == 'checked_in' || day.state == 'on_break';
+  final missing = displayOf(day) == MyDayDisplay.missing;
+  final hasPunch = day.punches.isNotEmpty;
+  // Everything from the current event on (the latest punch of an open day,
+  // or the "Now" row of a missing one) is still to come.
+  final currentIdx = rows.indexWhere((e) => e.current);
+  final futureFrom = (open || missing) ? currentIdx : -1;
+  final out = <TimelineEvent>[];
+  var phase = _Phase.beforeIn;
+  for (var i = 0; i < rows.length; i++) {
+    final e = rows[i];
+    final kind = punchKinds[e];
+    if (kind == 'check_in' || kind == 'break_end') phase = _Phase.working;
+    if (kind == 'break_start') phase = _Phase.onBreak;
+    if (kind == 'check_out') phase = _Phase.afterOut;
+    RailStyle rail;
+    Color color;
+    if (i == rows.length - 1) {
+      rail = RailStyle.none;
+      color = Colors.transparent;
+    } else if (futureFrom >= 0 && i >= futureFrom) {
+      rail = RailStyle.dotted;
+      color = _grey.dot;
+    } else {
+      switch (phase) {
+        case _Phase.working:
+          final overtime = shift != null &&
+              day.overtimeMinutes > 0 &&
+              e.at.compareTo(shift.end) >= 0;
+          rail = RailStyle.solid;
+          color = overtime ? MyDayColors.overtime.dot : MyDayColors.work.dot;
+        case _Phase.onBreak:
+          rail = RailStyle.dashed;
+          color = MyDayColors.brk.dot;
+        case _Phase.beforeIn:
+          if (missing) {
+            rail = RailStyle.dashed;
+            color = MyDayColors.missing.dot;
+          } else if (day.lateMinutes > 0) {
+            rail = RailStyle.dashed;
+            color = MyDayColors.late.dot;
+          } else if (hasPunch) {
+            rail = RailStyle.solid;
+            color = MyDayColors.work.dot;
+          } else {
+            rail = RailStyle.dotted;
+            color = _grey.dot;
+          }
+        case _Phase.afterOut:
+          if (day.earlyMinutes > 0) {
+            rail = RailStyle.dashed;
+            color = MyDayColors.late.dot;
+          } else {
+            rail = RailStyle.dotted;
+            color = _grey.dot;
+          }
+      }
+    }
+    out.add(e.copyWith(rail: rail, railColor: color));
   }
-  return sorted;
+  return out;
 }
 
 /// Today as a timeline with a drawn rail (spec 2026-10-06 §4.4).
 class DayTimeline extends StatelessWidget {
-  const DayTimeline({super.key, required this.day});
+  const DayTimeline({super.key, required this.day, this.now});
 
   final MyDay day;
+
+  /// Injected clock for tests; defaults to the real time.
+  final DateTime? now;
 
   static const emptyText = 'No attendance recorded today.';
 
   @override
   Widget build(BuildContext context) {
-    final events = buildTimeline(day);
+    final events = buildTimeline(day, now: now);
     final text = Theme.of(context).textTheme;
     if (events.isEmpty) {
       return Padding(
@@ -253,7 +306,7 @@ class DayTimeline extends StatelessWidget {
     final ringColor = e.upcoming ? _grey.dot : e.tone.dot;
     final tinted = e.tone != MyDayColors.work && e.tone != MyDayColors.brk && !e.upcoming;
     final titleColor = e.upcoming ? AppTheme.onSurfaceVariant : AppTheme.onSurface;
-    final timeText = e.at.isEmpty ? 'now' : DateTimeUtils.formatLocalTime(e.at);
+    final timeText = e.kind == TimelineKind.now ? 'now' : DateTimeUtils.formatLocalTime(e.at);
     return Padding(
       key: ValueKey('timeline-$index-${e.kind.name}'),
       padding: EdgeInsets.zero,
