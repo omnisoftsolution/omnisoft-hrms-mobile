@@ -79,6 +79,9 @@ String friendlyError(Object e) {
         retryAfter: (e.data?['retry_after'] as num?)?.toInt());
   }
 
+  final approval = _approvalMessage(e);
+  if (approval != null) return approval;
+
   final raw = e.toString();
 
   // --- Connectivity / transport ---
@@ -174,5 +177,62 @@ String friendlyError(Object e) {
   final stripped = raw.replaceFirst(RegExp(r'^Exception: '), '').trim();
   final looksLikeSafeCode = RegExp(r'^[a-z0-9_]{1,40}$').hasMatch(stripped);
   if (looksLikeSafeCode) return stripped;
-  return 'Something went wrong. Please try again.';
+  return _genericMessage;
+}
+
+const _genericMessage = 'Something went wrong. Please try again.';
+
+/// Leave-approval codes from `/leave/approvals/*` (and `not_owner` from
+/// `/leave/attachment/get`). Matched on the exact code, so a longer code
+/// that merely contains one of these is left to the rules below.
+String? _approvalMessage(Object e) {
+  final code = e is ApiException ? e.errorCode : e.toString();
+  final data = e is ApiException ? e.data : null;
+  switch (code) {
+    case 'not_allowed':
+      return "You can't approve this request.";
+    case 'state_changed':
+      final state = data?['state']?.toString() ?? '';
+      final by = data?['decided_by'];
+      final name = by is String ? by.trim() : '';
+      if (state == 'refuse') return 'Already refused';
+      if (state == 'cancel') return 'This request was cancelled.';
+      if (state == 'validate' || state == 'validate1') {
+        return name.isEmpty ? 'Already approved' : 'Already approved by $name';
+      }
+      return 'This request has changed. Pull down to refresh.';
+    case 'reason_required':
+      final min = (data?['min'] as num?)?.toInt() ?? 3;
+      final max = (data?['max'] as num?)?.toInt() ?? 500;
+      return 'Write a reason of $min to $max characters.';
+    case 'not_found':
+      return 'This request no longer exists.';
+    case 'not_owner':
+      return "You don't have access to this file.";
+  }
+  return null;
+}
+
+/// Text for the dialog after a failed approve or refuse. When Odoo
+/// refused the change with a validation message, the connector passes
+/// that sentence through as the error code; it is shown as it is, ahead
+/// of the app's keyword rules (a sentence mentioning "overlap" must not
+/// become employee wording), because it tells the approver what to fix.
+/// Only an [ApiException] qualifies (its text came from a JSON body,
+/// never from a raw network exception), and anything that looks like a
+/// URL or a query string falls through to [friendlyError]. Mapped codes
+/// are single tokens without spaces, so they keep their own text.
+String friendlyDecisionError(Object e) {
+  if (e is ApiException) {
+    final raw = e.errorCode.trim();
+    // 'Unknown error' is ApiException.fromBody's default when the body
+    // has no `error` key; it is not a sentence from Odoo.
+    final safe = raw.contains(' ') &&
+        raw != 'Unknown error' &&
+        raw.length <= 300 &&
+        !raw.contains('://') &&
+        !raw.contains('=');
+    if (safe) return raw;
+  }
+  return friendlyError(e);
 }

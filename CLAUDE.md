@@ -159,3 +159,28 @@ iOS is still-frame-only for spoof texture (multi-frame raw-bytes P1.1 open, per 
   sent as `new_login` only when changed (`normalizeAppLogin` in
   `lib/core/app_login.dart` decides "changed"). Face ID is always keyed to the
   server's `user.login`, never to typed text.
+
+## Leave approvals (connector >= 2.43.0)
+- Capability comes from `/me` → `leave_approvals: {enabled, pending_count}`, stored as
+  `SessionService.leaveApprovalsEnabled` / `leaveApprovalsPendingCount` (prefs
+  `leave_approvals_enabled`, `leave_approvals_pending_count`; cleared by `clearSession()`).
+  A `/me` without the key (older connector) means disabled: every entry point stays hidden.
+  Re-pull with `SessionService.refreshMe()`; it is called on Home refresh, after every
+  decision, and when a `leave_approval_requested` notification arrives.
+- Screens in lib/screens/approvals/: `ApprovalsScreen` (Pending / Recent),
+  `ApprovalDetailScreen` (Approve / Refuse), `showRefuseReasonSheet` (reason 3 to 500
+  characters, root navigator). Entry points: `ApprovalsHomeCard` at the top of the classic Home (shown even when Attendance is off),
+  and `HomeShellState.navigateToApproval(leaveId)` for notifications.
+- The app never decides who may act: buttons follow the connector's `can_approve` /
+  `can_refuse`, and approve/refuse send `expected_state` so a request someone else already
+  decided comes back as `state_changed`.
+- Error text for `not_allowed`, `state_changed`, `reason_required`, `not_found`, `not_owner`
+  lives in lib/core/error_messages.dart; `friendlyDecisionError` additionally shows an Odoo
+  validation sentence as it is.
+- Test seams: `apiBuilder` on `ApprovalsScreen` and `ApprovalDetailScreen`
+  (`(SessionService) -> OmniMobileApi`, fake-subclass pattern); tests override
+  `SessionService.refreshMe()` in a subclass to count refreshes;
+  test/services/approvals_api_test.dart drives the real `_post` through
+  `http.runWithClient` + `MockClient`.
+- Known gap: `/leave/attachment/get` answers `not_owner` for anyone but the leave's own
+  employee until connector 2.50.0; an approver cannot open an attachment yet.
