@@ -20,9 +20,14 @@ final _onTime = [
   _p('break_end', '2026-10-05 03:45:00'),
 ];
 
+// Fixed clocks so nothing depends on the wall clock: mid-morning of an
+// open day, and after the shift end for a finished one.
+final _open = DateTime.utc(2026, 10, 5, 4, 24);
+final _done = DateTime.utc(2026, 10, 5, 11, 0);
+
 void main() {
   test('on time: anchors, punches, planned lunch, rail segments', () {
-    final ev = buildTimeline(sampleMyDay(punches: _onTime));
+    final ev = buildTimeline(sampleMyDay(punches: _onTime), now: _open);
     expect(ev.map((e) => e.title),
         ['Shift starts', 'Check in', 'Break start', 'Break end', 'Lunch', 'Shift ends']);
     expect(ev[0].kind, TimelineKind.anchor);
@@ -41,7 +46,8 @@ void main() {
 
   test('late check-in: amber tone, badge, amber dashed rail under the start', () {
     final ev = buildTimeline(sampleMyDay(
-        lateMinutes: 17, punches: [_p('check_in', '2026-10-05 01:17:00')]));
+        lateMinutes: 17, punches: [_p('check_in', '2026-10-05 01:17:00')]),
+        now: _open);
     expect(ev[0].rail, RailStyle.dashed);
     expect(ev[0].railColor, MyDayColors.late.dot);
     expect(ev[1].tone, MyDayColors.late);
@@ -52,7 +58,7 @@ void main() {
     final ot = buildTimeline(sampleMyDay(state: 'checked_out', overtimeMinutes: 42, punches: [
       _p('check_in', '2026-10-05 01:02:00'),
       _p('check_out', '2026-10-05 10:42:00'),
-    ]));
+    ]), now: _done);
     expect(ot.last.title, 'Check out');
     expect(ot.last.badge, '42 min overtime');
     expect(ot[ot.length - 2].title, 'Shift ends');
@@ -62,7 +68,7 @@ void main() {
     final early = buildTimeline(sampleMyDay(state: 'checked_out', earlyMinutes: 50, punches: [
       _p('check_in', '2026-10-05 01:02:00'),
       _p('check_out', '2026-10-05 09:10:00'),
-    ]));
+    ]), now: _done);
     final out = early.firstWhere((e) => e.title == 'Check out');
     expect(out.badge, '50 min early');
     expect(out.rail, RailStyle.dashed);
@@ -71,7 +77,7 @@ void main() {
   });
 
   test('missing: red start, Now row, lunch, end', () {
-    final ev = buildTimeline(sampleMyDay(state: 'not_in', missing: true, punches: []));
+    final ev = buildTimeline(sampleMyDay(state: 'not_in', missing: true, punches: []), now: _open);
     expect(ev.map((e) => e.title), ['Shift starts', 'Now', 'Lunch', 'Shift ends']);
     expect(ev[0].badge, 'Missing');
     expect(ev[0].rail, RailStyle.dashed);
@@ -86,18 +92,20 @@ void main() {
       _p('break_start', '2026-10-05 05:05:00'),
       _p('break_end', '2026-10-05 05:50:00'),
     ];
-    expect(buildTimeline(sampleMyDay(punches: punchedLunch)).any((e) => e.kind == TimelineKind.lunch),
+    expect(
+        buildTimeline(sampleMyDay(punches: punchedLunch), now: _open)
+            .any((e) => e.kind == TimelineKind.lunch),
         isFalse);
     final done = sampleMyDay(state: 'checked_out', punches: [
       _p('check_in', '2026-10-05 01:02:00'),
       _p('check_out', '2026-10-05 10:02:00'),
     ]);
-    expect(buildTimeline(done).any((e) => e.kind == TimelineKind.lunch), isFalse);
+    expect(buildTimeline(done, now: _done).any((e) => e.kind == TimelineKind.lunch), isFalse);
     final exempt = sampleMyDay(state: 'checked_out', breakExempt: true, punches: [
       _p('check_in', '2026-10-05 01:02:00'),
       _p('check_out', '2026-10-05 10:02:00'),
     ]);
-    expect(buildTimeline(exempt).any((e) => e.kind == TimelineKind.lunch), isTrue);
+    expect(buildTimeline(exempt, now: _done).any((e) => e.kind == TimelineKind.lunch), isTrue);
   });
 
   test('finished ordinary day: the rail has no gap down to the last row', () {
@@ -106,7 +114,7 @@ void main() {
       _p('break_start', '2026-10-05 05:05:00'),
       _p('break_end', '2026-10-05 05:50:00'),
       _p('check_out', '2026-10-05 10:02:00'),
-    ]));
+    ]), now: _done);
     expect(ev.map((e) => e.title),
         ['Shift starts', 'Check in', 'Break start', 'Break end', 'Shift ends', 'Check out']);
     final ends = ev.firstWhere((e) => e.title == 'Shift ends');
@@ -120,7 +128,7 @@ void main() {
       _p('check_in', '2026-10-05 01:17:00'),
       _p('check_out', '2026-10-05 04:00:00'),
       _p('check_in', '2026-10-05 06:00:00'),
-    ]));
+    ]), now: _open);
     final ins = ev.where((e) => e.title == 'Check in').toList();
     expect(ins.length, 2);
     expect(ins[0].badge, '17 min late');
@@ -154,7 +162,7 @@ void main() {
     final ev = buildTimeline(sampleMyDay(state: 'checked_out', breakExempt: true, punches: [
       _p('check_in', '2026-10-05 01:02:00'),
       _p('check_out', '2026-10-05 10:02:00'),
-    ]));
+    ]), now: _done);
     final lunch = ev.firstWhere((e) => e.kind == TimelineKind.lunch);
     expect(lunch.rail, RailStyle.solid);
     expect(lunch.railColor, MyDayColors.work.dot);
@@ -164,7 +172,7 @@ void main() {
     final ev = buildTimeline(sampleMyDay(state: 'checked_out', punches: [
       _p('check_in', '2026-10-05 01:02:00'),
       _p('check_out', '2026-10-05 09:55:00'),
-    ]));
+    ]), now: _done);
     expect(ev.map((e) => e.title),
         ['Shift starts', 'Check in', 'Check out', 'Shift ends']);
     final out = ev.firstWhere((e) => e.title == 'Check out');
@@ -181,6 +189,53 @@ void main() {
     expect(after.upcoming, isFalse);
     expect(after.sub, 'Check out at the kiosk');
     expect(after.tone, MyDayColors.work);
+  });
+
+  test('a check-out exactly at the shift end sorts after the Shift ends anchor, no rail gap', () {
+    final ev = buildTimeline(
+        sampleMyDay(state: 'checked_out', overtimeMinutes: 0, punches: [
+          _p('check_in', '2026-10-05 01:02:00'),
+          _p('check_out', '2026-10-05 10:00:00'),
+        ]),
+        now: _done);
+    expect(ev.map((e) => e.title), ['Shift starts', 'Check in', 'Shift ends', 'Check out']);
+    final ends = ev[ev.length - 2];
+    expect(ends.rail, RailStyle.solid);
+    expect(ends.railColor, MyDayColors.work.dot);
+    expect(ev.last.rail, RailStyle.none);
+    expect(ev.where((e) => e.rail == RailStyle.none).toList(), [ev.last]);
+  });
+
+  test('night shift: a carried punch from the day before sorts first and keeps a dotted rail', () {
+    final ev = buildTimeline(
+        sampleMyDay(punches: [_p('check_in', '2026-10-04 15:00:00')]),
+        now: _open);
+    expect(ev.first.title, 'Check in');
+    expect(ev[1].title, 'Shift starts');
+    expect(ev.first.current, isTrue);
+    expect(ev.every((e) => e.rail == RailStyle.dotted || e.rail == RailStyle.none), isTrue);
+    expect(ev.last.rail, RailStyle.none);
+    expect(ev.take(ev.length - 1).every((e) => e.rail == RailStyle.dotted), isTrue);
+  });
+
+  test('a carried punch still yields rows when there is no shift', () {
+    final ev = buildTimeline(
+        sampleMyDay(withShift: false, punches: [_p('check_in', '2026-10-04 15:00:00')]),
+        now: _open);
+    expect(ev, isNotEmpty);
+    expect(ev.first.title, 'Check in');
+    expect(ev.any((e) => e.kind == TimelineKind.anchor), isFalse);
+  });
+
+  test('no shift but punches present: punch rows only, no anchors', () {
+    final ev = buildTimeline(
+        sampleMyDay(withShift: false, state: 'checked_out', punches: [
+          _p('check_in', '2026-10-05 01:02:00'),
+          _p('check_out', '2026-10-05 09:00:00'),
+        ]),
+        now: _done);
+    expect(ev.map((e) => e.title), ['Check in', 'Check out']);
+    expect(ev.any((e) => e.kind == TimelineKind.anchor), isFalse);
   });
 
   test('no shift and no punches: nothing', () {

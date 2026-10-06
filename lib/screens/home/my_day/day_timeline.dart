@@ -11,7 +11,9 @@ enum TimelineKind { anchor, punch, lunch, now }
 enum RailStyle { solid, dashed, dotted, none }
 
 class TimelineEvent {
-  const TimelineEvent({
+  // Not const: the default rail colour reads a field of a const object,
+  // which is not a constant expression.
+  TimelineEvent({
     required this.at,
     required this.title,
     required this.sub,
@@ -19,10 +21,10 @@ class TimelineEvent {
     required this.tone,
     this.badge = '',
     this.rail = RailStyle.dotted,
-    this.railColor = const Color(0xFFBCC9CA),
+    Color? railColor,
     this.current = false,
     this.upcoming = false,
-  });
+  }) : railColor = railColor ?? MyDayColors.waiting.dot;
 
   /// UTC "yyyy-MM-dd HH:mm:ss".
   final String at;
@@ -181,12 +183,17 @@ List<TimelineEvent> buildTimeline(MyDay day, {DateTime? now}) {
     ));
   }
 
-  // Stable sort by time (UTC strings sort as text). The "Now" row carries
+  // Stable sort by time (UTC strings sort as text), then anchors before
+  // everything else (a check-out exactly at the shift end reads "Shift
+  // ends" then "Check out"), then insertion order. The "Now" row carries
   // the shift start so it keeps its place right after the start anchor.
+  int rank(TimelineEvent e) => e.kind == TimelineKind.anchor ? 0 : 1;
   final order = List<int>.generate(events.length, (i) => i)
     ..sort((a, b) {
       final byTime = events[a].at.compareTo(events[b].at);
-      return byTime != 0 ? byTime : a.compareTo(b);
+      if (byTime != 0) return byTime;
+      final byRank = rank(events[a]).compareTo(rank(events[b]));
+      return byRank != 0 ? byRank : a.compareTo(b);
     });
   final sorted = [for (final i in order) events[i]];
   return _withRails(day, sorted, punchKinds);
