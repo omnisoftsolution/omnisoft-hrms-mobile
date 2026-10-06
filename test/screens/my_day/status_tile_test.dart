@@ -8,11 +8,16 @@ import '../../fixtures/my_day_fixture.dart';
 
 final _now = DateTime.utc(2026, 10, 5, 4, 24);
 
-Widget _host(MyDay day) =>
-    MaterialApp(home: Scaffold(body: StatusTile(day: day, now: _now)));
+Widget _host(MyDay day) => MaterialApp(
+  home: Scaffold(
+    body: StatusTile(day: day, now: _now),
+  ),
+);
 
 Color _fill(WidgetTester tester) {
-  final box = tester.widget<Container>(find.byKey(const ValueKey('status-tile')));
+  final box = tester.widget<Container>(
+    find.byKey(const ValueKey('status-tile')),
+  );
   return (box.decoration as BoxDecoration).color!;
 }
 
@@ -31,10 +36,14 @@ void main() {
     await tester.pumpWidget(_host(sampleMyDay(lateMinutes: 17)));
     expect(find.text('Checked in late'), findsOneWidget);
     expect(_fill(tester), MyDayColors.late.fill);
-    await tester.pumpWidget(_host(sampleMyDay(state: 'not_in', missing: true, punches: [])));
+    await tester.pumpWidget(
+      _host(sampleMyDay(state: 'not_in', missing: true, punches: [])),
+    );
     expect(find.text('No check-in'), findsOneWidget);
     expect(_fill(tester), MyDayColors.missing.fill);
-    await tester.pumpWidget(_host(sampleMyDay(state: 'checked_out', overtimeMinutes: 42)));
+    await tester.pumpWidget(
+      _host(sampleMyDay(state: 'checked_out', overtimeMinutes: 42)),
+    );
     expect(find.text('Done for today'), findsOneWidget);
     expect(find.text('Overtime'), findsOneWidget);
     expect(find.text('42 min'), findsOneWidget);
@@ -42,16 +51,31 @@ void main() {
   });
 
   testWidgets('left early shows the short figure', (tester) async {
-    await tester.pumpWidget(_host(sampleMyDay(state: 'checked_out', earlyMinutes: 50)));
+    await tester.pumpWidget(
+      _host(sampleMyDay(state: 'checked_out', earlyMinutes: 50)),
+    );
     expect(find.text('Left early'), findsOneWidget);
     expect(find.text('Short'), findsOneWidget);
     expect(find.text('50 min'), findsOneWidget);
   });
 
   testWidgets('leave: days away and back on', (tester) async {
-    await tester.pumpWidget(_host(sampleMyDay(withShift: false, state: 'not_in', punches: [],
-        off: {'kind': 'leave', 'name': 'Annual leave', 'date_from': '2026-10-05',
-              'date_to': '2026-10-06', 'back_on': '2026-10-08'})));
+    await tester.pumpWidget(
+      _host(
+        sampleMyDay(
+          withShift: false,
+          state: 'not_in',
+          punches: [],
+          off: {
+            'kind': 'leave',
+            'name': 'Annual leave',
+            'date_from': '2026-10-05',
+            'date_to': '2026-10-06',
+            'back_on': '2026-10-08',
+          },
+        ),
+      ),
+    );
     expect(find.text('On leave'), findsOneWidget);
     expect(find.text('Away'), findsOneWidget);
     expect(find.text('2 days'), findsOneWidget);
@@ -60,8 +84,16 @@ void main() {
   });
 
   testWidgets('holiday and day off show the next shift', (tester) async {
-    await tester.pumpWidget(_host(sampleMyDay(withShift: false, state: 'not_in', punches: [],
-        off: {'kind': 'public_holiday', 'name': 'Deepavali'})));
+    await tester.pumpWidget(
+      _host(
+        sampleMyDay(
+          withShift: false,
+          state: 'not_in',
+          punches: [],
+          off: {'kind': 'public_holiday', 'name': 'Deepavali'},
+        ),
+      ),
+    );
     expect(find.text('Public holiday'), findsOneWidget);
     expect(find.text('Deepavali'), findsOneWidget);
     expect(find.text('Next shift'), findsOneWidget);

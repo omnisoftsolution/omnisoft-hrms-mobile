@@ -53,33 +53,71 @@ class WeekStrip extends StatelessWidget {
   _Cell _cell(MyDayWeekDay d, MyDayTone today) {
     switch (d.kind) {
       case 'today':
-        return _Cell(day: d, fill: today.tint, ring: today.dot, text: today.onTint,
-            mark: _Mark.dot, markColor: today.dot);
+        return _Cell(
+          day: d,
+          fill: today.tint,
+          ring: today.dot,
+          text: today.onTint,
+          mark: _Mark.dot,
+          markColor: today.dot,
+        );
       case 'worked':
         final late = d.verdict == 'late' || d.verdict == 'early_leave';
-        return _Cell(day: d, fill: MyDayColors.work.tint, ring: Colors.transparent,
-            text: MyDayColors.work.onTint, mark: _Mark.dot,
-            markColor: late ? MyDayColors.late.dot : MyDayColors.work.dot);
+        return _Cell(
+          day: d,
+          fill: MyDayColors.work.tint,
+          ring: Colors.transparent,
+          text: MyDayColors.work.onTint,
+          mark: _Mark.dot,
+          markColor: late ? MyDayColors.late.dot : MyDayColors.work.dot,
+        );
       case 'absent':
-        return _Cell(day: d, fill: MyDayColors.missing.tint, ring: Colors.transparent,
-            text: MyDayColors.missing.onTint, mark: _Mark.dot,
-            markColor: MyDayColors.missing.dot);
+        return _Cell(
+          day: d,
+          fill: MyDayColors.missing.tint,
+          ring: Colors.transparent,
+          text: MyDayColors.missing.onTint,
+          mark: _Mark.dot,
+          markColor: MyDayColors.missing.dot,
+        );
       case 'public_holiday':
-        return _Cell(day: d, fill: MyDayColors.holiday.tint, ring: Colors.transparent,
-            text: MyDayColors.holiday.onTint, mark: _Mark.star,
-            markColor: MyDayColors.holiday.dot);
+        return _Cell(
+          day: d,
+          fill: MyDayColors.holiday.tint,
+          ring: Colors.transparent,
+          text: MyDayColors.holiday.onTint,
+          mark: _Mark.star,
+          markColor: MyDayColors.holiday.dot,
+        );
       case 'leave':
-        return _Cell(day: d, fill: MyDayColors.leave.tint, ring: Colors.transparent,
-            text: MyDayColors.leave.onTint, mark: _Mark.calendar,
-            markColor: MyDayColors.leave.dot);
+        return _Cell(
+          day: d,
+          fill: MyDayColors.leave.tint,
+          ring: Colors.transparent,
+          text: MyDayColors.leave.onTint,
+          mark: _Mark.calendar,
+          markColor: MyDayColors.leave.dot,
+        );
       case 'scheduled':
-        return _Cell(day: d, fill: Colors.white, ring: Colors.transparent,
-            text: AppTheme.onSurfaceVariant, mark: _Mark.dot,
-            markColor: MyDayColors.waiting.dot, hollow: true);
+        return _Cell(
+          day: d,
+          fill: Colors.white,
+          ring: Colors.transparent,
+          text: AppTheme.onSurfaceVariant,
+          mark: _Mark.dot,
+          markColor: MyDayColors.waiting.dot,
+          hollow: true,
+        );
       default:
-        return _Cell(day: d, fill: Colors.transparent, ring: Colors.transparent,
-            text: AppTheme.outline, mark: _Mark.dot,
-            markColor: AppTheme.outlineVariant, hollow: true);
+        return _Cell(
+          day: d,
+          fill: Colors.transparent,
+          ring: Colors.transparent,
+          text: AppTheme.outline,
+          mark: _Mark.dot,
+          markColor: AppTheme.outlineVariant,
+          hollow: true,
+        );
     }
   }
 
@@ -93,7 +131,8 @@ class WeekStrip extends StatelessWidget {
       for (final d in day.week)
         if (d.kind == 'public_holiday' || d.kind == 'leave')
           (
-            text: '${_dayName(d.date)} · ${d.name.isEmpty ? (d.kind == 'leave' ? 'Leave' : 'Public holiday') : d.name}',
+            text:
+                '${_dayName(d.date)} · ${d.name.isEmpty ? (d.kind == 'leave' ? 'Leave' : 'Public holiday') : d.name}',
             tone: d.kind == 'leave' ? MyDayColors.leave : MyDayColors.holiday,
             icon: d.kind == 'leave' ? Icons.event_outlined : Icons.star_outline,
           ),
@@ -104,12 +143,18 @@ class WeekStrip extends StatelessWidget {
         Row(
           children: [
             Expanded(
-              child: Text('This week',
-                  style: text.labelLarge?.copyWith(
-                      color: AppTheme.onSurfaceVariant, fontWeight: FontWeight.w700)),
+              child: Text(
+                'This week',
+                style: text.labelLarge?.copyWith(
+                  color: AppTheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
             ),
-            Text(workedSoFar(day),
-                style: text.bodySmall?.copyWith(color: AppTheme.outline)),
+            Text(
+              workedSoFar(day),
+              style: text.bodySmall?.copyWith(color: AppTheme.outline),
+            ),
           ],
         ),
         const SizedBox(height: 8),
@@ -129,7 +174,10 @@ class WeekStrip extends StatelessWidget {
             children: [
               for (final item in legend)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: item.tone.tint,
                     borderRadius: BorderRadius.circular(999),
@@ -139,9 +187,13 @@ class WeekStrip extends StatelessWidget {
                     children: [
                       Icon(item.icon, size: 13, color: item.tone.onTint),
                       const SizedBox(width: 6),
-                      Text(item.text,
-                          style: text.labelMedium?.copyWith(
-                              color: item.tone.onTint, fontWeight: FontWeight.w600)),
+                      Text(
+                        item.text,
+                        style: text.labelMedium?.copyWith(
+                          color: item.tone.onTint,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -184,9 +236,13 @@ class WeekStrip extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text(_dayName(cell.day.date),
-              style: text.labelMedium
-                  ?.copyWith(color: cell.text, fontWeight: FontWeight.w600)),
+          Text(
+            _dayName(cell.day.date),
+            style: text.labelMedium?.copyWith(
+              color: cell.text,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
           const SizedBox(height: 6),
           mark,
         ],

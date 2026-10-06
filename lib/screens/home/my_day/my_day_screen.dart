@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/error_messages.dart';
@@ -17,6 +18,7 @@ import '../../payroll/payslips_screen.dart';
 import 'day_timeline.dart';
 import 'for_you_list.dart';
 import 'status_tile.dart';
+import 'week_strip.dart';
 
 /// The Home tab for employees whose attendance is kiosk-only (spec
 /// 2026-10-05 §5.3): a fixed Today card, the day's timeline and a short
@@ -271,17 +273,86 @@ class MyDayScreenState extends State<MyDayScreen> {
                 16 + MediaQuery.of(context).viewPadding.bottom,
               ),
               children: [
-                Text('Timeline', style: sectionStyle),
-                DayTimeline(day: day),
-                const SizedBox(height: 16),
+                if (day.week.isNotEmpty) ...[
+                  WeekStrip(day: day),
+                  const SizedBox(height: 20),
+                ],
+                if (day.off == null || day.punches.isNotEmpty) ...[
+                  Text('Timeline', style: sectionStyle),
+                  const SizedBox(height: 8),
+                  DayTimeline(day: day),
+                  const SizedBox(height: 16),
+                ] else ...[
+                  _offCard(context, day),
+                  const SizedBox(height: 16),
+                ],
                 Text('For you', style: sectionStyle),
                 const SizedBox(height: 8),
-                ForYouList(items: day.forYou, onTap: _onTap),
+                ForYouList(
+                  items: day.forYou,
+                  onTap: _onTap,
+                  missing: day.missing,
+                  onMissingTap: () => showKioskSheet(context),
+                ),
               ],
             ),
           ),
         ),
       ],
+    );
+  }
+
+  static String _shortDate(String value) {
+    final date = DateTime.tryParse(value);
+    return date == null ? value : DateFormat('d MMM', 'en_US').format(date);
+  }
+
+  /// Holiday / leave / day-off facts in place of the timeline (spec §4.4).
+  Widget _offCard(BuildContext context, MyDay day) {
+    final text = Theme.of(context).textTheme;
+    final off = day.off!;
+    final next = day.nextShift;
+    final String title;
+    final String line1;
+    switch (off.kind) {
+      case 'public_holiday':
+        title = off.name.isEmpty ? 'Public holiday' : off.name;
+        line1 = 'Nothing is expected at the kiosk today';
+      case 'leave':
+        title = off.name.isEmpty ? 'On leave' : off.name;
+        line1 = off.dateFrom.isEmpty
+            ? 'Approved time off'
+            : 'From ${_shortDate(off.dateFrom)} to ${_shortDate(off.dateTo)}';
+      default:
+        title = 'Enjoy your day';
+        line1 = 'Nothing is expected at the kiosk today';
+    }
+    final line2 = next == null
+        ? 'No shift in the next two weeks'
+        : 'Next shift ${_shortDate(next.date)} · ${next.label}';
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              line1,
+              style: text.bodySmall?.copyWith(color: AppTheme.outline),
+            ),
+            Text(
+              line2,
+              style: text.bodySmall?.copyWith(color: AppTheme.outline),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

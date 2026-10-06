@@ -81,8 +81,7 @@ String forYouSubtitle(ForYouItem item, {DateTime? now}) {
       }
     case 'my_expense':
       final amount = NumberFormat('#,##0.##', 'en_US').format(item.amount);
-      final money =
-          item.currency.isEmpty ? amount : '${item.currency} $amount';
+      final money = item.currency.isEmpty ? amount : '${item.currency} $amount';
       return '${_expenseStateLabel(item.state)} · $money';
     case 'payslip':
       return 'Tap to view';
@@ -154,8 +153,10 @@ class ForYouList extends StatelessWidget {
     if (known.isEmpty && !missing) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 16),
-        child: Text(emptyText,
-            style: text.bodyMedium?.copyWith(color: AppTheme.outline)),
+        child: Text(
+          emptyText,
+          style: text.bodyMedium?.copyWith(color: AppTheme.outline),
+        ),
       );
     }
     return Column(
@@ -166,15 +167,27 @@ class ForYouList extends StatelessWidget {
             color: MyDayColors.missing.tint,
             child: ListTile(
               key: const ValueKey('for-you-missing'),
-              leading: _tile(const ValueKey('for-you-tile-missing'),
-                  Icons.error_outline, MyDayColors.missing, inverted: true),
-              title: Text('No check-in recorded today',
-                  style: TextStyle(
-                      color: MyDayColors.missing.onTint,
-                      fontWeight: FontWeight.w600)),
-              subtitle: Text('Tell HR if you are at work',
-                  style: TextStyle(color: MyDayColors.missing.onTint)),
-              trailing: Icon(Icons.chevron_right, color: MyDayColors.missing.onTint),
+              leading: _tile(
+                const ValueKey('for-you-tile-missing'),
+                Icons.error_outline,
+                MyDayColors.missing,
+                inverted: true,
+              ),
+              title: Text(
+                'No check-in recorded today',
+                style: TextStyle(
+                  color: MyDayColors.missing.onTint,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              subtitle: Text(
+                'Tell HR if you are at work',
+                style: TextStyle(color: MyDayColors.missing.onTint),
+              ),
+              trailing: Icon(
+                Icons.chevron_right,
+                color: MyDayColors.missing.onTint,
+              ),
               onTap: onMissingTap,
             ),
           ),
@@ -183,11 +196,17 @@ class ForYouList extends StatelessWidget {
             margin: const EdgeInsets.only(bottom: 8),
             child: ListTile(
               key: ValueKey('for-you-${item.kind}-${item.id}'),
-              leading: _tile(ValueKey('for-you-tile-${item.kind}-${item.id}'),
-                  _icon(item.kind), _tone(item.kind)),
+              leading: _tile(
+                ValueKey('for-you-tile-${item.kind}-${item.id}'),
+                _icon(item.kind),
+                _tone(item.kind),
+              ),
               title: Text(forYouTitle(item)),
               subtitle: Text(forYouSubtitle(item)),
-              trailing: const Icon(Icons.chevron_right, color: AppTheme.outline),
+              trailing: const Icon(
+                Icons.chevron_right,
+                color: AppTheme.outline,
+              ),
               onTap: () => onTap(item),
             ),
           ),

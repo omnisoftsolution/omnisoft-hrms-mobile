@@ -43,10 +43,17 @@ class TimelineEvent {
   final bool upcoming;
 
   TimelineEvent copyWith({RailStyle? rail, Color? railColor}) => TimelineEvent(
-        at: at, title: title, sub: sub, badge: badge, kind: kind, tone: tone,
-        rail: rail ?? this.rail, railColor: railColor ?? this.railColor,
-        current: current, upcoming: upcoming,
-      );
+    at: at,
+    title: title,
+    sub: sub,
+    badge: badge,
+    kind: kind,
+    tone: tone,
+    rail: rail ?? this.rail,
+    railColor: railColor ?? this.railColor,
+    current: current,
+    upcoming: upcoming,
+  );
 }
 
 const _grey = MyDayColors.waiting;
@@ -70,26 +77,32 @@ List<TimelineEvent> buildTimeline(MyDay day, {DateTime? now}) {
 
   if (shift != null) {
     final missing = display == MyDayDisplay.missing;
-    events.add(TimelineEvent(
-      at: shift.start,
-      title: 'Shift starts',
-      sub: missing
-          ? 'No kiosk check-in yet'
-          : (punches.isEmpty ? 'Check in at the kiosk' : shift.blocksLabel),
-      kind: TimelineKind.anchor,
-      tone: missing ? MyDayColors.missing : (punches.isEmpty ? _grey : MyDayColors.work),
-      badge: missing ? 'Missing' : '',
-      upcoming: punches.isEmpty && !missing,
-    ));
-    if (missing) {
-      events.add(TimelineEvent(
+    events.add(
+      TimelineEvent(
         at: shift.start,
-        title: 'Now',
-        sub: 'If you are at work, check in at the kiosk',
-        kind: TimelineKind.now,
-        tone: MyDayColors.missing,
-        current: true,
-      ));
+        title: 'Shift starts',
+        sub: missing
+            ? 'No kiosk check-in yet'
+            : (punches.isEmpty ? 'Check in at the kiosk' : shift.blocksLabel),
+        kind: TimelineKind.anchor,
+        tone: missing
+            ? MyDayColors.missing
+            : (punches.isEmpty ? _grey : MyDayColors.work),
+        badge: missing ? 'Missing' : '',
+        upcoming: punches.isEmpty && !missing,
+      ),
+    );
+    if (missing) {
+      events.add(
+        TimelineEvent(
+          at: shift.start,
+          title: 'Now',
+          sub: 'If you are at work, check in at the kiosk',
+          kind: TimelineKind.now,
+          tone: MyDayColors.missing,
+          current: true,
+        ),
+      );
     }
   }
 
@@ -120,7 +133,9 @@ List<TimelineEvent> buildTimeline(MyDay day, {DateTime? now}) {
     }
     if (p.kind == 'break_start' && last && day.state == 'on_break') {
       final started = DateTimeUtils.parseOdooUtc(p.at);
-      final minutes = started == null ? 0 : nowUtc.difference(started).inMinutes;
+      final minutes = started == null
+          ? 0
+          : nowUtc.difference(started).inMinutes;
       badge = '${minutesLabel(minutes < 0 ? 0 : minutes)} so far';
     }
     final event = TimelineEvent(
@@ -156,31 +171,36 @@ List<TimelineEvent> buildTimeline(MyDay day, {DateTime? now}) {
     }
     final dayOver = day.state == 'checked_out' && !day.breakExempt;
     if (!punchedOver && !dayOver) {
-      events.add(TimelineEvent(
-        at: lunch.start,
-        title: 'Lunch',
-        sub: '${lunch.label} · from your work schedule',
-        kind: TimelineKind.lunch,
-        tone: _grey,
-        upcoming: true,
-      ));
+      events.add(
+        TimelineEvent(
+          at: lunch.start,
+          title: 'Lunch',
+          sub: '${lunch.label} · from your work schedule',
+          kind: TimelineKind.lunch,
+          tone: _grey,
+          upcoming: true,
+        ),
+      );
     }
   }
 
   if (shift != null) {
     final shiftEnd = DateTimeUtils.parseOdooUtc(shift.end);
-    final passed = (day.state == 'checked_out' && day.earlyMinutes == 0) ||
+    final passed =
+        (day.state == 'checked_out' && day.earlyMinutes == 0) ||
         (shiftEnd != null && !nowUtc.isBefore(shiftEnd));
-    events.add(TimelineEvent(
-      at: shift.end,
-      title: 'Shift ends',
-      sub: display == MyDayDisplay.early
-          ? 'Coming back? This counts as a break.'
-          : (passed && !open ? shift.label : 'Check out at the kiosk'),
-      kind: TimelineKind.anchor,
-      tone: passed ? MyDayColors.work : _grey,
-      upcoming: !passed,
-    ));
+    events.add(
+      TimelineEvent(
+        at: shift.end,
+        title: 'Shift ends',
+        sub: display == MyDayDisplay.early
+            ? 'Coming back? This counts as a break.'
+            : (passed && !open ? shift.label : 'Check out at the kiosk'),
+        kind: TimelineKind.anchor,
+        tone: passed ? MyDayColors.work : _grey,
+        upcoming: !passed,
+      ),
+    );
   }
 
   // Stable sort by time (UTC strings sort as text), then anchors before
@@ -204,7 +224,10 @@ enum _Phase { beforeIn, working, onBreak, afterOut }
 /// One pass over the sorted rows: the rail under a row shows what is
 /// happening between it and the next row, not what kind of row it is.
 List<TimelineEvent> _withRails(
-    MyDay day, List<TimelineEvent> rows, Map<TimelineEvent, String> punchKinds) {
+  MyDay day,
+  List<TimelineEvent> rows,
+  Map<TimelineEvent, String> punchKinds,
+) {
   final shift = day.shift;
   final open = day.state == 'checked_in' || day.state == 'on_break';
   final missing = displayOf(day) == MyDayDisplay.missing;
@@ -232,7 +255,8 @@ List<TimelineEvent> _withRails(
     } else {
       switch (phase) {
         case _Phase.working:
-          final overtime = shift != null &&
+          final overtime =
+              shift != null &&
               day.overtimeMinutes > 0 &&
               e.at.compareTo(shift.end) >= 0;
           rail = RailStyle.solid;
@@ -287,11 +311,16 @@ class DayTimeline extends StatelessWidget {
     if (events.isEmpty) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 16),
-        child: Text(emptyText, style: text.bodyMedium?.copyWith(color: AppTheme.outline)),
+        child: Text(
+          emptyText,
+          style: text.bodyMedium?.copyWith(color: AppTheme.outline),
+        ),
       );
     }
     return Column(
-      children: [for (var i = 0; i < events.length; i++) _row(text, i, events[i])],
+      children: [
+        for (var i = 0; i < events.length; i++) _row(text, i, events[i]),
+      ],
     );
   }
 
@@ -311,9 +340,14 @@ class DayTimeline extends StatelessWidget {
   Widget _row(TextTheme text, int index, TimelineEvent e) {
     final filled = e.kind == TimelineKind.punch && !e.upcoming;
     final ringColor = e.upcoming ? _grey.dot : e.tone.dot;
-    final tinted = e.tone != MyDayColors.work && e.tone != MyDayColors.brk && !e.upcoming;
-    final titleColor = e.upcoming ? AppTheme.onSurfaceVariant : AppTheme.onSurface;
-    final timeText = e.kind == TimelineKind.now ? 'now' : DateTimeUtils.formatLocalTime(e.at);
+    final tinted =
+        e.tone != MyDayColors.work && e.tone != MyDayColors.brk && !e.upcoming;
+    final titleColor = e.upcoming
+        ? AppTheme.onSurfaceVariant
+        : AppTheme.onSurface;
+    final timeText = e.kind == TimelineKind.now
+        ? 'now'
+        : DateTimeUtils.formatLocalTime(e.at);
     return Padding(
       key: ValueKey('timeline-$index-${e.kind.name}'),
       padding: EdgeInsets.zero,
@@ -333,11 +367,14 @@ class DayTimeline extends StatelessWidget {
                     color: tinted ? e.tone.tint : Colors.transparent,
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Text(timeText,
-                      textAlign: TextAlign.center,
-                      style: text.labelMedium?.copyWith(
-                          color: tinted ? e.tone.onTint : titleColor,
-                          fontWeight: FontWeight.w700)),
+                  child: Text(
+                    timeText,
+                    textAlign: TextAlign.center,
+                    style: text.labelMedium?.copyWith(
+                      color: tinted ? e.tone.onTint : titleColor,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -357,10 +394,16 @@ class DayTimeline extends StatelessWidget {
                           ? [BoxShadow(color: e.tone.tint, spreadRadius: 4)]
                           : null,
                     ),
-                    child: Icon(_icon(e), size: 14, color: filled ? Colors.white : ringColor),
+                    child: Icon(
+                      _icon(e),
+                      size: 14,
+                      color: filled ? Colors.white : ringColor,
+                    ),
                   ),
                   Expanded(
-                    child: CustomPaint(painter: _RailPainter(e.rail, e.railColor)),
+                    child: CustomPaint(
+                      painter: _RailPainter(e.rail, e.railColor),
+                    ),
                   ),
                 ],
               ),
@@ -369,7 +412,11 @@ class DayTimeline extends StatelessWidget {
             Expanded(
               child: Padding(
                 padding: EdgeInsets.fromLTRB(
-                    e.kind == TimelineKind.anchor ? 0 : 12, 3, 0, 18),
+                  e.kind == TimelineKind.anchor ? 0 : 12,
+                  3,
+                  0,
+                  18,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -378,33 +425,48 @@ class DayTimeline extends StatelessWidget {
                       spacing: 7,
                       runSpacing: 4,
                       children: [
-                        Text(e.title,
-                            style: (e.kind == TimelineKind.anchor
-                                    ? text.titleMedium
-                                    : text.bodyLarge)
-                                ?.copyWith(
+                        Text(
+                          e.title,
+                          style:
+                              (e.kind == TimelineKind.anchor
+                                      ? text.titleMedium
+                                      : text.bodyLarge)
+                                  ?.copyWith(
                                     color: titleColor,
                                     fontWeight: e.kind == TimelineKind.anchor
                                         ? FontWeight.w700
-                                        : FontWeight.w600)),
+                                        : FontWeight.w600,
+                                  ),
+                        ),
                         if (e.badge.isNotEmpty)
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
                             decoration: BoxDecoration(
                               color: e.tone.tint,
                               borderRadius: BorderRadius.circular(999),
                             ),
-                            child: Text(e.badge,
-                                style: text.labelSmall?.copyWith(
-                                    color: e.tone.onTint, fontWeight: FontWeight.w700)),
+                            child: Text(
+                              e.badge,
+                              style: text.labelSmall?.copyWith(
+                                color: e.tone.onTint,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
                           ),
                       ],
                     ),
                     if (e.sub.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: 2),
-                        child: Text(e.sub,
-                            style: text.bodySmall?.copyWith(color: AppTheme.outline)),
+                        child: Text(
+                          e.sub,
+                          style: text.bodySmall?.copyWith(
+                            color: AppTheme.outline,
+                          ),
+                        ),
                       ),
                   ],
                 ),
@@ -448,5 +510,6 @@ class _RailPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_RailPainter old) => old.style != style || old.color != color;
+  bool shouldRepaint(_RailPainter old) =>
+      old.style != style || old.color != color;
 }

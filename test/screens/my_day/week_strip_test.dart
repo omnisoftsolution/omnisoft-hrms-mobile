@@ -6,7 +6,9 @@ import 'package:omni_hr/screens/home/my_day/week_strip.dart';
 
 import '../../fixtures/my_day_fixture.dart';
 
-Widget _host(MyDay day) => MaterialApp(home: Scaffold(body: WeekStrip(day: day)));
+Widget _host(MyDay day) => MaterialApp(
+  home: Scaffold(body: WeekStrip(day: day)),
+);
 
 Color _cellFill(WidgetTester tester, String date) {
   final box = tester.widget<Container>(find.byKey(ValueKey('week-$date')));
@@ -14,14 +16,14 @@ Color _cellFill(WidgetTester tester, String date) {
 }
 
 List<Map<String, dynamic>> _week() => [
-      {'date': '2026-10-05', 'kind': 'worked', 'verdict': 'ok'},
-      {'date': '2026-10-06', 'kind': 'today'},
-      {'date': '2026-10-07', 'kind': 'absent'},
-      {'date': '2026-10-08', 'kind': 'public_holiday', 'name': 'Deepavali'},
-      {'date': '2026-10-09', 'kind': 'leave', 'name': 'Annual leave'},
-      {'date': '2026-10-10', 'kind': 'scheduled'},
-      {'date': '2026-10-11', 'kind': 'off'},
-    ];
+  {'date': '2026-10-05', 'kind': 'worked', 'verdict': 'ok'},
+  {'date': '2026-10-06', 'kind': 'today'},
+  {'date': '2026-10-07', 'kind': 'absent'},
+  {'date': '2026-10-08', 'kind': 'public_holiday', 'name': 'Deepavali'},
+  {'date': '2026-10-09', 'kind': 'leave', 'name': 'Annual leave'},
+  {'date': '2026-10-10', 'kind': 'scheduled'},
+  {'date': '2026-10-11', 'kind': 'off'},
+];
 
 void main() {
   testWidgets('seven cells, each kind tinted, legend chips', (tester) async {
@@ -30,7 +32,10 @@ void main() {
       expect(find.text(name), findsOneWidget);
     }
     expect(_cellFill(tester, '2026-10-05'), MyDayColors.work.tint);
-    expect(_cellFill(tester, '2026-10-06'), MyDayColors.work.tint); // today, checked in
+    expect(
+      _cellFill(tester, '2026-10-06'),
+      MyDayColors.work.tint,
+    ); // today, checked in
     expect(_cellFill(tester, '2026-10-07'), MyDayColors.missing.tint);
     expect(_cellFill(tester, '2026-10-08'), MyDayColors.holiday.tint);
     expect(_cellFill(tester, '2026-10-09'), MyDayColors.leave.tint);
@@ -46,12 +51,16 @@ void main() {
     expect(_cellFill(tester, '2026-10-06'), MyDayColors.late.tint);
   });
 
-  testWidgets('a late past day keeps a teal cell with an amber dot', (tester) async {
+  testWidgets('a late past day keeps a teal cell with an amber dot', (
+    tester,
+  ) async {
     final week = _week();
     week[0] = {'date': '2026-10-05', 'kind': 'worked', 'verdict': 'late'};
     await tester.pumpWidget(_host(sampleMyDay(week: week)));
     expect(_cellFill(tester, '2026-10-05'), MyDayColors.work.tint);
-    final dot = tester.widget<Container>(find.byKey(const ValueKey('week-dot-2026-10-05')));
+    final dot = tester.widget<Container>(
+      find.byKey(const ValueKey('week-dot-2026-10-05')),
+    );
     expect((dot.decoration as BoxDecoration).color, MyDayColors.late.dot);
   });
 
@@ -61,8 +70,15 @@ void main() {
   });
 
   test('workedSoFar counts worked days plus today when in', () {
-    expect(WeekStrip.workedSoFar(sampleMyDay(week: _week())), '2 days worked so far');
-    expect(WeekStrip.workedSoFar(sampleMyDay(week: _week(), state: 'not_in', punches: [])),
-        '1 day worked so far');
+    expect(
+      WeekStrip.workedSoFar(sampleMyDay(week: _week())),
+      '2 days worked so far',
+    );
+    expect(
+      WeekStrip.workedSoFar(
+        sampleMyDay(week: _week(), state: 'not_in', punches: []),
+      ),
+      '1 day worked so far',
+    );
   });
 }

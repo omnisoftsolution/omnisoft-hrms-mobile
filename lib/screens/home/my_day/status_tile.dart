@@ -16,7 +16,11 @@ Future<void> showKioskSheet(BuildContext context) {
       final text = Theme.of(sheetContext).textTheme;
       return Padding(
         padding: EdgeInsets.fromLTRB(
-            24, 0, 24, 24 + MediaQuery.of(sheetContext).viewPadding.bottom),
+          24,
+          0,
+          24,
+          24 + MediaQuery.of(sheetContext).viewPadding.bottom,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -108,7 +112,9 @@ class StatusTile extends StatelessWidget {
         final days = _daysBetween(off?.dateFrom ?? '', off?.dateTo ?? '');
         big = '$days day${days == 1 ? '' : 's'}';
         rightLabel = 'Back on';
-        right = off == null || off.backOn.isEmpty ? '—' : _shortDate(off.backOn);
+        right = off == null || off.backOn.isEmpty
+            ? '—'
+            : _shortDate(off.backOn);
       case MyDayDisplay.holiday:
       case MyDayDisplay.noShift:
         bigLabel = 'Next shift';
@@ -133,9 +139,10 @@ class StatusTile extends StatelessWidget {
     }
 
     final labelStyle = text.labelSmall?.copyWith(
-        color: white.withValues(alpha: 0.8),
-        fontWeight: FontWeight.w600,
-        letterSpacing: 0.8);
+      color: white.withValues(alpha: 0.8),
+      fontWeight: FontWeight.w600,
+      letterSpacing: 0.8,
+    );
 
     return Container(
       key: const ValueKey('status-tile'),
@@ -145,7 +152,10 @@ class StatusTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(24),
         boxShadow: const [
           BoxShadow(
-              color: Color(0x2E5075AF), blurRadius: 30, offset: Offset(0, 8)),
+            color: Color(0x2E5075AF),
+            blurRadius: 30,
+            offset: Offset(0, 8),
+          ),
         ],
       ),
       child: Column(
@@ -172,13 +182,16 @@ class StatusTile extends StatelessWidget {
                       displayTitle(display),
                       key: const ValueKey('status-title'),
                       style: text.headlineSmall?.copyWith(
-                          color: white, fontWeight: FontWeight.w700),
+                        color: white,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                     const SizedBox(height: 3),
                     Text(
                       displaySubtitle(day, display, now: now),
-                      style: text.bodySmall
-                          ?.copyWith(color: white.withValues(alpha: 0.9)),
+                      style: text.bodySmall?.copyWith(
+                        color: white.withValues(alpha: 0.9),
+                      ),
                     ),
                   ],
                 ),
@@ -192,11 +205,15 @@ class StatusTile extends StatelessWidget {
                     backgroundColor: white.withValues(alpha: 0.14),
                     side: BorderSide(color: white.withValues(alpha: 0.35)),
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14)),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
                     minimumSize: const Size(42, 42),
                   ),
-                  icon: const Icon(Icons.tablet_android_outlined,
-                      color: white, size: 22),
+                  icon: const Icon(
+                    Icons.tablet_android_outlined,
+                    color: white,
+                    size: 22,
+                  ),
                 ),
             ],
           ),
@@ -212,9 +229,13 @@ class StatusTile extends StatelessWidget {
                   children: [
                     Text(bigLabel, style: labelStyle),
                     const SizedBox(height: 3),
-                    Text(big,
-                        style: text.headlineMedium?.copyWith(
-                            color: white, fontWeight: FontWeight.w700)),
+                    Text(
+                      big,
+                      style: text.headlineMedium?.copyWith(
+                        color: white,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -223,9 +244,13 @@ class StatusTile extends StatelessWidget {
                 children: [
                   Text(rightLabel, style: labelStyle),
                   const SizedBox(height: 5),
-                  Text(right,
-                      style: text.titleMedium?.copyWith(
-                          color: white, fontWeight: FontWeight.w600)),
+                  Text(
+                    right,
+                    style: text.titleMedium?.copyWith(
+                      color: white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ],
               ),
             ],

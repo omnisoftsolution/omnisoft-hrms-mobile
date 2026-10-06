@@ -220,3 +220,14 @@ Spec + plan live in the connector repo:
 - Tests: `test/screens/my_day/`, `test/screens/home_tab_root_test.dart`,
   `test/models/my_day_test.dart`, `test/services/my_day_api_test.dart`,
   `test/services/session_kiosk_only_test.dart`; fixture `test/fixtures/my_day_fixture.dart`.
+
+### 1.27.0 — My day v2 (spec `…/2026-10-06-my-day-v2-design.md` in the connector repo)
+- `lib/screens/home/my_day/`: `status_tile.dart` (replaces `today_card.dart`; `showKioskSheet`),
+  `week_strip.dart`, `day_timeline.dart` (pure `buildTimeline(day)` + `_RailPainter`),
+  `for_you_list.dart` (`missing:` prepends the app's own red row), `my_day_display.dart`
+  (pure `displayOf` / `toneOf` / titles; one display state per spec §4.2 row, first match
+  wins), `my_day_colors.dart` (the seven `MyDayTone`s of spec §4.1).
+- Every 2.52.0 key is optional in `MyDay.fromJson`; against a 2.51.0 connector the week
+  strip is hidden, minutes are 0 and `off` is null (no shift + no punches reads "Day off").
+- Copy stays literal in the widgets; `DateFormat` pinned to `en_US`.
+- Tests: `test/screens/my_day/{my_day_display,status_tile,week_strip,day_timeline,for_you_list,my_day_screen}_test.dart`.

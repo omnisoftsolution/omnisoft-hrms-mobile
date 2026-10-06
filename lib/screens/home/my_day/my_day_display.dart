@@ -7,8 +7,17 @@ import 'my_day_colors.dart';
 /// What the status tile shows, derived from `today` in the order of
 /// spec 2026-10-06 §4.2 (first match wins).
 enum MyDayDisplay {
-  holiday, leave, noShift, missing, notIn, late, checkedIn, onBreak,
-  early, overtime, done,
+  holiday,
+  leave,
+  noShift,
+  missing,
+  notIn,
+  late,
+  checkedIn,
+  onBreak,
+  early,
+  overtime,
+  done,
 }
 
 MyDayDisplay displayOf(MyDay day) {
