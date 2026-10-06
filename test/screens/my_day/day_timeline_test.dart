@@ -1,174 +1,117 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:omni_hr/core/datetime_utils.dart';
 import 'package:omni_hr/models/my_day.dart';
 import 'package:omni_hr/screens/home/my_day/day_timeline.dart';
+import 'package:omni_hr/screens/home/my_day/my_day_colors.dart';
 
 import '../../fixtures/my_day_fixture.dart';
 
 Widget _host(MyDay day) => MaterialApp(
-      home: Scaffold(
-        body: SingleChildScrollView(child: DayTimeline(day: day)),
-      ),
+      home: Scaffold(body: SingleChildScrollView(child: DayTimeline(day: day))),
     );
 
-Map<String, dynamic> _punch(String kind, String at,
-        {String source = 'kiosk', String place = 'Produksi Lt. 1'}) =>
-    {'kind': kind, 'at': at, 'source': source, 'place': place};
+Map<String, dynamic> _p(String kind, String at) =>
+    {'kind': kind, 'at': at, 'source': 'kiosk', 'place': 'Front desk'};
 
-Finder _row(int index, TimelineStatus status) =>
-    find.byKey(ValueKey('timeline-$index-${status.name}'));
-
-/// A night shift: an open check-in carried over from the previous day, and
-/// today's shift (or none) starting well after it.
-MyDay _carriedNightPunch({required bool withShift}) {
-  final json = sampleMyDayJson();
-  final today = Map<String, dynamic>.from(json['today'] as Map);
-  today['state'] = 'checked_in';
-  today['shift'] = withShift
-      ? {
-          'start': '2026-09-07 01:00:00',
-          'end': '2026-09-07 10:00:00',
-          'label': '08:00 – 17:00',
-        }
-      : null;
-  today['punches'] = [_punch('check_in', '2026-09-06 15:00:00')];
-  json['today'] = today;
-  return MyDay.fromJson(json);
-}
+// Fixture shift: 01:00–10:00 UTC, lunch 05:00–06:00 UTC.
+final _onTime = [
+  _p('check_in', '2026-10-05 01:02:00'),
+  _p('break_start', '2026-10-05 03:30:00'),
+  _p('break_end', '2026-10-05 03:45:00'),
+];
 
 void main() {
-  testWidgets('checked in: punch, shift start, shift end, ordered by time',
-      (tester) async {
-    await tester.pumpWidget(_host(sampleMyDay()));
-    // 00:54 UTC check-in sorts before the 01:00 UTC shift start.
-    expect(
-        find.descendant(
-            of: _row(0, TimelineStatus.now), matching: find.text('Check in')),
-        findsOneWidget);
-    expect(
-        find.descendant(
-            of: _row(1, TimelineStatus.done),
-            matching: find.text('Shift starts')),
-        findsOneWidget);
-    expect(
-        find.descendant(
-            of: _row(2, TimelineStatus.upcoming),
-            matching: find.text('Shift ends')),
-        findsOneWidget);
-    expect(find.text('Produksi Lt. 1'), findsOneWidget);
-    expect(find.text('08:00 – 17:00'), findsOneWidget);
-    expect(find.text('Check out at the kiosk'), findsOneWidget);
-    expect(
-        find.text(DateTimeUtils.formatLocalTime('2026-10-05 00:54:00')),
-        findsOneWidget);
+  test('on time: anchors, punches, planned lunch, rail segments', () {
+    final ev = buildTimeline(sampleMyDay(punches: _onTime));
+    expect(ev.map((e) => e.title),
+        ['Shift starts', 'Check in', 'Break start', 'Break end', 'Lunch', 'Shift ends']);
+    expect(ev[0].kind, TimelineKind.anchor);
+    expect(ev[0].sub, '08:00 – 12:00 · 13:00 – 17:00');
+    expect(ev[1].badge, 'On time');
+    expect(ev[1].rail, RailStyle.solid);
+    expect(ev[1].railColor, MyDayColors.work.dot);
+    expect(ev[2].rail, RailStyle.dashed);
+    expect(ev[2].railColor, MyDayColors.brk.dot);
+    expect(ev[3].current, isTrue);
+    expect(ev[3].rail, RailStyle.dotted); // the open day after the last punch
+    expect(ev[4].kind, TimelineKind.lunch);
+    expect(ev[4].sub, '12:00 – 13:00 · from your work schedule');
+    expect(ev[5].rail, RailStyle.none);
   });
 
-  testWidgets('not in yet: shift start is "now", shift end upcoming',
-      (tester) async {
-    await tester.pumpWidget(_host(sampleMyDay(state: 'not_in', punches: [])));
-    expect(_row(0, TimelineStatus.now), findsOneWidget);
-    expect(_row(1, TimelineStatus.upcoming), findsOneWidget);
-    expect(find.text('Shift starts'), findsOneWidget);
-    expect(find.text('Shift ends'), findsOneWidget);
+  test('late check-in: amber tone, badge, amber dashed rail under the start', () {
+    final ev = buildTimeline(sampleMyDay(
+        lateMinutes: 17, punches: [_p('check_in', '2026-10-05 01:17:00')]));
+    expect(ev[0].rail, RailStyle.dashed);
+    expect(ev[0].railColor, MyDayColors.late.dot);
+    expect(ev[1].tone, MyDayColors.late);
+    expect(ev[1].badge, '17 min late');
   });
 
-  testWidgets('break pair then checked out: all done, no shift end',
-      (tester) async {
-    await tester.pumpWidget(_host(sampleMyDay(state: 'checked_out', punches: [
-      _punch('check_in', '2026-10-05 00:54:00'),
-      _punch('break_start', '2026-10-05 05:02:00'),
-      _punch('break_end', '2026-10-05 05:58:00'),
-      _punch('check_out', '2026-10-05 10:06:00'),
-    ])));
-    for (final title in [
-      'Check in',
-      'Shift starts',
-      'Break start',
-      'Break end',
-      'Check out',
-    ]) {
-      expect(find.text(title), findsOneWidget);
-    }
-    expect(find.text('Shift ends'), findsNothing);
-    for (var i = 0; i < 5; i++) {
-      expect(_row(i, TimelineStatus.done), findsOneWidget);
-    }
+  test('overtime and early badges on the last check-out', () {
+    final ot = buildTimeline(sampleMyDay(state: 'checked_out', overtimeMinutes: 42, punches: [
+      _p('check_in', '2026-10-05 01:02:00'),
+      _p('check_out', '2026-10-05 10:42:00'),
+    ]));
+    expect(ot.last.title, 'Check out');
+    expect(ot.last.badge, '42 min overtime');
+    expect(ot[ot.length - 2].title, 'Shift ends');
+    expect(ot[ot.length - 2].rail, RailStyle.solid);
+    expect(ot[ot.length - 2].railColor, MyDayColors.overtime.dot);
+
+    final early = buildTimeline(sampleMyDay(state: 'checked_out', earlyMinutes: 50, punches: [
+      _p('check_in', '2026-10-05 01:02:00'),
+      _p('check_out', '2026-10-05 09:10:00'),
+    ]));
+    final out = early.firstWhere((e) => e.title == 'Check out');
+    expect(out.badge, '50 min early');
+    expect(out.rail, RailStyle.dashed);
+    expect(out.railColor, MyDayColors.late.dot);
+    expect(early.last.sub, 'Coming back? This counts as a break.');
   });
 
-  testWidgets('on break: the last punch is "now"', (tester) async {
-    await tester.pumpWidget(_host(sampleMyDay(state: 'on_break', punches: [
-      _punch('check_in', '2026-10-05 01:10:00'),
-      _punch('break_start', '2026-10-05 05:02:00'),
-    ])));
-    expect(
-        find.descendant(
-            of: _row(2, TimelineStatus.now),
-            matching: find.text('Break start')),
-        findsOneWidget);
-    expect(_row(3, TimelineStatus.upcoming), findsOneWidget);
+  test('missing: red start, Now row, lunch, end', () {
+    final ev = buildTimeline(sampleMyDay(state: 'not_in', missing: true, punches: []));
+    expect(ev.map((e) => e.title), ['Shift starts', 'Now', 'Lunch', 'Shift ends']);
+    expect(ev[0].badge, 'Missing');
+    expect(ev[0].rail, RailStyle.dashed);
+    expect(ev[0].railColor, MyDayColors.missing.dot);
+    expect(ev[1].kind, TimelineKind.now);
+    expect(ev[1].sub, 'If you are at work, check in at the kiosk');
   });
 
-  testWidgets('no shift, with punches: only the punches', (tester) async {
-    await tester.pumpWidget(_host(sampleMyDay(
-        state: 'checked_out',
-        withShift: false,
-        punches: [
-          _punch('check_in', '2026-10-05 02:00:00'),
-          _punch('check_out', '2026-10-05 04:00:00'),
-        ])));
-    expect(find.text('Shift starts'), findsNothing);
-    expect(find.text('Shift ends'), findsNothing);
-    expect(find.text('Check in'), findsOneWidget);
-    expect(find.text('Check out'), findsOneWidget);
+  test('planned lunch hides when a punched break overlaps it; stays for break-exempt', () {
+    final punchedLunch = [
+      _p('check_in', '2026-10-05 01:02:00'),
+      _p('break_start', '2026-10-05 05:05:00'),
+      _p('break_end', '2026-10-05 05:50:00'),
+    ];
+    expect(buildTimeline(sampleMyDay(punches: punchedLunch)).any((e) => e.kind == TimelineKind.lunch),
+        isFalse);
+    final done = sampleMyDay(state: 'checked_out', punches: [
+      _p('check_in', '2026-10-05 01:02:00'),
+      _p('check_out', '2026-10-05 10:02:00'),
+    ]);
+    expect(buildTimeline(done).any((e) => e.kind == TimelineKind.lunch), isFalse);
+    final exempt = sampleMyDay(state: 'checked_out', breakExempt: true, punches: [
+      _p('check_in', '2026-10-05 01:02:00'),
+      _p('check_out', '2026-10-05 10:02:00'),
+    ]);
+    expect(buildTimeline(exempt).any((e) => e.kind == TimelineKind.lunch), isTrue);
   });
 
-  testWidgets('no shift and no punches: the empty text', (tester) async {
-    await tester.pumpWidget(
-        _host(sampleMyDay(state: 'not_in', withShift: false, punches: [])));
-    expect(find.text('No attendance recorded today.'), findsOneWidget);
+  test('no shift and no punches: nothing', () {
+    expect(buildTimeline(sampleMyDay(withShift: false, state: 'not_in', punches: [])), isEmpty);
   });
 
-  testWidgets('a punch without a place shows where it came from',
-      (tester) async {
-    await tester.pumpWidget(_host(sampleMyDay(punches: [
-      _punch('check_in', '2026-10-05 00:54:00', place: ''),
-    ])));
-    expect(find.text('Kiosk'), findsOneWidget);
-  });
-
-  testWidgets(
-      'carried night-shift punch sorts before today\'s shift start and is "now"',
-      (tester) async {
-    await tester.pumpWidget(_host(_carriedNightPunch(withShift: true)));
-    expect(
-        find.descendant(
-            of: _row(0, TimelineStatus.now), matching: find.text('Check in')),
-        findsOneWidget);
-    // A punch exists, so the shift start is done rather than "now".
-    expect(
-        find.descendant(
-            of: _row(1, TimelineStatus.done),
-            matching: find.text('Shift starts')),
-        findsOneWidget);
-    expect(
-        find.descendant(
-            of: _row(2, TimelineStatus.upcoming),
-            matching: find.text('Shift ends')),
-        findsOneWidget);
-    expect(find.text(DayTimeline.emptyText), findsNothing);
-  });
-
-  testWidgets('carried punch with no shift today: one "now" row, no empty text',
-      (tester) async {
-    await tester.pumpWidget(_host(_carriedNightPunch(withShift: false)));
-    expect(
-        find.descendant(
-            of: _row(0, TimelineStatus.now), matching: find.text('Check in')),
-        findsOneWidget);
-    expect(find.text('Shift starts'), findsNothing);
-    expect(find.text('Shift ends'), findsNothing);
-    expect(find.text(DayTimeline.emptyText), findsNothing);
-    expect(find.byKey(const ValueKey('timeline-1-done')), findsNothing);
+  testWidgets('renders rows with keys and the empty text', (tester) async {
+    await tester.pumpWidget(_host(sampleMyDay(punches: _onTime)));
+    expect(find.byKey(const ValueKey('timeline-0-anchor')), findsOneWidget);
+    expect(find.byKey(const ValueKey('timeline-1-punch')), findsOneWidget);
+    expect(find.byKey(const ValueKey('timeline-4-lunch')), findsOneWidget);
+    expect(find.text('On time'), findsOneWidget);
+    expect(find.text('Front desk'), findsNWidgets(3));
+    await tester.pumpWidget(_host(sampleMyDay(withShift: false, state: 'not_in', punches: [])));
+    expect(find.text(DayTimeline.emptyText), findsOneWidget);
   });
 }
