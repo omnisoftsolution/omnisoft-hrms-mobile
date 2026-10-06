@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/error_messages.dart';
@@ -17,12 +16,13 @@ import '../../expenses/expense_detail_screen.dart';
 import '../../payroll/payslips_screen.dart';
 import 'day_timeline.dart';
 import 'for_you_list.dart';
+import 'my_day_display.dart';
 import 'status_tile.dart';
 import 'week_strip.dart';
 
 /// The Home tab for employees whose attendance is kiosk-only (spec
-/// 2026-10-05 §5.3): a fixed Today card, the day's timeline and a short
-/// "For you" list, all from one endpoint.
+/// 2026-10-05 §5.3): the status tile, the week strip, the day's timeline (or
+/// an off card) and a short 'For you' list, all from one endpoint.
 class MyDayScreen extends StatefulWidget {
   const MyDayScreen({
     super.key,
@@ -302,11 +302,6 @@ class MyDayScreenState extends State<MyDayScreen> {
     );
   }
 
-  static String _shortDate(String value) {
-    final date = DateTime.tryParse(value);
-    return date == null ? value : DateFormat('d MMM', 'en_US').format(date);
-  }
-
   /// Holiday / leave / day-off facts in place of the timeline (spec §4.4).
   Widget _offCard(BuildContext context, MyDay day) {
     final text = Theme.of(context).textTheme;
@@ -322,14 +317,14 @@ class MyDayScreenState extends State<MyDayScreen> {
         title = off.name.isEmpty ? 'On leave' : off.name;
         line1 = off.dateFrom.isEmpty
             ? 'Approved time off'
-            : 'From ${_shortDate(off.dateFrom)} to ${_shortDate(off.dateTo)}';
+            : 'From ${shortDate(off.dateFrom)} to ${shortDate(off.dateTo)}';
       default:
         title = 'Enjoy your day';
         line1 = 'Nothing is expected at the kiosk today';
     }
     final line2 = next == null
         ? 'No shift in the next two weeks'
-        : 'Next shift ${_shortDate(next.date)} · ${next.label}';
+        : 'Next shift ${shortDate(next.date)} · ${next.label}';
     return Card(
       margin: EdgeInsets.zero,
       child: Padding(

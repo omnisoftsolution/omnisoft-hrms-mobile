@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:intl/intl.dart';
 
 import '../../../core/datetime_utils.dart';
@@ -22,7 +24,9 @@ enum MyDayDisplay {
 
 MyDayDisplay displayOf(MyDay day) {
   final off = day.off;
-  if (off != null) {
+  // An off day with punches (someone worked a holiday or came in on leave)
+  // shows the live state like any other day.
+  if (off != null && day.punches.isEmpty) {
     switch (off.kind) {
       case 'public_holiday':
         return MyDayDisplay.holiday;
@@ -112,14 +116,16 @@ String minutesLabel(int minutes) {
   return '${minutes ~/ 60}h ${(minutes % 60).toString().padLeft(2, '0')}m';
 }
 
-String _shortDate(String value) {
+/// "2026-10-05" -> "5 Oct"; the input back when it does not parse.
+String shortDate(String value) {
   final date = DateTime.tryParse(value);
   return date == null ? value : DateFormat('d MMM', 'en_US').format(date);
 }
 
-String _dateRange(String from, String to) {
-  final a = _shortDate(from);
-  final b = _shortDate(to);
+/// "5 Oct – 7 Oct", or just "5 Oct" for a one-day range.
+String dateRange(String from, String to) {
+  final a = shortDate(from);
+  final b = shortDate(to);
   return a == b || b.isEmpty ? a : '$a – $b';
 }
 
@@ -134,12 +140,13 @@ String displaySubtitle(MyDay day, MyDayDisplay display, {DateTime? now}) {
   final shiftStart = DateTimeUtils.parseOdooUtc(day.shift?.start);
   switch (display) {
     case MyDayDisplay.holiday:
-      return day.off?.name ?? '';
+      final holiday = day.off?.name ?? '';
+      return holiday.isEmpty ? 'Public holiday' : holiday;
     case MyDayDisplay.leave:
       final off = day.off!;
       final name = off.name.isEmpty ? 'Leave' : off.name;
       if (off.dateFrom.isEmpty) return name;
-      return '$name · ${_dateRange(off.dateFrom, off.dateTo)}';
+      return '$name · ${dateRange(off.dateFrom, off.dateTo)}';
     case MyDayDisplay.noShift:
       return 'No shift today';
     case MyDayDisplay.missing:
@@ -164,8 +171,8 @@ String displaySubtitle(MyDay day, MyDayDisplay display, {DateTime? now}) {
       final since = DateTimeUtils.parseOdooUtc(last?.at);
       final at = DateTimeUtils.formatLocalTime(last?.at);
       if (since == null) return 'Since $at';
-      final mins = clock.difference(since).inMinutes;
-      return 'Since $at · $mins minutes so far';
+      final mins = max(0, clock.difference(since).inMinutes);
+      return 'Since $at · ${minutesLabel(mins)} so far';
     case MyDayDisplay.early:
       final at = DateTimeUtils.formatLocalTime(_lastPunch(day)?.at);
       return 'Checked out $at · ${day.earlyMinutes} minutes before the shift end';

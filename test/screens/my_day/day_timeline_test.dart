@@ -106,13 +106,27 @@ void main() {
     expect(out.badge, '50 min early');
     expect(out.rail, RailStyle.dashed);
     expect(out.railColor, MyDayColors.late.dot);
-    expect(early.last.sub, 'Coming back? This counts as a break.');
+    // Before the shift end the early leaver may still come back.
+    final before = buildTimeline(
+      sampleMyDay(
+        state: 'checked_out',
+        earlyMinutes: 50,
+        punches: [
+          _p('check_in', '2026-10-05 01:02:00'),
+          _p('check_out', '2026-10-05 09:10:00'),
+        ],
+      ),
+      now: DateTime.utc(2026, 10, 5, 9, 20),
+    );
+    expect(before.last.sub, 'Coming back? This counts as a break.');
+    // After it the question is moot: the plain shift label.
+    expect(early.last.sub, '08:00 – 17:00');
   });
 
   test('missing: red start, Now row, lunch, end', () {
     final ev = buildTimeline(
       sampleMyDay(state: 'not_in', missing: true, punches: []),
-      now: _open,
+      now: DateTime.utc(2026, 10, 5, 3, 15),
     );
     expect(ev.map((e) => e.title), [
       'Shift starts',
@@ -124,7 +138,47 @@ void main() {
     expect(ev[0].rail, RailStyle.dashed);
     expect(ev[0].railColor, MyDayColors.missing.dot);
     expect(ev[1].kind, TimelineKind.now);
+    expect(ev[1].at, '2026-10-05 03:15:00');
     expect(ev[1].sub, 'If you are at work, check in at the kiosk');
+  });
+
+  test('missing: the Now row sorts at the real moment', () {
+    final day = sampleMyDay(state: 'not_in', missing: true, punches: []);
+    final noon = buildTimeline(day, now: DateTime.utc(2026, 10, 5, 8, 0));
+    expect(noon.map((e) => e.title), [
+      'Shift starts',
+      'Lunch',
+      'Now',
+      'Shift ends',
+    ]);
+    // Past the shift end the day never finished: Shift ends stays grey.
+    final late = buildTimeline(day, now: _done);
+    expect(late.map((e) => e.title), [
+      'Shift starts',
+      'Lunch',
+      'Shift ends',
+      'Now',
+    ]);
+    final ends = late.firstWhere((e) => e.title == 'Shift ends');
+    expect(ends.upcoming, isTrue);
+    expect(ends.tone, MyDayColors.waiting);
+    expect(ends.sub, 'Check out at the kiosk');
+  });
+
+  test('a Now row never sorts before the shift start', () {
+    final ev = buildTimeline(
+      sampleMyDay(state: 'not_in', missing: true, punches: []),
+      now: DateTime.utc(2026, 10, 5, 0, 30),
+    );
+    expect(ev.take(2).map((e) => e.title), ['Shift starts', 'Now']);
+  });
+
+  test('a 2.51.0 body (no minute counters) never claims On time', () {
+    final ev = buildTimeline(
+      sampleMyDay(punches: _onTime, withMinutes: false),
+      now: _open,
+    );
+    expect(ev.firstWhere((e) => e.title == 'Check in').badge, '');
   });
 
   test(
@@ -259,6 +313,32 @@ void main() {
   );
 
   test(
+    'an open break just before the lunch window hides the planned lunch',
+    () {
+      List<TimelineEvent> build(String breakAt) => buildTimeline(
+        sampleMyDay(
+          state: 'on_break',
+          punches: [
+            _p('check_in', '2026-10-05 01:02:00'),
+            _p('break_start', breakAt),
+          ],
+        ),
+        now: DateTime.utc(2026, 10, 5, 5, 20),
+      );
+      // Lunch is 05:00-06:00: 04:57 is within five minutes before it.
+      expect(
+        build('2026-10-05 04:57:00').any((e) => e.kind == TimelineKind.lunch),
+        isFalse,
+      );
+      // Half an hour before is an ordinary break; the lunch is still planned.
+      expect(
+        build('2026-10-05 04:30:00').any((e) => e.kind == TimelineKind.lunch),
+        isTrue,
+      );
+    },
+  );
+
+  test(
     'break-exempt finished day keeps the lunch row inside a solid teal rail',
     () {
       final ev = buildTimeline(
@@ -376,6 +456,7 @@ void main() {
     final ev = buildTimeline(
       sampleMyDay(
         withShift: false,
+        withLunch: false,
         punches: [_p('check_in', '2026-10-04 15:00:00')],
       ),
       now: _open,

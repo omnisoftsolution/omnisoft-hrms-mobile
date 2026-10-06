@@ -11,10 +11,10 @@ Map<String, dynamic>? _map(Object? v) =>
     v is Map ? Map<String, dynamic>.from(v) : null;
 
 List<Map<String, dynamic>> _maps(Object? v) => [
-      if (v is List)
-        for (final e in v)
-          if (e is Map) Map<String, dynamic>.from(e),
-    ];
+  if (v is List)
+    for (final e in v)
+      if (e is Map) Map<String, dynamic>.from(e),
+];
 
 /// A time window with its local "HH:MM – HH:MM" label: a shift block,
 /// the whole shift, or the scheduled lunch.
@@ -23,13 +23,17 @@ class MyDayWindow {
   final String end;
   final String label;
 
-  const MyDayWindow({required this.start, required this.end, required this.label});
+  const MyDayWindow({
+    required this.start,
+    required this.end,
+    required this.label,
+  });
 
   factory MyDayWindow.fromJson(Map<String, dynamic> json) => MyDayWindow(
-        start: _str(json['start']),
-        end: _str(json['end']),
-        label: _str(json['label']),
-      );
+    start: _str(json['start']),
+    end: _str(json['end']),
+    label: _str(json['label']),
+  );
 }
 
 /// Today's expected shift. [label] is already in the employee's timezone.
@@ -49,11 +53,11 @@ class MyDayShift {
   });
 
   factory MyDayShift.fromJson(Map<String, dynamic> json) => MyDayShift(
-        start: _str(json['start']),
-        end: _str(json['end']),
-        label: _str(json['label']),
-        blocks: _maps(json['blocks']).map(MyDayWindow.fromJson).toList(),
-      );
+    start: _str(json['start']),
+    end: _str(json['end']),
+    label: _str(json['label']),
+    blocks: _maps(json['blocks']).map(MyDayWindow.fromJson).toList(),
+  );
 
   /// "08:00 – 12:00 · 13:00 – 17:00", or [label] without blocks.
   String get blocksLabel =>
@@ -77,12 +81,12 @@ class MyDayOff {
   });
 
   factory MyDayOff.fromJson(Map<String, dynamic> json) => MyDayOff(
-        kind: _str(json['kind']),
-        name: _str(json['name']),
-        dateFrom: _str(json['date_from']),
-        dateTo: _str(json['date_to']),
-        backOn: _str(json['back_on']),
-      );
+    kind: _str(json['kind']),
+    name: _str(json['name']),
+    dateFrom: _str(json['date_from']),
+    dateTo: _str(json['date_to']),
+    backOn: _str(json['back_on']),
+  );
 }
 
 /// One cell of the week strip: today | worked | absent | public_holiday |
@@ -101,11 +105,11 @@ class MyDayWeekDay {
   });
 
   factory MyDayWeekDay.fromJson(Map<String, dynamic> json) => MyDayWeekDay(
-        date: _str(json['date']),
-        kind: _str(json['kind']),
-        verdict: _str(json['verdict']),
-        name: _str(json['name']),
-      );
+    date: _str(json['date']),
+    kind: _str(json['kind']),
+    verdict: _str(json['verdict']),
+    name: _str(json['name']),
+  );
 }
 
 class MyDayNextShift {
@@ -137,11 +141,11 @@ class MyDayPunch {
   });
 
   factory MyDayPunch.fromJson(Map<String, dynamic> json) => MyDayPunch(
-        kind: _str(json['kind']),
-        at: _str(json['at']),
-        source: _str(json['source']),
-        place: _str(json['place']),
-      );
+    kind: _str(json['kind']),
+    at: _str(json['at']),
+    source: _str(json['source']),
+    place: _str(json['place']),
+  );
 
   String get label {
     switch (kind) {
@@ -226,22 +230,22 @@ class ForYouItem {
   bool get isKnown => knownKinds.contains(kind);
 
   factory ForYouItem.fromJson(Map<String, dynamic> json) => ForYouItem(
-        kind: _str(json['kind']),
-        id: _int(json['id']),
-        count: _int(json['count']),
-        oldestAt: _str(json['oldest_at']),
-        state: _str(json['state']),
-        type: _str(json['type']),
-        dateFrom: _str(json['date_from']),
-        dateTo: _str(json['date_to']),
-        approver: _str(json['approver']),
-        reason: _str(json['reason']),
-        name: _str(json['name']),
-        amount: _dbl(json['amount']),
-        currency: _str(json['currency']),
-        period: _str(json['period']),
-        issuedOn: _str(json['issued_on']),
-      );
+    kind: _str(json['kind']),
+    id: _int(json['id']),
+    count: _int(json['count']),
+    oldestAt: _str(json['oldest_at']),
+    state: _str(json['state']),
+    type: _str(json['type']),
+    dateFrom: _str(json['date_from']),
+    dateTo: _str(json['date_to']),
+    approver: _str(json['approver']),
+    reason: _str(json['reason']),
+    name: _str(json['name']),
+    amount: _dbl(json['amount']),
+    currency: _str(json['currency']),
+    period: _str(json['period']),
+    issuedOn: _str(json['issued_on']),
+  );
 }
 
 class MyDay {
@@ -263,6 +267,11 @@ class MyDay {
 
   final bool breakExempt;
   final MyDayWindow? lunch;
+
+  /// Whether the connector sent the minute counters at all. A
+  /// 2.51.0 connector omits them, so zero there means "unknown", not "on
+  /// time".
+  final bool hasMinutes;
   final int lateMinutes;
   final int earlyMinutes;
   final int overtimeMinutes;
@@ -282,6 +291,7 @@ class MyDay {
     required this.forYou,
     this.breakExempt = false,
     this.lunch,
+    this.hasMinutes = false,
     this.lateMinutes = 0,
     this.earlyMinutes = 0,
     this.overtimeMinutes = 0,
@@ -306,12 +316,12 @@ class MyDay {
       hoursToday: _dbl(today['hours_today']),
       shift: shift == null ? null : MyDayShift.fromJson(shift),
       punches: _maps(today['punches']).map(MyDayPunch.fromJson).toList(),
-      forYou: _maps(json['for_you'])
-          .map(ForYouItem.fromJson)
-          .where((item) => item.isKnown)
-          .toList(),
+      forYou: _maps(
+        json['for_you'],
+      ).map(ForYouItem.fromJson).where((item) => item.isKnown).toList(),
       breakExempt: today['break_exempt'] == true,
       lunch: lunch == null ? null : MyDayWindow.fromJson(lunch),
+      hasMinutes: today.containsKey('late_minutes'),
       lateMinutes: _int(today['late_minutes']),
       earlyMinutes: _int(today['early_minutes']),
       overtimeMinutes: _int(today['overtime_minutes']),

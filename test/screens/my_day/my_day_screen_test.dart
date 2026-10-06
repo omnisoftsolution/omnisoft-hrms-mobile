@@ -117,10 +117,9 @@ void main() {
     final week = tester.getTopLeft(find.text('This week'));
     final timeline = tester.getTopLeft(find.text('Timeline'));
     final forYou = tester.getTopLeft(find.text('For you'));
-    expect(
-      tile.dy < week.dy && week.dy < timeline.dy && timeline.dy < forYou.dy,
-      isTrue,
-    );
+    expect(tile.dy, lessThan(week.dy));
+    expect(week.dy, lessThan(timeline.dy));
+    expect(timeline.dy, lessThan(forYou.dy));
   });
 
   testWidgets('missing day: red For-you row opens the kiosk sheet', (
@@ -159,6 +158,40 @@ void main() {
     expect(find.text('Annual leave'), findsOneWidget);
     expect(find.text('From 6 Oct to 7 Oct'), findsOneWidget);
     expect(find.text('Next shift 6 Oct · 08:00 – 17:00'), findsOneWidget);
+  });
+
+  testWidgets('holiday: off card with the name and the kiosk line', (
+    tester,
+  ) async {
+    _tallScreen(tester);
+    final day = sampleMyDay(
+      state: 'not_in',
+      withShift: false,
+      punches: [],
+      off: {'kind': 'public_holiday', 'name': 'Deepavali'},
+    );
+    await tester.pumpWidget(_host(_FakeApi([day])));
+    await tester.pumpAndSettle();
+    expect(find.text('Timeline'), findsNothing);
+    // The status tile's subtitle and the card's title.
+    expect(find.text('Deepavali'), findsNWidgets(2));
+    expect(find.text('Nothing is expected at the kiosk today'), findsOneWidget);
+    expect(find.text('Next shift 6 Oct · 08:00 – 17:00'), findsOneWidget);
+  });
+
+  testWidgets('not scheduled: off card says enjoy your day', (tester) async {
+    _tallScreen(tester);
+    final day = sampleMyDay(
+      state: 'not_in',
+      withShift: false,
+      punches: [],
+      off: {'kind': 'not_scheduled'},
+    );
+    await tester.pumpWidget(_host(_FakeApi([day])));
+    await tester.pumpAndSettle();
+    expect(find.text('Timeline'), findsNothing);
+    expect(find.text('Enjoy your day'), findsOneWidget);
+    expect(find.text('Nothing is expected at the kiosk today'), findsOneWidget);
   });
 
   testWidgets('empty day: both empty texts', (tester) async {

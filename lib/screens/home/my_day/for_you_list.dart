@@ -5,17 +5,7 @@ import '../../../core/datetime_utils.dart';
 import '../../../core/theme.dart';
 import '../../../models/my_day.dart';
 import 'my_day_colors.dart';
-
-String _shortDate(String value) {
-  final date = DateTime.tryParse(value);
-  return date == null ? value : DateFormat('d MMM', 'en_US').format(date);
-}
-
-String _dateRange(String from, String to) {
-  final a = _shortDate(from);
-  final b = _shortDate(to);
-  return a == b || b.isEmpty ? a : '$a – $b';
-}
+import 'my_day_display.dart';
 
 String _expenseStateLabel(String state) {
   switch (state) {
@@ -41,7 +31,7 @@ String forYouTitle(ForYouItem item) {
           'to approve';
     case 'my_leave':
       return '${item.type.isEmpty ? 'Leave' : item.type} · '
-          '${_dateRange(item.dateFrom, item.dateTo)}';
+          '${dateRange(item.dateFrom, item.dateTo)}';
     case 'my_expense':
       return item.name.isEmpty ? 'Expense' : item.name;
     case 'payslip':

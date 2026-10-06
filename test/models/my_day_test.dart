@@ -22,8 +22,12 @@ void main() {
       expect(day.punches.single.at, '2026-10-05 00:54:00');
       expect(day.punches.single.source, 'kiosk');
       expect(day.punches.single.place, 'Produksi Lt. 1');
-      expect(day.forYou.map((i) => i.kind),
-          ['leave_approvals', 'my_leave', 'my_expense', 'payslip']);
+      expect(day.forYou.map((i) => i.kind), [
+        'leave_approvals',
+        'my_leave',
+        'my_expense',
+        'payslip',
+      ]);
     });
 
     test('parses what jsonDecode really returns', () {
@@ -64,13 +68,21 @@ void main() {
         ..add('not even a map');
       json['for_you'] = forYou;
       final day = MyDay.fromJson(json);
-      expect(day.forYou.map((i) => i.kind),
-          ['leave_approvals', 'my_leave', 'my_expense', 'payslip']);
+      expect(day.forYou.map((i) => i.kind), [
+        'leave_approvals',
+        'my_leave',
+        'my_expense',
+        'payslip',
+      ]);
     });
 
     test('null shift, no punches, empty for_you', () {
       final day = sampleMyDay(
-          state: 'not_in', withShift: false, punches: [], forYou: []);
+        state: 'not_in',
+        withShift: false,
+        punches: [],
+        forYou: [],
+      );
       expect(day.shift, isNull);
       expect(day.punches, isEmpty);
       expect(day.forYou, isEmpty);
@@ -89,22 +101,40 @@ void main() {
     });
 
     test('Odoo false for a text field reads as empty', () {
-      final day = sampleMyDay(punches: [
-        {'kind': 'check_in', 'at': '2026-10-05 00:54:00', 'source': 'kiosk', 'place': false},
-      ]);
+      final day = sampleMyDay(
+        punches: [
+          {
+            'kind': 'check_in',
+            'at': '2026-10-05 00:54:00',
+            'source': 'kiosk',
+            'place': false,
+          },
+        ],
+      );
       expect(day.punches.single.place, '');
     });
 
     test('parses the 2.52.0 keys', () {
       final day = MyDay.fromJson(sampleMyDayJson());
-      expect(day.shift!.blocks.map((b) => b.label), ['08:00 – 12:00', '13:00 – 17:00']);
+      expect(day.shift!.blocks.map((b) => b.label), [
+        '08:00 – 12:00',
+        '13:00 – 17:00',
+      ]);
       expect(day.lunch!.label, '12:00 – 13:00');
       expect(day.breakExempt, isFalse);
+      expect(day.hasMinutes, isTrue);
       expect(day.lateMinutes, 0);
       expect(day.missing, isFalse);
       expect(day.off, isNull);
       expect(day.week.map((d) => d.kind), [
-        'today', 'scheduled', 'scheduled', 'public_holiday', 'leave', 'off', 'off']);
+        'today',
+        'scheduled',
+        'scheduled',
+        'public_holiday',
+        'leave',
+        'off',
+        'off',
+      ]);
       expect(day.week[3].name, 'Deepavali');
       expect(day.nextShift!.date, '2026-10-06');
     });
@@ -126,6 +156,7 @@ void main() {
       final day = MyDay.fromJson(json);
       expect(day.shift!.blocks, isEmpty);
       expect(day.lunch, isNull);
+      expect(day.hasMinutes, isFalse);
       expect(day.lateMinutes, 0);
       expect(day.missing, isFalse);
       expect(day.week, isEmpty);
@@ -133,10 +164,16 @@ void main() {
     });
 
     test('off and leave fields', () {
-      final day = sampleMyDay(off: {
-        'kind': 'leave', 'name': 'Annual leave',
-        'date_from': '2026-10-05', 'date_to': '2026-10-06', 'back_on': '2026-10-08',
-      }, withShift: false);
+      final day = sampleMyDay(
+        off: {
+          'kind': 'leave',
+          'name': 'Annual leave',
+          'date_from': '2026-10-05',
+          'date_to': '2026-10-06',
+          'back_on': '2026-10-08',
+        },
+        withShift: false,
+      );
       expect(day.off!.kind, 'leave');
       expect(day.off!.backOn, '2026-10-08');
       final holiday = sampleMyDay(off: {'kind': 'public_holiday', 'name': 'X'});
@@ -146,13 +183,16 @@ void main() {
   });
 
   group('MyDayPunch labels', () {
-    MyDayPunch punch(String kind, {String source = 'kiosk', String place = ''}) =>
-        MyDayPunch.fromJson({
-          'kind': kind,
-          'at': '2026-10-05 00:54:00',
-          'source': source,
-          'place': place,
-        });
+    MyDayPunch punch(
+      String kind, {
+      String source = 'kiosk',
+      String place = '',
+    }) => MyDayPunch.fromJson({
+      'kind': kind,
+      'at': '2026-10-05 00:54:00',
+      'source': source,
+      'place': place,
+    });
 
     test('label per kind', () {
       expect(punch('check_in').label, 'Check in');
@@ -163,8 +203,10 @@ void main() {
     });
 
     test('placeLabel prefers the place, then the source', () {
-      expect(punch('check_in', place: 'Produksi Lt. 1').placeLabel,
-          'Produksi Lt. 1');
+      expect(
+        punch('check_in', place: 'Produksi Lt. 1').placeLabel,
+        'Produksi Lt. 1',
+      );
       expect(punch('check_in').placeLabel, 'Kiosk');
       expect(punch('check_in', source: 'mobile').placeLabel, 'Phone');
       expect(punch('check_in', source: 'other').placeLabel, '');

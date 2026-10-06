@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:omni_hr/core/theme.dart';
 import 'package:omni_hr/models/my_day.dart';
 import 'package:omni_hr/screens/home/my_day/my_day_colors.dart';
 import 'package:omni_hr/screens/home/my_day/week_strip.dart';
@@ -44,6 +45,16 @@ void main() {
     expect(find.text('Thu · Deepavali'), findsOneWidget);
     expect(find.text('Fri · Annual leave'), findsOneWidget);
     expect(find.text('2 days worked so far'), findsOneWidget);
+  });
+
+  testWidgets('a scheduled day has a visible edge', (tester) async {
+    await tester.pumpWidget(_host(sampleMyDay(week: _week())));
+    final box = tester.widget<Container>(
+      find.byKey(const ValueKey('week-2026-10-10')),
+    );
+    final border = (box.decoration as BoxDecoration).border! as Border;
+    expect(border.top.color, AppTheme.outlineVariant);
+    expect(border.top.width, 1);
   });
 
   testWidgets('today takes the colour of the day', (tester) async {

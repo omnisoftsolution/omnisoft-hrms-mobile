@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 
 import '../../../models/my_day.dart';
 import 'my_day_display.dart';
@@ -43,11 +42,6 @@ Future<void> showKioskSheet(BuildContext context) {
       );
     },
   );
-}
-
-String _shortDate(String value) {
-  final date = DateTime.tryParse(value);
-  return date == null ? value : DateFormat('d MMM', 'en_US').format(date);
 }
 
 int _daysBetween(String from, String to) {
@@ -112,13 +106,11 @@ class StatusTile extends StatelessWidget {
         final days = _daysBetween(off?.dateFrom ?? '', off?.dateTo ?? '');
         big = '$days day${days == 1 ? '' : 's'}';
         rightLabel = 'Back on';
-        right = off == null || off.backOn.isEmpty
-            ? '—'
-            : _shortDate(off.backOn);
+        right = off == null || off.backOn.isEmpty ? '—' : shortDate(off.backOn);
       case MyDayDisplay.holiday:
       case MyDayDisplay.noShift:
         bigLabel = 'Next shift';
-        big = next == null ? '—' : _shortDate(next.date);
+        big = next == null ? '—' : shortDate(next.date);
         rightLabel = 'Hours';
         right = next?.label ?? '—';
       case MyDayDisplay.early:
@@ -139,7 +131,7 @@ class StatusTile extends StatelessWidget {
     }
 
     final labelStyle = text.labelSmall?.copyWith(
-      color: white.withValues(alpha: 0.8),
+      color: white.withValues(alpha: 0.9),
       fontWeight: FontWeight.w600,
       letterSpacing: 0.8,
     );

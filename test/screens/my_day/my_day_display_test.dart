@@ -14,18 +14,29 @@ void main() {
         sampleMyDay(
           off: {'kind': 'public_holiday', 'name': 'X'},
           withShift: false,
+          punches: [],
         ),
       ),
       MyDayDisplay.holiday,
     );
     expect(
       displayOf(
-        sampleMyDay(off: {'kind': 'leave', 'name': 'Annual'}, withShift: false),
+        sampleMyDay(
+          off: {'kind': 'leave', 'name': 'Annual'},
+          withShift: false,
+          punches: [],
+        ),
       ),
       MyDayDisplay.leave,
     );
     expect(
-      displayOf(sampleMyDay(off: {'kind': 'not_scheduled'}, withShift: false)),
+      displayOf(
+        sampleMyDay(
+          off: {'kind': 'not_scheduled'},
+          withShift: false,
+          punches: [],
+        ),
+      ),
       MyDayDisplay.noShift,
     );
     expect(
@@ -48,6 +59,39 @@ void main() {
       MyDayDisplay.overtime,
     );
     expect(displayOf(sampleMyDay(state: 'checked_out')), MyDayDisplay.done);
+  });
+
+  test('an off day with punches shows the live state, not Day off', () {
+    final at = {
+      'kind': 'check_in',
+      'at': '2026-10-05 01:02:00',
+      'source': 'kiosk',
+      'place': 'Front desk',
+    };
+    expect(
+      displayOf(
+        sampleMyDay(
+          off: {'kind': 'public_holiday', 'name': 'Deepavali'},
+          withShift: false,
+          punches: [at],
+        ),
+      ),
+      MyDayDisplay.checkedIn,
+    );
+    expect(
+      displayOf(
+        sampleMyDay(
+          off: {'kind': 'leave', 'name': 'Annual leave'},
+          withShift: false,
+          state: 'checked_out',
+          punches: [
+            at,
+            {...at, 'kind': 'check_out', 'at': '2026-10-05 09:00:00'},
+          ],
+        ),
+      ),
+      MyDayDisplay.done,
+    );
   });
 
   test('a 2.51.0 body with no shift and no off reads as noShift', () {
@@ -136,6 +180,63 @@ void main() {
       ),
       'Deepavali',
     );
+    // A holiday with no name still says what it is.
+    expect(
+      displaySubtitle(
+        sampleMyDay(off: {'kind': 'public_holiday'}, withShift: false),
+        MyDayDisplay.holiday,
+        now: now,
+      ),
+      'Public holiday',
+    );
+  });
+
+  test('on break: how long it has run, in the shared minute format', () {
+    // Break from 03:30 UTC; the label's clock part follows the device zone.
+    final day = sampleMyDay(
+      state: 'on_break',
+      punches: [
+        {
+          'kind': 'break_start',
+          'at': '2026-10-05 03:30:00',
+          'source': 'kiosk',
+          'place': '',
+        },
+      ],
+    );
+    expect(
+      displaySubtitle(
+        day,
+        MyDayDisplay.onBreak,
+        now: DateTime.utc(2026, 10, 5, 3, 55),
+      ),
+      endsWith(' · 25 min so far'),
+    );
+    expect(
+      displaySubtitle(
+        day,
+        MyDayDisplay.onBreak,
+        now: DateTime.utc(2026, 10, 5, 4, 35),
+      ),
+      endsWith(' · 1h 05m so far'),
+    );
+    // A clock before the punch never goes negative.
+    expect(
+      displaySubtitle(
+        day,
+        MyDayDisplay.onBreak,
+        now: DateTime.utc(2026, 10, 5, 3, 0),
+      ),
+      endsWith(' · 0 min so far'),
+    );
+  });
+
+  test('shortDate and dateRange', () {
+    expect(shortDate('2026-10-06'), '6 Oct');
+    expect(shortDate('not a date'), 'not a date');
+    expect(dateRange('2026-10-06', '2026-10-07'), '6 Oct – 7 Oct');
+    expect(dateRange('2026-10-06', '2026-10-06'), '6 Oct');
+    expect(dateRange('2026-10-06', ''), '6 Oct');
   });
 
   test('formatHoursToday and minutesLabel', () {

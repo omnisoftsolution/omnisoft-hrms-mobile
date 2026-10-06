@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../../../core/datetime_utils.dart';
 import '../../../core/theme.dart';
@@ -58,6 +59,8 @@ class TimelineEvent {
 
 const _grey = MyDayColors.waiting;
 
+String _odooUtc(DateTime utc) => DateFormat('yyyy-MM-dd HH:mm:ss').format(utc);
+
 bool _overlaps(String aStart, String aEnd, String bStart, String bEnd) =>
     aStart.compareTo(bEnd) < 0 && bStart.compareTo(aEnd) < 0;
 
@@ -93,9 +96,12 @@ List<TimelineEvent> buildTimeline(MyDay day, {DateTime? now}) {
       ),
     );
     if (missing) {
+      // The Now row sits at the real moment (never before the shift start,
+      // so it keeps its place right after the start anchor).
+      final nowAt = _odooUtc(nowUtc);
       events.add(
         TimelineEvent(
-          at: shift.start,
+          at: nowAt.compareTo(shift.start) < 0 ? shift.start : nowAt,
           title: 'Now',
           sub: 'If you are at work, check in at the kiosk',
           kind: TimelineKind.now,
@@ -118,7 +124,9 @@ List<TimelineEvent> buildTimeline(MyDay day, {DateTime? now}) {
       if (day.lateMinutes > 0) {
         tone = MyDayColors.late;
         badge = '${minutesLabel(day.lateMinutes)} late';
-      } else if (shift != null) {
+      } else if (shift != null && day.hasMinutes) {
+        // A 2.51.0 connector sends no minute counters: zero there is
+        // unknown, so say nothing rather than "On time".
         badge = 'On time';
       }
     }
@@ -163,9 +171,17 @@ List<TimelineEvent> buildTimeline(MyDay day, {DateTime? now}) {
         punchedOver = true;
       }
     }
+    // An open break counts when it started inside the window or up to
+    // five minutes before it (a lunch break taken a little early).
     if (punches.isNotEmpty && punches.last.kind == 'break_start') {
-      final at = punches.last.at;
-      if (at.compareTo(lunch.start) >= 0 && at.compareTo(lunch.end) <= 0) {
+      final at = DateTimeUtils.parseOdooUtc(punches.last.at);
+      final from = DateTimeUtils.parseOdooUtc(lunch.start);
+      final to = DateTimeUtils.parseOdooUtc(lunch.end);
+      if (at != null &&
+          from != null &&
+          to != null &&
+          !at.isBefore(from.subtract(const Duration(minutes: 5))) &&
+          !at.isAfter(to)) {
         punchedOver = true;
       }
     }
@@ -186,14 +202,18 @@ List<TimelineEvent> buildTimeline(MyDay day, {DateTime? now}) {
 
   if (shift != null) {
     final shiftEnd = DateTimeUtils.parseOdooUtc(shift.end);
+    // A missing day never finished: the end stays upcoming even once the
+    // shift end has gone by.
     final passed =
-        (day.state == 'checked_out' && day.earlyMinutes == 0) ||
-        (shiftEnd != null && !nowUtc.isBefore(shiftEnd));
+        display != MyDayDisplay.missing &&
+        ((day.state == 'checked_out' && day.earlyMinutes == 0) ||
+            (shiftEnd != null && !nowUtc.isBefore(shiftEnd)));
+    final beforeEnd = shiftEnd == null || nowUtc.isBefore(shiftEnd);
     events.add(
       TimelineEvent(
         at: shift.end,
         title: 'Shift ends',
-        sub: display == MyDayDisplay.early
+        sub: display == MyDayDisplay.early && beforeEnd
             ? 'Coming back? This counts as a break.'
             : (passed && !open ? shift.label : 'Check out at the kiosk'),
         kind: TimelineKind.anchor,
@@ -359,20 +379,22 @@ class DayTimeline extends StatelessWidget {
               width: 52,
               child: Align(
                 alignment: Alignment.topCenter,
-                child: Container(
-                  margin: const EdgeInsets.only(top: 3),
-                  padding: const EdgeInsets.symmetric(vertical: 3),
-                  width: 52,
-                  decoration: BoxDecoration(
-                    color: tinted ? e.tone.tint : Colors.transparent,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    timeText,
-                    textAlign: TextAlign.center,
-                    style: text.labelMedium?.copyWith(
-                      color: tinted ? e.tone.onTint : titleColor,
-                      fontWeight: FontWeight.w700,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minWidth: 52),
+                  child: Container(
+                    margin: const EdgeInsets.only(top: 3),
+                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    decoration: BoxDecoration(
+                      color: tinted ? e.tone.tint : Colors.transparent,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      timeText,
+                      textAlign: TextAlign.center,
+                      style: text.labelMedium?.copyWith(
+                        color: tinted ? e.tone.onTint : titleColor,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ),

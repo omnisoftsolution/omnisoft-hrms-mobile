@@ -6,7 +6,7 @@ import '../../../models/my_day.dart';
 import 'my_day_colors.dart';
 import 'my_day_display.dart';
 
-enum _Mark { dot, calendar, star, none }
+enum _Mark { dot, calendar, star }
 
 class _Cell {
   const _Cell({
@@ -17,6 +17,7 @@ class _Cell {
     required this.mark,
     required this.markColor,
     this.hollow = false,
+    this.ringWidth = 2,
   });
 
   final MyDayWeekDay day;
@@ -28,6 +29,7 @@ class _Cell {
 
   /// A ring instead of a filled dot (future days).
   final bool hollow;
+  final double ringWidth;
 }
 
 /// "This week": one cell per day, Monday first, with a legend for the
@@ -102,11 +104,12 @@ class WeekStrip extends StatelessWidget {
         return _Cell(
           day: d,
           fill: Colors.white,
-          ring: Colors.transparent,
+          ring: AppTheme.outlineVariant,
           text: AppTheme.onSurfaceVariant,
           mark: _Mark.dot,
           markColor: MyDayColors.waiting.dot,
           hollow: true,
+          ringWidth: 1,
         );
       default:
         return _Cell(
@@ -158,13 +161,16 @@ class WeekStrip extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 8),
-        Row(
-          children: [
-            for (var i = 0; i < cells.length; i++) ...[
-              if (i > 0) const SizedBox(width: 6),
-              Expanded(child: _cellWidget(text, cells[i])),
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (var i = 0; i < cells.length; i++) ...[
+                if (i > 0) const SizedBox(width: 6),
+                Expanded(child: _cellWidget(text, cells[i])),
+              ],
             ],
-          ],
+          ),
         ),
         if (legend.isNotEmpty) ...[
           const SizedBox(height: 8),
@@ -211,8 +217,6 @@ class WeekStrip extends StatelessWidget {
         mark = Icon(Icons.event_outlined, size: 14, color: cell.markColor);
       case _Mark.star:
         mark = Icon(Icons.star_outline, size: 14, color: cell.markColor);
-      case _Mark.none:
-        mark = const SizedBox(height: 10);
       case _Mark.dot:
         mark = Container(
           key: ValueKey('week-dot-${cell.day.date}'),
@@ -227,13 +231,15 @@ class WeekStrip extends StatelessWidget {
     }
     return Container(
       key: ValueKey('week-${cell.day.date}'),
-      height: 52,
+      alignment: Alignment.center,
+      constraints: const BoxConstraints(minHeight: 52),
       decoration: BoxDecoration(
         color: cell.fill,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: cell.ring, width: 2),
+        border: Border.all(color: cell.ring, width: cell.ringWidth),
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Text(
