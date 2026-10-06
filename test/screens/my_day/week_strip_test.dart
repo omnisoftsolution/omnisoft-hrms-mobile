@@ -12,9 +12,18 @@ Widget _host(MyDay day) => MaterialApp(
 );
 
 Color _cellFill(WidgetTester tester, String date) {
-  final box = tester.widget<Container>(find.byKey(ValueKey('week-$date')));
-  return (box.decoration as BoxDecoration).color ?? Colors.transparent;
+  return _cellMaterial(tester, date).color ?? Colors.transparent;
 }
+
+Material _cellMaterial(WidgetTester tester, String date) =>
+    tester.widget<Material>(
+      find
+          .ancestor(
+            of: find.byKey(ValueKey('week-$date')),
+            matching: find.byType(Material),
+          )
+          .first,
+    );
 
 List<Map<String, dynamic>> _week() => [
   {'date': '2026-10-05', 'kind': 'worked', 'verdict': 'ok'},
@@ -49,12 +58,10 @@ void main() {
 
   testWidgets('a scheduled day has a visible edge', (tester) async {
     await tester.pumpWidget(_host(sampleMyDay(week: _week())));
-    final box = tester.widget<Container>(
-      find.byKey(const ValueKey('week-2026-10-10')),
-    );
-    final border = (box.decoration as BoxDecoration).border! as Border;
-    expect(border.top.color, AppTheme.outlineVariant);
-    expect(border.top.width, 1);
+    final shape =
+        _cellMaterial(tester, '2026-10-10').shape! as RoundedRectangleBorder;
+    expect(shape.side.color, AppTheme.outlineVariant);
+    expect(shape.side.width, 1);
   });
 
   testWidgets('today takes the colour of the day', (tester) async {
@@ -116,14 +123,26 @@ void main() {
     expect(find.byType(BottomSheet), findsNothing);
   });
 
-  testWidgets('every non-today cell is a button for accessibility', (
-    tester,
-  ) async {
+  testWidgets('cells expose one clean semantics node each', (tester) async {
+    final handle = tester.ensureSemantics();
     await tester.pumpWidget(_host(sampleMyDay(week: _week())));
-    expect(
-      find.bySemanticsLabel(RegExp(r'^Thu, public holiday')),
-      findsOneWidget,
+    final thu = tester.getSemantics(
+      find.byKey(const ValueKey('week-tap-2026-10-08')),
     );
-    expect(find.bySemanticsLabel(RegExp(r'^Tue, today')), findsNothing);
+    expect(
+      thu,
+      matchesSemantics(
+        isButton: true,
+        label: 'Thu, public holiday, Deepavali',
+        hasTapAction: true,
+        hasFocusAction: true,
+        isFocusable: true,
+      ),
+    );
+    final tue = tester.getSemantics(
+      find.byKey(const ValueKey('week-tap-2026-10-06')),
+    );
+    expect(tue, matchesSemantics(isButton: false, label: 'Tue, today'));
+    handle.dispose();
   });
 }

@@ -212,37 +212,39 @@ class WeekStrip extends StatelessWidget {
       key: ValueKey('week-${cell.day.date}'),
       alignment: Alignment.center,
       constraints: const BoxConstraints(minHeight: 52),
-      decoration: BoxDecoration(
-        color: cell.fill,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: cell.ring, width: cell.ringWidth),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            _dayName(cell.day.date),
-            style: text.labelMedium?.copyWith(
-              color: cell.text,
-              fontWeight: FontWeight.w600,
+      child: ExcludeSemantics(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              _dayName(cell.day.date),
+              style: text.labelMedium?.copyWith(
+                color: cell.text,
+                fontWeight: FontWeight.w600,
+              ),
             ),
-          ),
-          const SizedBox(height: 6),
-          mark,
-        ],
+            const SizedBox(height: 6),
+            mark,
+          ],
+        ),
       ),
     );
     final tappable = cell.day.kind != 'today';
+    // Fill and ring live on the Material so the InkWell splash paints above
+    // them (a child decoration would cover the ripple).
     return Semantics(
       button: tappable,
-      label: tappable ? semanticLabel(cell.day) : null,
+      label: semanticLabel(cell.day),
       child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(14),
+        color: cell.fill,
+        shape: RoundedRectangleBorder(
+          side: BorderSide(color: cell.ring, width: cell.ringWidth),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        clipBehavior: Clip.antiAlias,
         child: InkWell(
           key: ValueKey('week-tap-${cell.day.date}'),
-          borderRadius: BorderRadius.circular(14),
           onTap: tappable ? () => showDaySheet(context, cell.day) : null,
           child: box,
         ),
