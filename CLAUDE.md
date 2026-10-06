@@ -184,3 +184,39 @@ iOS is still-frame-only for spoof texture (multi-frame raw-bytes P1.1 open, per 
   `http.runWithClient` + `MockClient`.
 - Known gap: `/leave/attachment/get` answers `not_owner` for anyone but the leave's own
   employee until connector 2.50.0; an approver cannot open an attachment yet.
+
+## My day (1.26.0)
+
+Spec + plan live in the connector repo:
+`docs/superpowers/specs/2026-10-05-my-day-kiosk-only-design.md`,
+`docs/superpowers/plans/2026-10-05-my-day-kiosk-only.md`.
+
+- `SessionService.attendanceKioskOnly` ← `employee.attendance_kiosk_only` on `/login` and
+  `/me` (connector 2.51.0+; missing key = false; prefs key `attendance_kiosk_only`).
+- `lib/screens/home/home_tab_root.dart` picks the Home tab's root: `MyDayScreen` when the
+  flag is true, the classic `HomeScreen` otherwise. It sits inside the tab Navigator's
+  route (built once), so it must stay the thing that listens to the session.
+- `lib/screens/home/my_day/`: `my_day_screen.dart` (one call, `OmniMobileApi.fetchMyDay()`
+  → `POST /home/my_day`; keeps the last loaded day on a failed refresh),
+  `today_card.dart` (`TodayCardMode.readOnly` only; `action` is a reserved slot),
+  `day_timeline.dart`, `for_you_list.dart`. Models in `lib/models/my_day.dart`; unknown
+  For-you kinds are dropped at parse time.
+- The server enforces kiosk-only (`kiosk_only`, HTTP 403). `OmniMobileApi.onKioskOnly`
+  (wired in `main.dart`) re-pulls `/me` when any call is refused that way, which swaps
+  the classic home for My day. `home_screen.dart` has no kiosk-only code.
+- Refresh: first build, pull down, Home tab tap/re-tap (`HomeShell._onTabTap`), return
+  from a pushed screen, app resume (`AppLifecycleListener`). No polling. Overlapping
+  `refresh()` calls share one in-flight request. A `kiosk_only: false` answer re-pulls
+  `/me` (flips back to the classic home). `_onTap` ignores taps while one is in progress.
+- For-you rows: `ForYouItem.id == 0` (server omitted it) means a `my_leave` / `my_expense`
+  row does nothing on tap. `my_expense.state` shows `submitted` → "Waiting for approval",
+  `approved` / `posted` / `in_payment` / `paid` → "Approved", `refused` → "Refused".
+  Dates: `my_leave.date_from` / `date_to` are plain dates, `oldest_at` is a UTC datetime.
+  `DateFormat` / `NumberFormat` in For you are pinned to `en_US` (no l10n in this app).
+- `no_employee_linked` from `/home/my_day` is HTTP 404 (not 403): it comes from the
+  connector's shared `_get_employee` helper.
+- `today.punches` may include a check-in carried over from the previous day (night
+  shift); `DayTimeline` orders purely by time and does not look at the date.
+- Tests: `test/screens/my_day/`, `test/screens/home_tab_root_test.dart`,
+  `test/models/my_day_test.dart`, `test/services/my_day_api_test.dart`,
+  `test/services/session_kiosk_only_test.dart`; fixture `test/fixtures/my_day_fixture.dart`.

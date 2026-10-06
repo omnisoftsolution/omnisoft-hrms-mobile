@@ -84,6 +84,7 @@ class SessionService extends ChangeNotifier {
   static const _kRefreshExpiresAt = 'refresh_expires_at';
   static const _kAuthSource = 'auth_source';
   static const _kDeviceLabel = 'device_label';
+  static const _kAttendanceKioskOnly = 'attendance_kiosk_only';
 
   // Keys: leave approvals capability from /me (connector 2.43.0+).
   // Part of the login session: cleared by clearSession().
@@ -126,6 +127,7 @@ class SessionService extends ChangeNotifier {
   String _employeeTimeOffApprover = '';
   String _employeeAttendanceApprover = '';
   String _employeeExpenseApprover = '';
+  bool _attendanceKioskOnly = false;
 
   // App Identity: device refresh token + auth source
   String _refreshToken = '';
@@ -188,6 +190,11 @@ class SessionService extends ChangeNotifier {
   String get employeeTimeOffApprover => _employeeTimeOffApprover;
   String get employeeAttendanceApprover => _employeeAttendanceApprover;
   String get employeeExpenseApprover => _employeeExpenseApprover;
+
+  /// HR marked this employee "Attendance on kiosk only" (connector
+  /// 2.51.0+). The Home tab then shows My day instead of the check-in
+  /// home. A connector that does not send the key reads as false.
+  bool get attendanceKioskOnly => _attendanceKioskOnly;
 
   // App Identity
   String get refreshToken => _refreshToken;
@@ -264,6 +271,7 @@ class SessionService extends ChangeNotifier {
     _refreshExpiresAt = rx.isNotEmpty ? DateTime.tryParse(rx) : null;
     _authSource = prefs.getString(_kAuthSource) ?? '';
     _deviceLabel = prefs.getString(_kDeviceLabel) ?? '';
+    _attendanceKioskOnly = prefs.getBool(_kAttendanceKioskOnly) ?? false;
     _leaveApprovalsEnabled = prefs.getBool(_kLeaveApprovalsEnabled) ?? false;
     _leaveApprovalsPendingCount =
         prefs.getInt(_kLeaveApprovalsPendingCount) ?? 0;
@@ -462,6 +470,7 @@ class SessionService extends ChangeNotifier {
       employeeExpenseApprover:
           employee['expense_approver_name']?.toString() ?? '',
     );
+    await _saveAttendanceKioskOnly(employee);
     _authSource = res['auth_source']?.toString() ?? '';
     _deviceLabel = _labelOf(res);
     final rt = res['refresh_token']?.toString() ?? '';
@@ -674,6 +683,17 @@ class SessionService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// `employee.attendance_kiosk_only` from a /login or /me body. A
+  /// missing key (connector before 2.51.0) reads as false.
+  Future<void> _saveAttendanceKioskOnly(Map<String, dynamic> employee) async {
+    final value = employee['attendance_kiosk_only'] == true;
+    final changed = value != _attendanceKioskOnly;
+    _attendanceKioskOnly = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kAttendanceKioskOnly, value);
+    if (changed) notifyListeners();
+  }
+
   /// Clear only the auth session keys. SaaS routing stays so re-login
   /// doesn't require re-entering the company code.
   Future<void> clearSession() async {
@@ -701,6 +721,7 @@ class SessionService extends ChangeNotifier {
     _refreshExpiresAt = null;
     _authSource = '';
     _deviceLabel = '';
+    _attendanceKioskOnly = false;
     _leaveApprovalsEnabled = false;
     _leaveApprovalsPendingCount = 0;
     final prefs = await SharedPreferences.getInstance();
@@ -719,6 +740,7 @@ class SessionService extends ChangeNotifier {
     await prefs.remove(_kRefreshExpiresAt);
     await prefs.remove(_kAuthSource);
     await prefs.remove(_kDeviceLabel);
+    await prefs.remove(_kAttendanceKioskOnly);
     await prefs.remove(_kLeaveApprovalsEnabled);
     await prefs.remove(_kLeaveApprovalsPendingCount);
     await prefs.remove(_keyExpiresAt);
@@ -859,6 +881,7 @@ class SessionService extends ChangeNotifier {
         employeeExpenseApprover: employee['expense_approver_name']?.toString(),
       );
       await updateLeaveApprovalsFromMe(res);
+      await _saveAttendanceKioskOnly(employee);
       await updateFromMe(res);
       return true;
     } catch (_) {

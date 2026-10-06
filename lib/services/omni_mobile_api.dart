@@ -7,6 +7,7 @@ import '../models/attendance_record.dart';
 import '../models/attendance_status.dart';
 import '../models/currency_option.dart';
 import '../models/leave_type.dart';
+import '../models/my_day.dart';
 import '../models/expense_record.dart';
 import '../models/leave_duration_preview.dart';
 import '../models/leave_record.dart';
@@ -123,6 +124,12 @@ class OmniMobileApi {
   /// OmniHrApp to re-render and route the user back to LoginScreen.
   static void Function()? onInvalidSession;
 
+  /// Wired in main.dart. Called whenever a call is refused with
+  /// `kiosk_only`: HR switched "Attendance on kiosk only" on after the
+  /// last /me, so the session flag is stale. Typical wiring:
+  /// SessionService.refreshMe, which flips the Home tab to My day.
+  static void Function()? onKioskOnly;
+
   Map<String, String> get _headers => {
         'Content-Type': 'application/json',
         if (token.isNotEmpty) 'Authorization': 'Bearer $token',
@@ -177,6 +184,9 @@ class OmniMobileApi {
       // 'invalid_token' kept for legacy; new server returns 'invalid_session'.
       if (code == 'invalid_session' || code == 'invalid_token') {
         onInvalidSession?.call();
+      }
+      if (code == 'kiosk_only') {
+        onKioskOnly?.call();
       }
       throw ApiException.fromBody(data);
     }
@@ -263,6 +273,16 @@ class OmniMobileApi {
 
   Future<Map<String, dynamic>> me() async {
     return _post('/me');
+  }
+
+  // -- Home --
+
+  /// The whole My day home in one call (connector 2.51.0+). Only called
+  /// for employees whose session says `attendanceKioskOnly`, so an older
+  /// connector never sees it.
+  Future<MyDay> fetchMyDay() async {
+    final data = await _post('/home/my_day');
+    return MyDay.fromJson(data);
   }
 
   // -- Notifications --

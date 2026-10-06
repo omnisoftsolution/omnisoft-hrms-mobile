@@ -36,6 +36,13 @@ void main() async {
     session.clearSession();
   };
 
+  // A check-in refused with kiosk_only means HR switched "Attendance on
+  // kiosk only" on after the last /me. Re-pull /me so HomeShell swaps the
+  // Home tab to My day.
+  OmniMobileApi.onKioskOnly = () {
+    session.refreshMe();
+  };
+
   runApp(OmniHrApp(session: session, biometric: biometric));
 }
 
