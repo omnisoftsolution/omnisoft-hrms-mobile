@@ -13,7 +13,18 @@ Map<String, dynamic> sampleMyDayJson() => {
           'start': '2026-10-05 01:00:00',
           'end': '2026-10-05 10:00:00',
           'label': '08:00 – 17:00',
+          'blocks': [
+            {'start': '2026-10-05 01:00:00', 'end': '2026-10-05 05:00:00', 'label': '08:00 – 12:00'},
+            {'start': '2026-10-05 06:00:00', 'end': '2026-10-05 10:00:00', 'label': '13:00 – 17:00'},
+          ],
         },
+        'lunch': {'start': '2026-10-05 05:00:00', 'end': '2026-10-05 06:00:00', 'label': '12:00 – 13:00'},
+        'break_exempt': false,
+        'late_minutes': 0,
+        'early_minutes': 0,
+        'overtime_minutes': 0,
+        'missing': false,
+        'off': null,
         'punches': [
           {
             'kind': 'check_in',
@@ -54,6 +65,16 @@ Map<String, dynamic> sampleMyDayJson() => {
           'issued_on': '2026-09-30',
         },
       ],
+      'week': [
+        {'date': '2026-10-05', 'kind': 'today'},
+        {'date': '2026-10-06', 'kind': 'scheduled'},
+        {'date': '2026-10-07', 'kind': 'scheduled'},
+        {'date': '2026-10-08', 'kind': 'public_holiday', 'name': 'Deepavali'},
+        {'date': '2026-10-09', 'kind': 'leave', 'name': 'Annual leave'},
+        {'date': '2026-10-10', 'kind': 'off'},
+        {'date': '2026-10-11', 'kind': 'off'},
+      ],
+      'next_shift': {'date': '2026-10-06', 'label': '08:00 – 17:00'},
     };
 
 /// [sampleMyDayJson] parsed, with the parts a test wants to vary.
@@ -64,15 +85,33 @@ MyDay sampleMyDay({
   double hoursToday = 3.2,
   List<Map<String, dynamic>>? punches,
   List<Map<String, dynamic>>? forYou,
+  int lateMinutes = 0,
+  int earlyMinutes = 0,
+  int overtimeMinutes = 0,
+  bool missing = false,
+  bool breakExempt = false,
+  Map<String, dynamic>? off,
+  bool withLunch = true,
+  List<Map<String, dynamic>>? week,
+  bool withNextShift = true,
 }) {
   final json = sampleMyDayJson();
   final today = Map<String, dynamic>.from(json['today'] as Map);
   today['state'] = state;
   today['kiosk_only'] = kioskOnly;
   today['hours_today'] = hoursToday;
+  today['late_minutes'] = lateMinutes;
+  today['early_minutes'] = earlyMinutes;
+  today['overtime_minutes'] = overtimeMinutes;
+  today['missing'] = missing;
+  today['break_exempt'] = breakExempt;
+  today['off'] = off;
   if (!withShift) today['shift'] = null;
+  if (!withLunch) today['lunch'] = null;
   if (punches != null) today['punches'] = punches;
   json['today'] = today;
   if (forYou != null) json['for_you'] = forYou;
+  if (week != null) json['week'] = week;
+  if (!withNextShift) json['next_shift'] = null;
   return MyDay.fromJson(json);
 }

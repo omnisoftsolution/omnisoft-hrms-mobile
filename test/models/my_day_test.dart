@@ -94,6 +94,55 @@ void main() {
       ]);
       expect(day.punches.single.place, '');
     });
+
+    test('parses the 2.52.0 keys', () {
+      final day = MyDay.fromJson(sampleMyDayJson());
+      expect(day.shift!.blocks.map((b) => b.label), ['08:00 – 12:00', '13:00 – 17:00']);
+      expect(day.lunch!.label, '12:00 – 13:00');
+      expect(day.breakExempt, isFalse);
+      expect(day.lateMinutes, 0);
+      expect(day.missing, isFalse);
+      expect(day.off, isNull);
+      expect(day.week.map((d) => d.kind), [
+        'today', 'scheduled', 'scheduled', 'public_holiday', 'leave', 'off', 'off']);
+      expect(day.week[3].name, 'Deepavali');
+      expect(day.nextShift!.date, '2026-10-06');
+    });
+
+    test('2.51.0 body (no new keys) still parses with defaults', () {
+      final json = sampleMyDayJson();
+      final today = Map<String, dynamic>.from(json['today'] as Map)
+        ..remove('lunch')
+        ..remove('break_exempt')
+        ..remove('late_minutes')
+        ..remove('early_minutes')
+        ..remove('overtime_minutes')
+        ..remove('missing')
+        ..remove('off');
+      (today['shift'] as Map).remove('blocks');
+      json['today'] = today;
+      json.remove('week');
+      json.remove('next_shift');
+      final day = MyDay.fromJson(json);
+      expect(day.shift!.blocks, isEmpty);
+      expect(day.lunch, isNull);
+      expect(day.lateMinutes, 0);
+      expect(day.missing, isFalse);
+      expect(day.week, isEmpty);
+      expect(day.nextShift, isNull);
+    });
+
+    test('off and leave fields', () {
+      final day = sampleMyDay(off: {
+        'kind': 'leave', 'name': 'Annual leave',
+        'date_from': '2026-10-05', 'date_to': '2026-10-06', 'back_on': '2026-10-08',
+      }, withShift: false);
+      expect(day.off!.kind, 'leave');
+      expect(day.off!.backOn, '2026-10-08');
+      final holiday = sampleMyDay(off: {'kind': 'public_holiday', 'name': 'X'});
+      expect(holiday.off!.name, 'X');
+      expect(holiday.off!.backOn, '');
+    });
   });
 
   group('MyDayPunch labels', () {
