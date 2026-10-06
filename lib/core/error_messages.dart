@@ -14,6 +14,10 @@ library;
 
 import '../services/omni_mobile_api.dart';
 
+/// Local code (never sent by the server) for "My day could not be
+/// refreshed and an older copy is still on screen".
+const myDayRefreshFailed = 'my_day_refresh_failed';
+
 /// App Identity error codes that [friendlyErrorCode] owns.
 const _identityCodes = {
   'account_locked',
@@ -101,6 +105,12 @@ String friendlyError(Object e) {
   }
 
   // --- Attendance / geofence / face ---
+  if (raw.contains('kiosk_only')) {
+    return 'Your attendance is recorded at the kiosk.';
+  }
+  if (raw.contains(myDayRefreshFailed)) {
+    return "Couldn't refresh. Pull down to try again.";
+  }
   if (raw.contains('office_geofence_not_configured')) {
     return 'No office location is set for your profile. Ask HR to '
         'configure your work address.';

@@ -121,6 +121,17 @@ void main() {
       expect(friendlyError('egress_ip_mismatch'),
           contains('office network'));
     });
+
+    test('kiosk_only tells the employee where attendance is recorded', () {
+      const text = 'Your attendance is recorded at the kiosk.';
+      expect(friendlyError('kiosk_only'), text);
+      expect(friendlyError(ApiException('kiosk_only')), text);
+    });
+
+    test('My day refresh failure text', () {
+      expect(friendlyError(myDayRefreshFailed),
+          "Couldn't refresh. Pull down to try again.");
+    });
   });
 
   group('friendlyErrorCode', () {
