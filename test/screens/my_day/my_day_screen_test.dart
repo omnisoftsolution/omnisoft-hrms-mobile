@@ -1,10 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:omni_hr/models/expense_record.dart';
 import 'package:omni_hr/models/my_day.dart';
-import 'package:omni_hr/screens/home/my_day/day_timeline.dart';
 import 'package:omni_hr/screens/home/my_day/my_day_screen.dart';
 import 'package:omni_hr/services/omni_mobile_api.dart';
 import 'package:omni_hr/services/session_service.dart';
@@ -20,20 +22,31 @@ class _FakeApi extends OmniMobileApi {
 
   final List<Object> script;
   int calls = 0;
+  int expenseCalls = 0;
   List<ExpenseRecord> expenses = [];
+
+  /// When set, fetchMyDay / getExpenseList wait for it before answering.
+  Completer<void>? fetchGate;
+  Completer<void>? expenseGate;
 
   @override
   Future<MyDay> fetchMyDay() async {
     final i = calls < script.length ? calls : script.length - 1;
     calls++;
+    final gate = fetchGate;
+    if (gate != null) await gate.future;
     final result = script[i];
     if (result is MyDay) return result;
     throw result;
   }
 
   @override
-  Future<ExpenseListPage> getExpenseList({int? beforeId}) async =>
-      ExpenseListPage(records: expenses, hasMore: false);
+  Future<ExpenseListPage> getExpenseList({int? beforeId}) async {
+    expenseCalls++;
+    final gate = expenseGate;
+    if (gate != null) await gate.future;
+    return ExpenseListPage(records: expenses, hasMore: false);
+  }
 }
 
 class _Calls {
@@ -42,24 +55,28 @@ class _Calls {
   int sessionRefreshes = 0;
 }
 
-Widget _host(_FakeApi api, {Key? key, _Calls? calls}) =>
-    ChangeNotifierProvider<SessionService>(
-      create: (_) => SessionService(),
-      child: MaterialApp(
-        home: MyDayScreen(
-          key: key,
-          apiBuilder: (_) => api,
-          appBar: AppBar(title: const Text('TEST BAR')),
-          onOpenLeave: (id) => calls?.leave.add(id),
-          onOpenExpense: (id) => calls?.expense.add(id),
-          refreshSession: () async => calls?.sessionRefreshes++,
-          destinationBuilder: (item, expense) => Scaffold(
-            appBar: AppBar(),
-            body: Text('DEST ${item.kind} ${expense?.id ?? '-'}'),
-          ),
-        ),
+Widget _host(
+  _FakeApi api, {
+  Key? key,
+  _Calls? calls,
+  SessionService? session,
+}) => ChangeNotifierProvider<SessionService>(
+  create: (_) => session ?? SessionService(),
+  child: MaterialApp(
+    home: MyDayScreen(
+      key: key,
+      apiBuilder: (_) => api,
+      appBar: AppBar(title: const Text('TEST BAR')),
+      onOpenLeave: (id) => calls?.leave.add(id),
+      onOpenExpense: (id) => calls?.expense.add(id),
+      refreshSession: () async => calls?.sessionRefreshes++,
+      destinationBuilder: (item, expense) => Scaffold(
+        appBar: AppBar(),
+        body: Text('DEST ${item.kind} ${expense?.id ?? '-'}'),
       ),
-    );
+    ),
+  ),
+);
 
 /// Tall enough that every row of the screen is built.
 void _tallScreen(WidgetTester tester) {
@@ -146,7 +163,7 @@ void main() {
     final api = _FakeApi([sampleMyDay()]);
     await tester.pumpWidget(_host(api));
     await tester.pumpAndSettle();
-    await tester.drag(find.byType(DayTimeline), const Offset(0, 800));
+    await tester.drag(find.text('Timeline'), const Offset(0, 800));
     await tester.pumpAndSettle();
     expect(api.calls, 2);
   });
@@ -252,5 +269,137 @@ void main() {
     expect(calls.expense, isEmpty);
     expect(find.textContaining('DEST'), findsNothing);
     expect(api.calls, 1);
+  });
+
+  testWidgets('a refresh during a push is shared with the return refresh', (
+    tester,
+  ) async {
+    _tallScreen(tester);
+    final key = GlobalKey<MyDayScreenState>();
+    final api = _FakeApi([sampleMyDay()]);
+    await tester.pumpWidget(_host(api, key: key));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('September 2026 payslip is ready'));
+    await tester.pumpAndSettle();
+    expect(api.calls, 1);
+
+    api.fetchGate = Completer<void>();
+    final tabTap = key.currentState!.refresh(); // e.g. a Home tab tap
+    await tester.pageBack(); // the return-from-push refresh
+    await tester.pump(const Duration(seconds: 1));
+    expect(api.calls, 2);
+    api.fetchGate!.complete();
+    await tabTap;
+    await tester.pumpAndSettle();
+    expect(api.calls, 2);
+
+    // Once finished, a new refresh issues a new request.
+    api.fetchGate = null;
+    await key.currentState!.refresh();
+    expect(api.calls, 3);
+  });
+
+  testWidgets('app resume refreshes once', (tester) async {
+    _tallScreen(tester);
+    final api = _FakeApi([sampleMyDay()]);
+    await tester.pumpWidget(_host(api));
+    await tester.pumpAndSettle();
+    expect(api.calls, 1);
+
+    final binding = tester.binding;
+    binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    await tester.pumpAndSettle();
+    expect(api.calls, 1);
+    binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+    expect(api.calls, 2);
+  });
+
+  testWidgets(
+    'kiosk_only false re-pulls /me when the session still says true',
+    (tester) async {
+      _tallScreen(tester);
+      FlutterSecureStorage.setMockInitialValues({});
+      final session = SessionService();
+      await tester.runAsync(
+        () => session.saveLoginResponse({
+          'success': true,
+          'access_token': 'A',
+          'expires_at': '2026-10-13 10:00:00',
+          'auth_source': 'omni',
+          'user': {'id': 9, 'login': 'a@b.c', 'name': 'A'},
+          'employee': {'id': 6, 'name': 'A', 'attendance_kiosk_only': true},
+        }),
+      );
+      expect(session.attendanceKioskOnly, isTrue);
+
+      final calls = _Calls();
+      final api = _FakeApi([
+        sampleMyDay(),
+        sampleMyDay(kioskOnly: false),
+        sampleMyDay(kioskOnly: false),
+      ]);
+      final key = GlobalKey<MyDayScreenState>();
+      await tester.pumpWidget(
+        _host(api, key: key, calls: calls, session: session),
+      );
+      await tester.pumpAndSettle();
+      expect(calls.sessionRefreshes, 0);
+
+      await key.currentState!.refresh();
+      await tester.pumpAndSettle();
+      expect(calls.sessionRefreshes, 1);
+    },
+  );
+
+  testWidgets('a kiosk_only answer does not re-pull /me', (tester) async {
+    _tallScreen(tester);
+    final calls = _Calls();
+    await tester.pumpWidget(_host(_FakeApi([sampleMyDay()]), calls: calls));
+    await tester.pumpAndSettle();
+    expect(calls.sessionRefreshes, 0);
+  });
+
+  testWidgets('a second tap while the expense lookup runs is ignored', (
+    tester,
+  ) async {
+    _tallScreen(tester);
+    final calls = _Calls();
+    final api = _FakeApi([sampleMyDay()])
+      ..expenses = [
+        ExpenseRecord.fromJson({
+          'id': 88,
+          'name': 'Transport',
+          'state': 'submitted',
+        }),
+      ]
+      ..expenseGate = Completer<void>();
+    await tester.pumpWidget(_host(api, calls: calls));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Transport'));
+    await tester.pump();
+    await tester.tap(find.text('Transport'));
+    await tester.pump();
+    api.expenseGate!.complete();
+    await tester.pumpAndSettle();
+    expect(api.expenseCalls, 1);
+    expect(find.text('DEST my_expense 88'), findsOneWidget);
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.textContaining('DEST'), findsNothing);
+    expect(find.text('For you'), findsOneWidget);
+    expect(api.calls, 2);
+
+    // The guard is released afterwards: the row opens again.
+    api.expenseGate = null;
+    await tester.tap(find.text('Transport'));
+    await tester.pumpAndSettle();
+    expect(find.text('DEST my_expense 88'), findsOneWidget);
+    expect(api.expenseCalls, 2);
   });
 }

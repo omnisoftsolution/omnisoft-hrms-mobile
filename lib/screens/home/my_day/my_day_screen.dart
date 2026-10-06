@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -66,10 +68,29 @@ class MyDayScreenState extends State<MyDayScreen> {
   String? _firstLoadError;
   bool _refreshFailed = false;
 
+  /// The fetch currently running; every overlapping [refresh] shares it.
+  Future<void>? _inFlight;
+
+  /// Guards [_onTap] against a second tap while one is being handled.
+  bool _opening = false;
+
+  late final AppLifecycleListener _lifecycle;
+
   @override
   void initState() {
     super.initState();
+    _lifecycle = AppLifecycleListener(
+      onResume: () {
+        refresh();
+      },
+    );
     refresh();
+  }
+
+  @override
+  void dispose() {
+    _lifecycle.dispose();
+    super.dispose();
   }
 
   OmniMobileApi _api() {
@@ -83,9 +104,14 @@ class MyDayScreenState extends State<MyDayScreen> {
   }
 
   /// Reload the day. Called on first build, pull-to-refresh, on return
-  /// from a pushed screen, and by HomeShell on a Home tab tap. No polling:
-  /// a kiosk punch shows on the next refresh.
-  Future<void> refresh() async {
+  /// from a pushed screen, on app resume, and by HomeShell on a Home tab
+  /// tap. No polling: a kiosk punch shows on the next refresh. Overlapping
+  /// calls share the one request in flight.
+  Future<void> refresh() => _inFlight ??= _load().whenComplete(() {
+    _inFlight = null;
+  });
+
+  Future<void> _load() async {
     try {
       final day = await _api().fetchMyDay();
       if (!mounted) return;
@@ -94,6 +120,12 @@ class MyDayScreenState extends State<MyDayScreen> {
         _firstLoadError = null;
         _refreshFailed = false;
       });
+      // HR cleared the flag: re-pull /me so the Home tab flips back to the
+      // classic home (the session listener swaps it).
+      if (!day.kioskOnly &&
+          context.read<SessionService>().attendanceKioskOnly) {
+        unawaited(_refreshSession());
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -152,27 +184,33 @@ class MyDayScreenState extends State<MyDayScreen> {
       widget.onOpenLeave?.call(item.id);
       return;
     }
-    ExpenseRecord? expense;
-    if (item.kind == 'my_expense') {
-      expense = await _findExpense(item.id);
-      if (!mounted) return;
-      if (expense == null) {
-        widget.onOpenExpense?.call(item.id);
-        return;
+    if (_opening) return;
+    _opening = true;
+    try {
+      ExpenseRecord? expense;
+      if (item.kind == 'my_expense') {
+        expense = await _findExpense(item.id);
+        if (!mounted) return;
+        if (expense == null) {
+          widget.onOpenExpense?.call(item.id);
+          return;
+        }
       }
-    }
-    final build = widget.destinationBuilder ?? _destination;
-    // The tab's own Navigator: the bottom bar stays visible.
-    await Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => build(item, expense)));
-    if (!mounted) return;
-    if (item.kind == 'leave_approvals') {
-      // A decision changes the approvals count kept in the session.
-      await _refreshSession();
+      final build = widget.destinationBuilder ?? _destination;
+      // The tab's own Navigator: the bottom bar stays visible.
+      await Navigator.of(
+        context,
+      ).push(MaterialPageRoute(builder: (_) => build(item, expense)));
       if (!mounted) return;
+      if (item.kind == 'leave_approvals') {
+        // A decision changes the approvals count kept in the session.
+        await _refreshSession();
+        if (!mounted) return;
+      }
+      await refresh();
+    } finally {
+      _opening = false;
     }
-    await refresh();
   }
 
   @override
