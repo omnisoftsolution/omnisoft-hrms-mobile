@@ -98,13 +98,100 @@ void main() {
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
     await tester.pumpAndSettle();
     expect(api.calls, 1);
+    expect(find.byKey(const ValueKey('status-tile')), findsOneWidget);
     expect(find.text('Checked in'), findsOneWidget);
-    expect(find.text('Attendance is recorded at the kiosk.'), findsOneWidget);
     expect(find.text('Check in'), findsOneWidget);
     expect(find.text('Shift ends'), findsOneWidget);
     expect(find.text('For you'), findsOneWidget);
     expect(find.text('3 leave requests to approve'), findsOneWidget);
     expect(find.text(_banner), findsNothing);
+  });
+
+  testWidgets('sections in order: tile, week, timeline, for you', (
+    tester,
+  ) async {
+    _tallScreen(tester);
+    await tester.pumpWidget(_host(_FakeApi([sampleMyDay()])));
+    await tester.pumpAndSettle();
+    final tile = tester.getTopLeft(find.byKey(const ValueKey('status-tile')));
+    final week = tester.getTopLeft(find.text('This week'));
+    final timeline = tester.getTopLeft(find.text('Timeline'));
+    final forYou = tester.getTopLeft(find.text('For you'));
+    expect(tile.dy, lessThan(week.dy));
+    expect(week.dy, lessThan(timeline.dy));
+    expect(timeline.dy, lessThan(forYou.dy));
+  });
+
+  testWidgets('missing day: red For-you row opens the kiosk sheet', (
+    tester,
+  ) async {
+    _tallScreen(tester);
+    final day = sampleMyDay(state: 'not_in', missing: true, punches: []);
+    await tester.pumpWidget(_host(_FakeApi([day])));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('for-you-missing')),
+      200,
+    );
+    await tester.tap(find.byKey(const ValueKey('for-you-missing')));
+    await tester.pumpAndSettle();
+    expect(find.text('Phone check-in is off'), findsOneWidget);
+  });
+
+  testWidgets('leave day: off card replaces the timeline', (tester) async {
+    _tallScreen(tester);
+    final day = sampleMyDay(
+      state: 'not_in',
+      withShift: false,
+      punches: [],
+      off: {
+        'kind': 'leave',
+        'name': 'Annual leave',
+        'date_from': '2026-10-06',
+        'date_to': '2026-10-07',
+        'back_on': '2026-10-08',
+      },
+    );
+    await tester.pumpWidget(_host(_FakeApi([day])));
+    await tester.pumpAndSettle();
+    expect(find.text('Timeline'), findsNothing);
+    expect(find.text('Annual leave'), findsOneWidget);
+    expect(find.text('From 6 Oct to 7 Oct'), findsOneWidget);
+    expect(find.text('Next shift 6 Oct · 08:00 – 17:00'), findsOneWidget);
+  });
+
+  testWidgets('holiday: off card with the name and the kiosk line', (
+    tester,
+  ) async {
+    _tallScreen(tester);
+    final day = sampleMyDay(
+      state: 'not_in',
+      withShift: false,
+      punches: [],
+      off: {'kind': 'public_holiday', 'name': 'Deepavali'},
+    );
+    await tester.pumpWidget(_host(_FakeApi([day])));
+    await tester.pumpAndSettle();
+    expect(find.text('Timeline'), findsNothing);
+    // The status tile's subtitle and the card's title.
+    expect(find.text('Deepavali'), findsNWidgets(2));
+    expect(find.text('Nothing is expected at the kiosk today'), findsOneWidget);
+    expect(find.text('Next shift 6 Oct · 08:00 – 17:00'), findsOneWidget);
+  });
+
+  testWidgets('not scheduled: off card says enjoy your day', (tester) async {
+    _tallScreen(tester);
+    final day = sampleMyDay(
+      state: 'not_in',
+      withShift: false,
+      punches: [],
+      off: {'kind': 'not_scheduled'},
+    );
+    await tester.pumpWidget(_host(_FakeApi([day])));
+    await tester.pumpAndSettle();
+    expect(find.text('Timeline'), findsNothing);
+    expect(find.text('Enjoy your day'), findsOneWidget);
+    expect(find.text('Nothing is expected at the kiosk today'), findsOneWidget);
   });
 
   testWidgets('empty day: both empty texts', (tester) async {

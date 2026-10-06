@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omni_hr/models/my_day.dart';
 import 'package:omni_hr/screens/home/my_day/for_you_list.dart';
+import 'package:omni_hr/screens/home/my_day/my_day_colors.dart';
 
 import '../../fixtures/my_day_fixture.dart';
 
@@ -25,40 +26,58 @@ void main() {
     test('leave_approvals', () {
       expect(forYouTitle(approvals), '3 leave requests to approve');
       expect(
-          forYouTitle(const ForYouItem(kind: 'leave_approvals', count: 1)),
-          '1 leave request to approve');
-      expect(forYouSubtitle(approvals, now: DateTime.utc(2026, 10, 5, 3)),
-          'Oldest has waited 2 days');
-      expect(forYouSubtitle(approvals, now: DateTime.utc(2026, 10, 4, 3)),
-          'Oldest has waited 1 day');
-      expect(forYouSubtitle(approvals, now: DateTime.utc(2026, 10, 3, 9)),
-          'Oldest is from today');
+        forYouTitle(const ForYouItem(kind: 'leave_approvals', count: 1)),
+        '1 leave request to approve',
+      );
+      expect(
+        forYouSubtitle(approvals, now: DateTime.utc(2026, 10, 5, 3)),
+        'Oldest has waited 2 days',
+      );
+      expect(
+        forYouSubtitle(approvals, now: DateTime.utc(2026, 10, 4, 3)),
+        'Oldest has waited 1 day',
+      );
+      expect(
+        forYouSubtitle(approvals, now: DateTime.utc(2026, 10, 3, 9)),
+        'Oldest is from today',
+      );
     });
 
     test('my_leave', () {
       expect(forYouTitle(leave), 'Annual leave · 12 Oct – 13 Oct');
       expect(forYouSubtitle(leave), 'Waiting for Hendra Wijaya');
-      ForYouItem withState(String state,
-              {String approver = 'Hendra Wijaya', String reason = ''}) =>
-          ForYouItem(
-              kind: 'my_leave',
-              id: 1,
-              state: state,
-              type: 'Sick leave',
-              dateFrom: '2026-10-06',
-              dateTo: '2026-10-06',
-              approver: approver,
-              reason: reason);
+      ForYouItem withState(
+        String state, {
+        String approver = 'Hendra Wijaya',
+        String reason = '',
+      }) => ForYouItem(
+        kind: 'my_leave',
+        id: 1,
+        state: state,
+        type: 'Sick leave',
+        dateFrom: '2026-10-06',
+        dateTo: '2026-10-06',
+        approver: approver,
+        reason: reason,
+      );
       expect(forYouTitle(withState('confirm')), 'Sick leave · 6 Oct');
-      expect(forYouSubtitle(withState('confirm', approver: '')),
-          'Waiting for approval');
-      expect(forYouSubtitle(withState('validate1')),
-          'Waiting for second approval');
-      expect(forYouSubtitle(withState('validate')),
-          'Approved by Hendra Wijaya');
+      expect(
+        forYouSubtitle(withState('confirm', approver: '')),
+        'Waiting for approval',
+      );
+      expect(
+        forYouSubtitle(withState('validate1')),
+        'Waiting for second approval',
+      );
+      expect(
+        forYouSubtitle(withState('validate')),
+        'Approved by Hendra Wijaya',
+      );
       expect(forYouSubtitle(withState('validate', approver: '')), 'Approved');
-      expect(forYouSubtitle(withState('refuse', reason: 'Not this week')),
-          'Refused: Not this week');
+      expect(
+        forYouSubtitle(withState('refuse', reason: 'Not this week')),
+        'Refused: Not this week',
+      );
       expect(forYouSubtitle(withState('refuse')), 'Refused');
     });
 
@@ -66,12 +85,13 @@ void main() {
       expect(forYouTitle(expense), 'Transport');
       expect(forYouSubtitle(expense), 'Waiting for approval · IDR 350,000');
       ForYouItem withState(String state) => ForYouItem(
-          kind: 'my_expense',
-          id: 2,
-          state: state,
-          name: '',
-          amount: 12.5,
-          currency: 'SGD');
+        kind: 'my_expense',
+        id: 2,
+        state: state,
+        name: '',
+        amount: 12.5,
+        currency: 'SGD',
+      );
       expect(forYouTitle(withState('approved')), 'Expense');
       expect(forYouSubtitle(withState('approved')), 'Approved · SGD 12.5');
       expect(forYouSubtitle(withState('paid')), 'Approved · SGD 12.5');
@@ -110,10 +130,55 @@ void main() {
 
   testWidgets('an unknown kind is skipped', (tester) async {
     await tester.pumpWidget(
-        _host([const ForYouItem(kind: 'late_mark', id: 7), payslip]));
+      _host([const ForYouItem(kind: 'late_mark', id: 7), payslip]),
+    );
     expect(find.byType(ListTile), findsOneWidget);
     await tester.pumpWidget(_host([const ForYouItem(kind: 'late_mark')]));
     expect(find.byType(ListTile), findsNothing);
     expect(find.text('Nothing needs your attention.'), findsOneWidget);
+  });
+
+  testWidgets('rows carry a tinted icon tile per kind', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ForYouList(items: sampleMyDay().forYou, onTap: (_) {}),
+        ),
+      ),
+    );
+    Color tileOf(String key) {
+      final box = tester.widget<Container>(
+        find.byKey(ValueKey('for-you-tile-$key')),
+      );
+      return (box.decoration as BoxDecoration).color!;
+    }
+
+    expect(tileOf('leave_approvals-0'), MyDayColors.brk.tint);
+    expect(tileOf('my_leave-412'), MyDayColors.work.tint);
+    expect(tileOf('my_expense-88'), MyDayColors.brk.tint);
+    expect(tileOf('payslip-51'), MyDayColors.overtime.tint);
+  });
+
+  testWidgets('missing prepends a red row that calls onMissingTap', (
+    tester,
+  ) async {
+    var tapped = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ForYouList(
+            items: const [],
+            onTap: (_) {},
+            missing: true,
+            onMissingTap: () => tapped++,
+          ),
+        ),
+      ),
+    );
+    expect(find.text('No check-in recorded today'), findsOneWidget);
+    expect(find.text('Tell HR if you are at work'), findsOneWidget);
+    expect(find.text(ForYouList.emptyText), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('for-you-missing')));
+    expect(tapped, 1);
   });
 }

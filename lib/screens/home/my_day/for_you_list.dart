@@ -4,17 +4,8 @@ import 'package:intl/intl.dart';
 import '../../../core/datetime_utils.dart';
 import '../../../core/theme.dart';
 import '../../../models/my_day.dart';
-
-String _shortDate(String value) {
-  final date = DateTime.tryParse(value);
-  return date == null ? value : DateFormat('d MMM', 'en_US').format(date);
-}
-
-String _dateRange(String from, String to) {
-  final a = _shortDate(from);
-  final b = _shortDate(to);
-  return a == b || b.isEmpty ? a : '$a – $b';
-}
+import 'my_day_colors.dart';
+import 'my_day_display.dart';
 
 String _expenseStateLabel(String state) {
   switch (state) {
@@ -40,7 +31,7 @@ String forYouTitle(ForYouItem item) {
           'to approve';
     case 'my_leave':
       return '${item.type.isEmpty ? 'Leave' : item.type} · '
-          '${_dateRange(item.dateFrom, item.dateTo)}';
+          '${dateRange(item.dateFrom, item.dateTo)}';
     case 'my_expense':
       return item.name.isEmpty ? 'Expense' : item.name;
     case 'payslip':
@@ -80,8 +71,7 @@ String forYouSubtitle(ForYouItem item, {DateTime? now}) {
       }
     case 'my_expense':
       final amount = NumberFormat('#,##0.##', 'en_US').format(item.amount);
-      final money =
-          item.currency.isEmpty ? amount : '${item.currency} $amount';
+      final money = item.currency.isEmpty ? amount : '${item.currency} $amount';
       return '${_expenseStateLabel(item.state)} · $money';
     case 'payslip':
       return 'Tap to view';
@@ -103,12 +93,46 @@ IconData _icon(String kind) {
   }
 }
 
+MyDayTone _tone(String kind) {
+  switch (kind) {
+    case 'leave_approvals':
+    case 'my_expense':
+      return MyDayColors.brk;
+    case 'payslip':
+      return MyDayColors.overtime;
+    default:
+      return MyDayColors.work;
+  }
+}
+
+Widget _tile(Key key, IconData icon, MyDayTone tone, {bool inverted = false}) =>
+    Container(
+      key: key,
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        color: inverted ? Colors.white : tone.tint,
+        borderRadius: BorderRadius.circular(13),
+      ),
+      child: Icon(icon, size: 20, color: tone.onTint),
+    );
+
 /// The "For you" list of My day: one row per item, unknown kinds skipped.
+/// With [missing] a red "No check-in" row comes first (spec 2026-10-06
+/// §4.5); it is the app's own, not a server item.
 class ForYouList extends StatelessWidget {
-  const ForYouList({super.key, required this.items, required this.onTap});
+  const ForYouList({
+    super.key,
+    required this.items,
+    required this.onTap,
+    this.missing = false,
+    this.onMissingTap,
+  });
 
   final List<ForYouItem> items;
   final void Function(ForYouItem item) onTap;
+  final bool missing;
+  final VoidCallback? onMissingTap;
 
   static const emptyText = 'Nothing needs your attention.';
 
@@ -116,31 +140,63 @@ class ForYouList extends StatelessWidget {
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
     final known = items.where((item) => item.isKnown).toList();
-    if (known.isEmpty) {
+    if (known.isEmpty && !missing) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 16),
-        child: Text(emptyText,
-            style: text.bodyMedium?.copyWith(color: AppTheme.outline)),
+        child: Text(
+          emptyText,
+          style: text.bodyMedium?.copyWith(color: AppTheme.outline),
+        ),
       );
     }
     return Column(
       children: [
+        if (missing)
+          Card(
+            margin: const EdgeInsets.only(bottom: 8),
+            color: MyDayColors.missing.tint,
+            child: ListTile(
+              key: const ValueKey('for-you-missing'),
+              leading: _tile(
+                const ValueKey('for-you-tile-missing'),
+                Icons.error_outline,
+                MyDayColors.missing,
+                inverted: true,
+              ),
+              title: Text(
+                'No check-in recorded today',
+                style: TextStyle(
+                  color: MyDayColors.missing.onTint,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              subtitle: Text(
+                'Tell HR if you are at work',
+                style: TextStyle(color: MyDayColors.missing.onTint),
+              ),
+              trailing: Icon(
+                Icons.chevron_right,
+                color: MyDayColors.missing.onTint,
+              ),
+              onTap: onMissingTap,
+            ),
+          ),
         for (final item in known)
           Card(
             margin: const EdgeInsets.only(bottom: 8),
             child: ListTile(
               key: ValueKey('for-you-${item.kind}-${item.id}'),
-              leading: Icon(
+              leading: _tile(
+                ValueKey('for-you-tile-${item.kind}-${item.id}'),
                 _icon(item.kind),
-                // Something the user must act on stands out.
-                color: item.kind == 'leave_approvals'
-                    ? AppTheme.secondary
-                    : AppTheme.primary,
+                _tone(item.kind),
               ),
               title: Text(forYouTitle(item)),
               subtitle: Text(forYouSubtitle(item)),
-              trailing:
-                  const Icon(Icons.chevron_right, color: AppTheme.outline),
+              trailing: const Icon(
+                Icons.chevron_right,
+                color: AppTheme.outline,
+              ),
               onTap: () => onTap(item),
             ),
           ),
