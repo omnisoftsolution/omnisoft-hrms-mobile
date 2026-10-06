@@ -49,7 +49,7 @@ TESTFLIGHT_CHANGELOG = <<~NOTES.freeze
   from HR, keep Face ID, and manage your signed-in phones under
   Security and Privacy.
 
-  New in this build (1.25.0):
+  New in this build (1.26.0):
   - Activate a phone with the invite link or QR code HR sends you,
     then use Face ID to sign back in on that phone.
   - Profile > Security and Privacy > Your devices lists every phone
@@ -66,14 +66,15 @@ TESTFLIGHT_CHANGELOG = <<~NOTES.freeze
     approve or refuse leave in the app.
 
   Please test:
-  1. Open the invite link (or scan the QR code) from HR, activate,
-     then enable Face ID. Kill and reopen the app and confirm Face ID
-     signs you back in.
-  2. Open Profile > Security and Privacy > Your devices; sign in on a
-     second phone with the same account and confirm both phones show
-     up there.
-  3. From Odoo, revoke one of the two phones, then relaunch the app on
-     that phone and confirm it asks you to sign in again.
+  1. In Odoo, tick "Attendance on kiosk only" on your employee, then
+     relaunch the app. Confirm the Home tab shows My day with today's
+     status.
+  2. Punch at the kiosk, then reopen the app (or tap the Home tab) and
+     confirm the punch appears on the My day timeline.
+  3. Approvers: approve a leave request from the Approvals row on My
+     day, then come back and confirm the count went down.
+  4. Untick the box in Odoo, relaunch, and confirm the classic home with
+     the check-in button is back.
 NOTES
 
 platform :ios do

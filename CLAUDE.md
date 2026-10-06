@@ -205,8 +205,9 @@ Spec + plan live in the connector repo:
   (wired in `main.dart`) re-pulls `/me` when any call is refused that way, which swaps
   the classic home for My day. `home_screen.dart` has no kiosk-only code.
 - Refresh: first build, pull down, Home tab tap/re-tap (`HomeShell._onTabTap`), return
-  from a pushed screen. No polling. There is no request coalescing in `MyDayScreen` yet:
-  overlapping refreshes each issue their own call.
+  from a pushed screen, app resume (`AppLifecycleListener`). No polling. Overlapping
+  `refresh()` calls share one in-flight request. A `kiosk_only: false` answer re-pulls
+  `/me` (flips back to the classic home). `_onTap` ignores taps while one is in progress.
 - For-you rows: `ForYouItem.id == 0` (server omitted it) means a `my_leave` / `my_expense`
   row does nothing on tap. `my_expense.state` shows `submitted` → "Waiting for approval",
   `approved` / `posted` / `in_payment` / `paid` → "Approved", `refused` → "Refused".
