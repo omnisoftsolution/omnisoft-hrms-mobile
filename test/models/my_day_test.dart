@@ -180,6 +180,63 @@ void main() {
       expect(holiday.off!.name, 'X');
       expect(holiday.off!.backOn, '');
     });
+
+    test('week entries parse the 2.52.1 summary keys', () {
+      final day = MyDay.fromJson({
+        'success': true,
+        'date': '2026-10-06',
+        'today': <String, dynamic>{},
+        'week': [
+          {
+            'date': '2026-10-05',
+            'kind': 'worked',
+            'verdict': 'late',
+            'shift': '08:00 – 17:00',
+            'first_in': '08:17',
+            'last_out': '17:05',
+            'worked_minutes': 483,
+            'late_minutes': 17,
+            'early_minutes': 0,
+            'place': 'Front desk',
+          },
+          {
+            'date': '2026-10-09',
+            'kind': 'leave',
+            'name': 'Annual Leave',
+            'approver': 'Sophia Johnson',
+          },
+        ],
+      });
+      final mon = day.week[0];
+      expect(mon.shift, '08:00 – 17:00');
+      expect(mon.firstIn, '08:17');
+      expect(mon.lastOut, '17:05');
+      expect(mon.workedMinutes, 483);
+      expect(mon.lateMinutes, 17);
+      expect(mon.earlyMinutes, 0);
+      expect(mon.place, 'Front desk');
+      expect(day.week[1].approver, 'Sophia Johnson');
+    });
+
+    test('a 2.52.0 week entry defaults the 2.52.1 keys', () {
+      final day = MyDay.fromJson({
+        'success': true,
+        'date': '2026-10-06',
+        'today': <String, dynamic>{},
+        'week': [
+          {'date': '2026-10-05', 'kind': 'worked', 'verdict': 'ok'},
+        ],
+      });
+      final mon = day.week[0];
+      expect(mon.shift, '');
+      expect(mon.firstIn, '');
+      expect(mon.lastOut, '');
+      expect(mon.workedMinutes, 0);
+      expect(mon.lateMinutes, 0);
+      expect(mon.earlyMinutes, 0);
+      expect(mon.place, '');
+      expect(mon.approver, '');
+    });
   });
 
   group('MyDayPunch labels', () {
