@@ -358,10 +358,64 @@ void main() {
 
   testWidgets('a kiosk_only answer does not re-pull /me', (tester) async {
     _tallScreen(tester);
+    FlutterSecureStorage.setMockInitialValues({});
+    final session = SessionService();
+    await tester.runAsync(
+      () => session.saveLoginResponse({
+        'success': true,
+        'access_token': 'A',
+        'expires_at': '2026-10-13 10:00:00',
+        'auth_source': 'omni',
+        'user': {'id': 9, 'login': 'a@b.c', 'name': 'A'},
+        'employee': {'id': 6, 'name': 'A', 'attendance_kiosk_only': true},
+      }),
+    );
+    expect(session.attendanceKioskOnly, isTrue);
+
     final calls = _Calls();
-    await tester.pumpWidget(_host(_FakeApi([sampleMyDay()]), calls: calls));
+    final key = GlobalKey<MyDayScreenState>();
+    await tester.pumpWidget(
+      _host(
+        _FakeApi([sampleMyDay()]), // the server also says kiosk_only: true
+        key: key,
+        calls: calls,
+        session: session,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await key.currentState!.refresh();
     await tester.pumpAndSettle();
     expect(calls.sessionRefreshes, 0);
+  });
+
+  testWidgets('rows stay tappable while the return refresh is pending', (
+    tester,
+  ) async {
+    _tallScreen(tester);
+    final api = _FakeApi([sampleMyDay()]);
+    await tester.pumpWidget(_host(api));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('September 2026 payslip is ready'));
+    await tester.pumpAndSettle();
+    expect(find.text('DEST payslip -'), findsOneWidget);
+
+    // Back from the pushed screen, with the follow-up refresh still pending.
+    api.fetchGate = Completer<void>();
+    await tester.pageBack();
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump(const Duration(seconds: 1));
+    expect(api.calls, 2);
+    expect(find.textContaining('DEST'), findsNothing);
+
+    // Another row is not ignored: it pushes its screen.
+    await tester.tap(find.text('3 leave requests to approve'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('DEST leave_approvals -'), findsOneWidget);
+
+    api.fetchGate!.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('DEST leave_approvals -'), findsOneWidget);
   });
 
   testWidgets('a second tap while the expense lookup runs is ignored', (

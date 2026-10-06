@@ -201,16 +201,19 @@ class MyDayScreenState extends State<MyDayScreen> {
       await Navigator.of(
         context,
       ).push(MaterialPageRoute(builder: (_) => build(item, expense)));
-      if (!mounted) return;
-      if (item.kind == 'leave_approvals') {
-        // A decision changes the approvals count kept in the session.
-        await _refreshSession();
-        if (!mounted) return;
-      }
-      await refresh();
     } finally {
       _opening = false;
     }
+    // The guard covers the lookup and the push only: the follow-up
+    // refreshes can take up to the request timeout on a slow network, and
+    // the (still visible) rows must stay tappable meanwhile.
+    if (!mounted) return;
+    if (item.kind == 'leave_approvals') {
+      // A decision changes the approvals count kept in the session.
+      await _refreshSession();
+      if (!mounted) return;
+    }
+    await refresh();
   }
 
   @override
