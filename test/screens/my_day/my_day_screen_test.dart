@@ -99,7 +99,6 @@ void main() {
     await tester.pumpAndSettle();
     expect(api.calls, 1);
     expect(find.text('Checked in'), findsOneWidget);
-    expect(find.text('Attendance is recorded at the kiosk.'), findsOneWidget);
     expect(find.text('Check in'), findsOneWidget);
     expect(find.text('Shift ends'), findsOneWidget);
     expect(find.text('For you'), findsOneWidget);

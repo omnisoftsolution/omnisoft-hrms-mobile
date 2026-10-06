@@ -16,7 +16,7 @@ import '../../expenses/expense_detail_screen.dart';
 import '../../payroll/payslips_screen.dart';
 import 'day_timeline.dart';
 import 'for_you_list.dart';
-import 'today_card.dart';
+import 'status_tile.dart';
 
 /// The Home tab for employees whose attendance is kiosk-only (spec
 /// 2026-10-05 §5.3): a fixed Today card, the day's timeline and a short
@@ -257,7 +257,7 @@ class MyDayScreenState extends State<MyDayScreen> {
           ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-          child: TodayCard(day: day),
+          child: StatusTile(day: day),
         ),
         Expanded(
           child: RefreshIndicator(
