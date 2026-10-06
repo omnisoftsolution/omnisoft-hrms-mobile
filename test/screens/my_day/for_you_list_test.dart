@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omni_hr/models/my_day.dart';
 import 'package:omni_hr/screens/home/my_day/for_you_list.dart';
+import 'package:omni_hr/screens/home/my_day/my_day_colors.dart';
 
 import '../../fixtures/my_day_fixture.dart';
 
@@ -115,5 +116,40 @@ void main() {
     await tester.pumpWidget(_host([const ForYouItem(kind: 'late_mark')]));
     expect(find.byType(ListTile), findsNothing);
     expect(find.text('Nothing needs your attention.'), findsOneWidget);
+  });
+
+  testWidgets('rows carry a tinted icon tile per kind', (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: ForYouList(items: sampleMyDay().forYou, onTap: (_) {}),
+      ),
+    ));
+    Color tileOf(String key) {
+      final box = tester.widget<Container>(find.byKey(ValueKey('for-you-tile-$key')));
+      return (box.decoration as BoxDecoration).color!;
+    }
+    expect(tileOf('leave_approvals-0'), MyDayColors.brk.tint);
+    expect(tileOf('my_leave-412'), MyDayColors.work.tint);
+    expect(tileOf('my_expense-88'), MyDayColors.brk.tint);
+    expect(tileOf('payslip-51'), MyDayColors.overtime.tint);
+  });
+
+  testWidgets('missing prepends a red row that calls onMissingTap', (tester) async {
+    var tapped = 0;
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: ForYouList(
+          items: const [],
+          onTap: (_) {},
+          missing: true,
+          onMissingTap: () => tapped++,
+        ),
+      ),
+    ));
+    expect(find.text('No check-in recorded today'), findsOneWidget);
+    expect(find.text('Tell HR if you are at work'), findsOneWidget);
+    expect(find.text(ForYouList.emptyText), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('for-you-missing')));
+    expect(tapped, 1);
   });
 }

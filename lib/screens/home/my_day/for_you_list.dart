@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../../../core/datetime_utils.dart';
 import '../../../core/theme.dart';
 import '../../../models/my_day.dart';
+import 'my_day_colors.dart';
 
 String _shortDate(String value) {
   final date = DateTime.tryParse(value);
@@ -103,12 +104,46 @@ IconData _icon(String kind) {
   }
 }
 
+MyDayTone _tone(String kind) {
+  switch (kind) {
+    case 'leave_approvals':
+    case 'my_expense':
+      return MyDayColors.brk;
+    case 'payslip':
+      return MyDayColors.overtime;
+    default:
+      return MyDayColors.work;
+  }
+}
+
+Widget _tile(Key key, IconData icon, MyDayTone tone, {bool inverted = false}) =>
+    Container(
+      key: key,
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        color: inverted ? Colors.white : tone.tint,
+        borderRadius: BorderRadius.circular(13),
+      ),
+      child: Icon(icon, size: 20, color: tone.onTint),
+    );
+
 /// The "For you" list of My day: one row per item, unknown kinds skipped.
+/// With [missing] a red "No check-in" row comes first (spec 2026-10-06
+/// §4.5); it is the app's own, not a server item.
 class ForYouList extends StatelessWidget {
-  const ForYouList({super.key, required this.items, required this.onTap});
+  const ForYouList({
+    super.key,
+    required this.items,
+    required this.onTap,
+    this.missing = false,
+    this.onMissingTap,
+  });
 
   final List<ForYouItem> items;
   final void Function(ForYouItem item) onTap;
+  final bool missing;
+  final VoidCallback? onMissingTap;
 
   static const emptyText = 'Nothing needs your attention.';
 
@@ -116,7 +151,7 @@ class ForYouList extends StatelessWidget {
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
     final known = items.where((item) => item.isKnown).toList();
-    if (known.isEmpty) {
+    if (known.isEmpty && !missing) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 16),
         child: Text(emptyText,
@@ -125,22 +160,34 @@ class ForYouList extends StatelessWidget {
     }
     return Column(
       children: [
+        if (missing)
+          Card(
+            margin: const EdgeInsets.only(bottom: 8),
+            color: MyDayColors.missing.tint,
+            child: ListTile(
+              key: const ValueKey('for-you-missing'),
+              leading: _tile(const ValueKey('for-you-tile-missing'),
+                  Icons.error_outline, MyDayColors.missing, inverted: true),
+              title: Text('No check-in recorded today',
+                  style: TextStyle(
+                      color: MyDayColors.missing.onTint,
+                      fontWeight: FontWeight.w600)),
+              subtitle: Text('Tell HR if you are at work',
+                  style: TextStyle(color: MyDayColors.missing.onTint)),
+              trailing: Icon(Icons.chevron_right, color: MyDayColors.missing.onTint),
+              onTap: onMissingTap,
+            ),
+          ),
         for (final item in known)
           Card(
             margin: const EdgeInsets.only(bottom: 8),
             child: ListTile(
               key: ValueKey('for-you-${item.kind}-${item.id}'),
-              leading: Icon(
-                _icon(item.kind),
-                // Something the user must act on stands out.
-                color: item.kind == 'leave_approvals'
-                    ? AppTheme.secondary
-                    : AppTheme.primary,
-              ),
+              leading: _tile(ValueKey('for-you-tile-${item.kind}-${item.id}'),
+                  _icon(item.kind), _tone(item.kind)),
               title: Text(forYouTitle(item)),
               subtitle: Text(forYouSubtitle(item)),
-              trailing:
-                  const Icon(Icons.chevron_right, color: AppTheme.outline),
+              trailing: const Icon(Icons.chevron_right, color: AppTheme.outline),
               onTap: () => onTap(item),
             ),
           ),
