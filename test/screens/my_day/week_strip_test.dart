@@ -139,6 +139,19 @@ void main() {
         isFocusable: true,
       ),
     );
+    final fri = tester.getSemantics(
+      find.byKey(const ValueKey('week-tap-2026-10-09')),
+    );
+    expect(
+      fri,
+      matchesSemantics(
+        isButton: true,
+        label: 'Fri, leave, Annual leave',
+        hasTapAction: true,
+        hasFocusAction: true,
+        isFocusable: true,
+      ),
+    );
     final tue = tester.getSemantics(
       find.byKey(const ValueKey('week-tap-2026-10-06')),
     );

@@ -129,56 +129,62 @@ Future<void> showDaySheet(BuildContext context, MyDayWeekDay day) {
     showDragHandle: true,
     builder: (sheetContext) {
       final text = Theme.of(sheetContext).textTheme;
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              summary.title,
-              key: const ValueKey('day-sheet-title'),
-              style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: summary.tone.tint,
-                    borderRadius: BorderRadius.circular(14),
+      return SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                summary.title,
+                key: const ValueKey('day-sheet-title'),
+                style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: summary.tone.tint,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Icon(
+                      summary.icon,
+                      size: 22,
+                      color: summary.tone.dot,
+                    ),
                   ),
-                  child: Icon(summary.icon, size: 22, color: summary.tone.dot),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        summary.head,
-                        style: text.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      if (summary.sub.isNotEmpty) ...[
-                        const SizedBox(height: 2),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
                         Text(
-                          summary.sub,
-                          style: text.bodySmall?.copyWith(
-                            color: AppTheme.outline,
+                          summary.head,
+                          style: text.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
+                        if (summary.sub.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            summary.sub,
+                            style: text.bodySmall?.copyWith(
+                              color: AppTheme.outline,
+                            ),
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
-                ),
-              ],
-            ),
-          ],
+                ],
+              ),
+            ],
+          ),
         ),
       );
     },

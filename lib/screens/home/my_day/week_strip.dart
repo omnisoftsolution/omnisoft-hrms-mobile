@@ -56,7 +56,7 @@ class WeekStrip extends StatelessWidget {
       case 'public_holiday':
         return d.name.isEmpty ? 'public holiday' : 'public holiday, ${d.name}';
       case 'leave':
-        return d.name.isEmpty ? 'leave' : d.name;
+        return d.name.isEmpty ? 'leave' : 'leave, ${d.name}';
       case 'scheduled':
         return 'scheduled';
       default:
