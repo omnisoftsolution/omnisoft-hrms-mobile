@@ -60,6 +60,10 @@ TESTFLIGHT_CHANGELOG = <<~NOTES.freeze
   - Build 87: invite, reset and sign-in code emails now come from
     "<Company> via Omni HR" <no-reply@omnisoftsolution.com>. If the
     sign-in code email can't be sent, the app now says so clearly.
+  - Build 88 (1.26.0): employees marked "Attendance on kiosk only" get
+    a new "My day" home (today's status, kiosk punches, things that need
+    their attention) and cannot check in from the phone. Approvers can
+    approve or refuse leave in the app.
 
   Please test:
   1. Open the invite link (or scan the QR code) from HR, activate,

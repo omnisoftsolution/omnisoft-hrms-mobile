@@ -1,1 +1,1 @@
-Sign in with your Omni HR account. Activate with the link or QR code from HR, keep Face ID, and manage your signed-in phones under Security and Privacy.
+Approvers can now approve or refuse leave requests in the app. Staff who record attendance at the kiosk get a new "My day" home: today's status and kiosk punches, plus what needs your attention.
