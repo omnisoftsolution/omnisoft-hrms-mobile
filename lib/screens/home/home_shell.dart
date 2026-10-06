@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'home_screen.dart';
+import 'home_tab_root.dart';
+import 'my_day/my_day_screen.dart';
 import '../approvals/approval_detail_screen.dart';
 import '../expenses/expenses_screen.dart';
 import '../history/history_shell.dart';
@@ -25,6 +27,7 @@ class HomeShellState extends State<HomeShell> {
   // Per-tab screen state keys (for tab-switch refresh + notification
   // deep-linking into HistoryShell / ExpensesScreen).
   final _homeKey = GlobalKey<HomeScreenState>();
+  final _myDayKey = GlobalKey<MyDayScreenState>();
   final _leaveKey = GlobalKey<LeaveScreenState>();
   final _historyKey = GlobalKey<HistoryShellState>();
   final _expensesKey = GlobalKey<ExpensesScreenState>();
@@ -177,11 +180,18 @@ class HomeShellState extends State<HomeShell> {
       if (nav != null && nav.canPop()) {
         nav.popUntil((r) => r.isFirst);
       }
+      // My day reloads on a Home re-tap (a kiosk punch shows on the next
+      // refresh). No-op on the classic home: the key is not mounted.
+      if (i == 0) _myDayKey.currentState?.refresh();
       return;
     }
     setState(() => _index = i);
-    // Refresh data when switching to these tabs.
-    if (i == 0) _homeKey.currentState?.refresh();
+    // Refresh data when switching to these tabs. Only one of the two Home
+    // keys is mounted at a time.
+    if (i == 0) {
+      _homeKey.currentState?.refresh();
+      _myDayKey.currentState?.refresh();
+    }
     if (i == 1) _leaveKey.currentState?.refresh();
     if (i == 2) _historyKey.currentState?.refresh();
     // For feature-gated tabs (Leave, Expenses) also re-pull the
@@ -237,6 +247,7 @@ class HomeShellState extends State<HomeShell> {
       builder: (_) => ApprovalDetailScreen(leaveId: leaveId),
     ));
     _homeKey.currentState?.refresh();
+    _myDayKey.currentState?.refresh();
   }
 
   /// Wraps the given root screen in its own Navigator so that pushes
@@ -279,7 +290,14 @@ class HomeShellState extends State<HomeShell> {
             children: [
               _buildTabNavigator(
                 navKey: _homeNavKey,
-                root: HomeScreen(key: _homeKey),
+                root: HomeTabRoot(
+                  classicHome: HomeScreen(key: _homeKey),
+                  myDay: MyDayScreen(
+                    key: _myDayKey,
+                    onOpenLeave: navigateToLeave,
+                    onOpenExpense: navigateToExpense,
+                  ),
+                ),
               ),
               _buildTabNavigator(
                 navKey: _leaveNavKey,
