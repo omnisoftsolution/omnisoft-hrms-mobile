@@ -152,21 +152,12 @@ class AttendanceActionController extends ChangeNotifier {
     return 'Outside the office ($dist)';
   }
 
-  /// The old `_buttonState` rules: enrolment first, then the Wi-Fi gate,
-  /// then the geofence; "no fix yet" stays ready and the tap decides.
+  /// Enrolment first, then the geofence; "no fix yet" stays ready and the
+  /// tap decides. The Wi-Fi gate never deads the button: [perform] reports
+  /// it at tap time with the friendly reason (the tile has no Wi-Fi line).
   AttendanceButtonState get buttonState {
     if (acting) return AttendanceButtonState.acting;
     if (needsEnrollment) return AttendanceButtonState.enroll;
-    final wifi = lastWifi;
-    if (wifi != null &&
-        wifiPreCheckErrorCode(
-              status: status,
-              wifi: wifi,
-              devLocation: devLocation,
-            ) !=
-            null) {
-      return AttendanceButtonState.blocked;
-    }
     if (isOutside) return AttendanceButtonState.blocked;
     return AttendanceButtonState.ready;
   }

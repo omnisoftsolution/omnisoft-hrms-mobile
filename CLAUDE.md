@@ -62,11 +62,15 @@ pinned machine-wide via `flutter config --jdk-dir` → temurin-17. If the error 
 - lib/core/error_messages.dart — friendly text for mock_location / outside_geofence /
   office_geofence_not_configured error codes.
 - Flexible work location (`AttendanceStatus.flexibleLocation` ← `flexible_location`):
-  home_screen skips the fast-fail, button stays ready, GPS chip shows neutral
-  "Remote" outside the fence. Server logs coords + tags in_work_from/out_work_from
-  and flags remote punches for HR review; coords required + mock hard-denied
-  server-side for these employees.
-Radius-update bugs: check the controller's cached status/distance recompute path first.
+  the controller's `perform()` skips the fast-fail, the My day button stays ready, the
+  tile's place line shows neutral "Remote" outside the fence. Server logs coords + tags
+  in_work_from/out_work_from and flags remote punches for HR review; coords required +
+  mock hard-denied server-side for these employees.
+- The Wi-Fi gate never deads the button (1.29.0): only the geofence makes `buttonState`
+  `blocked`; a missing / wrong office Wi-Fi is reported at tap time by `perform()` through
+  `friendlyError(wifiPreCheckErrorCode(...))`.
+Server enforces; the client radius check is UX only. Radius-update bugs: check the
+controller's cached status/distance recompute path first.
 
 ## Liveness mirror — HELD, own cadence
 Branch `feat/liveness-confidence-threshold` @ 479c32d (unmerged, unpushed) mirrors the kiosk's
@@ -169,8 +173,9 @@ iOS is still-frame-only for spoof texture (multi-frame raw-bytes P1.1 open, per 
   decision, and when a `leave_approval_requested` notification arrives.
 - Screens in lib/screens/approvals/: `ApprovalsScreen` (Pending / Recent),
   `ApprovalDetailScreen` (Approve / Refuse), `showRefuseReasonSheet` (reason 3 to 500
-  characters, root navigator). Entry points: `ApprovalsHomeCard` at the top of the classic Home (shown even when Attendance is off),
-  and `HomeShellState.navigateToApproval(leaveId)` for notifications.
+  characters, root navigator). Entry points (1.29.0): the `leave_approvals` For-you card on
+  My day (shown even when Attendance is off), the `LeaveApprovalsRow` at the top of the Leave
+  tab, and `HomeShellState.navigateToApproval(leaveId)` for notifications.
 - The app never decides who may act: buttons follow the connector's `can_approve` /
   `can_refuse`, and approve/refuse send `expected_state` so a request someone else already
   decided comes back as `state_changed`.
@@ -203,12 +208,14 @@ Spec + plan live in the connector repo:
   phone users are out of scope), `day_timeline.dart`, `for_you_list.dart`. Models in `lib/models/my_day.dart`; unknown
   For-you kinds are dropped at parse time.
 - The server enforces kiosk-only (`kiosk_only`, HTTP 403). `OmniMobileApi.onKioskOnly`
-  (wired in `main.dart`) re-pulls `/me` when any call is refused that way, which swaps
-  the classic home for My day. The kiosk-only flag decides only whether the tile shows the check-in button.
+  (wired in `main.dart`) re-pulls `/me` when any call is refused that way. Since 1.29.0
+  (My day for everyone) every employee sees My day; the kiosk-only flag decides only
+  whether the tile shows the check-in button.
 - Refresh: first build, pull down, Home tab tap/re-tap (`HomeShell._onTabTap`), return
   from a pushed screen, app resume (`AppLifecycleListener`). No polling. Overlapping
   `refresh()` calls share one in-flight request. A `kiosk_only: false` answer re-pulls
-  `/me` (flips back to the classic home). `_onTap` ignores taps while one is in progress.
+  `/me` (the tile gets its check-in button back; My day stays). `_onTap` ignores taps while
+  one is in progress.
 - For-you rows: `ForYouItem.id == 0` (server omitted it) means a `my_leave` / `my_expense`
   row does nothing on tap. `my_expense.state` shows `submitted` → "Waiting for approval",
   `approved` / `posted` / `in_payment` / `paid` → "Approved", `refused` → "Refused".
@@ -267,6 +274,15 @@ Spec + plan live in the connector repo:
   face · 10 seconds"; dimmed and dead while outside the office.
 - `buildTimeline(day, {now, phoneHint})`: phone wording when `!day.kioskOnly`; the missing day's
   red For-you row is kiosk-only.
+- Check out only while checked in: the tile's label comes from `controller.status?.checkedIn`
+  (the truth `perform()` punches on), not the day state. `on_break` is a closed attendance, so
+  it shows outlined "Check in again" and the tap posts a check-in.
+- Off days (`leave` / `public_holiday` / `not_scheduled`, no shift): phone users get a live
+  outlined "Check in" (same gates: enrolment first, dead while outside); kiosk-only days keep no
+  button.
+- Attendance off (`!session.featureAttendance`): `MyDayScreen` owns no controller (no GPS timer,
+  no punch) and shows `FeatureLockedPane` in place of the tile + timeline; the week strip and
+  For you stay.
 - Leave approvals: the `leave_approvals` For-you card is the only Home entry (no card when nothing
   waits). `LeaveApprovalsRow` (`lib/screens/leave/leave_approvals_row.dart`) tops the Leave tab
   for approvers and opens `ApprovalsScreen(initialSegment: 1)` (Recent) when nothing waits.

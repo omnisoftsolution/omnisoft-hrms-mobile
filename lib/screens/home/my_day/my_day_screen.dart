@@ -14,6 +14,7 @@ import '../../../services/face_recognition_service.dart';
 import '../../../services/omni_mobile_api.dart';
 import '../../../services/session_service.dart';
 import '../../../widgets/error_state_view.dart';
+import '../../../widgets/feature_locked_pane.dart';
 import '../../../widgets/omni_app_bar.dart';
 import '../../approvals/approvals_screen.dart';
 import '../../expenses/expense_detail_screen.dart';
@@ -189,9 +190,10 @@ class MyDayScreenState extends State<MyDayScreen> {
   }
 
   /// Phone check-in days own a controller (status + GPS); kiosk-only days
-  /// drop it. Called after every successful day load.
+  /// and tenants without Attendance drop it. Called after every successful
+  /// day load.
   Future<void> _syncController(MyDay day) async {
-    if (day.kioskOnly) {
+    if (day.kioskOnly || !context.read<SessionService>().featureAttendance) {
       _gpsTimer?.cancel();
       _gpsTimer = null;
       _controller?.removeListener(_onControllerChange);
@@ -256,18 +258,10 @@ class MyDayScreenState extends State<MyDayScreen> {
   }
 
   /// The tile's button for the current day and controller state (spec
-  /// 2026-10-07 §4.2).
+  /// 2026-10-07 §4.2). Kiosk-only days have no controller, so no button.
   TileAction? _tileAction(MyDay day) {
     final c = _controller;
     if (c == null) return null;
-    switch (displayOf(day)) {
-      case MyDayDisplay.holiday:
-      case MyDayDisplay.leave:
-      case MyDayDisplay.noShift:
-        return null;
-      default:
-        break;
-    }
     final state = c.buttonState;
     if (state == AttendanceButtonState.enroll) {
       return TileAction(
@@ -276,17 +270,30 @@ class MyDayScreenState extends State<MyDayScreen> {
         onPressed: _act,
       );
     }
-    if (day.state == 'checked_in' || day.state == 'on_break') {
+    // The same truth perform() punches on: `on_break` is a closed
+    // attendance, so it offers Check in again, never Check out.
+    final checkedIn = c.status?.checkedIn ?? (day.state == 'checked_in');
+    if (checkedIn) {
       return TileAction(
         label: 'Check out',
         enabled: state != AttendanceButtonState.acting,
         onPressed: _act,
       );
     }
+    // Leave, public holiday or no shift: nothing is expected, but phone
+    // users may still work (outlined, so it does not read as a must).
+    final offDay = switch (displayOf(day)) {
+      MyDayDisplay.holiday ||
+      MyDayDisplay.leave ||
+      MyDayDisplay.noShift => true,
+      _ => false,
+    };
     final again = day.punches.isNotEmpty;
     return TileAction(
       label: again ? 'Check in again' : 'Check in',
-      style: again ? TileActionStyle.outlined : TileActionStyle.filled,
+      style: again || offDay
+          ? TileActionStyle.outlined
+          : TileActionStyle.filled,
       enabled: state == AttendanceButtonState.ready,
       onPressed: _act,
     );
@@ -327,7 +334,21 @@ class MyDayScreenState extends State<MyDayScreen> {
   Future<void> _act() async {
     final c = _controller;
     if (c == null) return;
-    final outcome = await c.perform(captureFace: _captureFace, enrol: _enrol);
+    final AttendanceActionOutcome? result;
+    try {
+      result = await c.perform(captureFace: _captureFace, enrol: _enrol);
+    } catch (e) {
+      // A device lookup or a UI step threw outside perform()'s own catch.
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(friendlyError(e)),
+          backgroundColor: AppTheme.error,
+        ),
+      );
+      return;
+    }
+    final outcome = result;
     if (!mounted || outcome == null) return;
     final messenger = ScaffoldMessenger.of(context);
     if (outcome.error != null) {
@@ -430,6 +451,9 @@ class MyDayScreenState extends State<MyDayScreen> {
       color: AppTheme.onSurfaceVariant,
       fontWeight: FontWeight.w700,
     );
+    // Attendance off in the subscription: no tile, no timeline, no punch
+    // (no controller either); the week and For you still apply.
+    final attendanceOn = context.watch<SessionService>().featureAttendance;
     return Column(
       children: [
         if (_refreshFailed)
@@ -442,17 +466,18 @@ class MyDayScreenState extends State<MyDayScreen> {
               style: text.bodySmall?.copyWith(color: AppTheme.error),
             ),
           ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-          child: StatusTile(
-            day: day,
-            action: _tileAction(day),
-            place: _controller?.placeLabel ?? '',
-            pinOn: _controller == null
-                ? null
-                : (_controller!.hasPlace && !_controller!.isOutside),
+        if (attendanceOn)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            child: StatusTile(
+              day: day,
+              action: _tileAction(day),
+              place: _controller?.placeLabel ?? '',
+              pinOn: _controller == null
+                  ? null
+                  : (_controller!.hasPlace && !_controller!.isOutside),
+            ),
           ),
-        ),
         Expanded(
           child: RefreshIndicator(
             onRefresh: refresh,
@@ -465,6 +490,16 @@ class MyDayScreenState extends State<MyDayScreen> {
                 16 + MediaQuery.of(context).viewPadding.bottom,
               ),
               children: [
+                if (!attendanceOn) ...[
+                  const FeatureLockedPane(
+                    featureName: 'Attendance',
+                    subtitle:
+                        'Your subscription does not include '
+                        'attendance tracking. Contact your administrator '
+                        'to upgrade.',
+                  ),
+                  const SizedBox(height: 16),
+                ],
                 if (_autoClosed != null) ...[
                   AutoClosedBanner(
                     acp: _autoClosed!,
@@ -476,7 +511,9 @@ class MyDayScreenState extends State<MyDayScreen> {
                   WeekStrip(day: day),
                   const SizedBox(height: 20),
                 ],
-                if (day.off == null || day.punches.isNotEmpty) ...[
+                if (!attendanceOn)
+                  const SizedBox.shrink()
+                else if (day.off == null || day.punches.isNotEmpty) ...[
                   Text('Timeline', style: sectionStyle),
                   const SizedBox(height: 8),
                   DayTimeline(day: day, phoneHint: _phoneHint()),
@@ -490,7 +527,7 @@ class MyDayScreenState extends State<MyDayScreen> {
                 ForYouList(
                   items: day.forYou,
                   onTap: _onTap,
-                  missing: day.missing && day.kioskOnly,
+                  missing: attendanceOn && day.missing && day.kioskOnly,
                   onMissingTap: () => showKioskSheet(context),
                 ),
               ],

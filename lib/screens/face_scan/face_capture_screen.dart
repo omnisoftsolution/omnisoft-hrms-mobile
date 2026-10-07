@@ -2,6 +2,7 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants.dart';
+import '../../core/error_messages.dart';
 import '../../core/theme.dart';
 import '../../models/face_capture_result.dart';
 import '../../services/face_recognition_engine.dart' show FaceLivenessResult;
@@ -50,9 +51,9 @@ class _FaceCaptureScreenState extends State<FaceCaptureScreen> {
       // simulating so the path is never actually read.
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        Navigator.of(context).pop(
-          FaceCaptureResult.success('/dev/null/simulated.jpg'),
-        );
+        Navigator.of(
+          context,
+        ).pop(FaceCaptureResult.success('/dev/null/simulated.jpg'));
       });
       return;
     }
@@ -169,7 +170,8 @@ class _FaceCaptureScreenState extends State<FaceCaptureScreen> {
           liveness.available &&
           !liveness.isLive) {
         setState(() {
-          _qualityHint = liveness.errorMessage ??
+          _qualityHint =
+              liveness.errorMessage ??
               'Live photo check failed. Please try again.';
           _capturing = false;
         });
@@ -187,7 +189,7 @@ class _FaceCaptureScreenState extends State<FaceCaptureScreen> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _qualityHint = 'Capture failed: $e';
+          _qualityHint = friendlyError(e);
           _capturing = false;
         });
       }
@@ -242,9 +244,7 @@ class _FaceCaptureScreenState extends State<FaceCaptureScreen> {
     }
     return Scaffold(
       backgroundColor: Colors.black,
-      body: SafeArea(
-        child: _error != null ? _buildError() : _buildCamera(),
-      ),
+      body: SafeArea(child: _error != null ? _buildError() : _buildCamera()),
     );
   }
 
@@ -265,10 +265,7 @@ class _FaceCaptureScreenState extends State<FaceCaptureScreen> {
                   style: const TextStyle(color: Colors.white, fontSize: 16),
                 ),
                 const SizedBox(height: 24),
-                FilledButton(
-                  onPressed: _cancel,
-                  child: const Text('Close'),
-                ),
+                FilledButton(onPressed: _cancel, child: const Text('Close')),
               ],
             ),
           ),
@@ -305,14 +302,17 @@ class _FaceCaptureScreenState extends State<FaceCaptureScreen> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         const CircularProgressIndicator(
-                            color: Colors.white, strokeWidth: 3),
+                          color: Colors.white,
+                          strokeWidth: 3,
+                        ),
                         const SizedBox(height: 16),
                         const Text(
                           'Checking…',
                           style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600),
+                            color: Colors.white,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ],
                     ),
@@ -347,7 +347,9 @@ class _FaceCaptureScreenState extends State<FaceCaptureScreen> {
                       )
                     : Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 10),
+                          horizontal: 16,
+                          vertical: 10,
+                        ),
                         decoration: BoxDecoration(
                           color: AppTheme.error.withValues(alpha: 0.92),
                           borderRadius: BorderRadius.circular(20),
@@ -383,8 +385,9 @@ class _FaceCaptureScreenState extends State<FaceCaptureScreen> {
                         shape: BoxShape.circle,
                         color: Colors.white,
                         border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.4),
-                            width: 6),
+                          color: Colors.white.withValues(alpha: 0.4),
+                          width: 6,
+                        ),
                         boxShadow: [
                           BoxShadow(
                             color: Colors.black.withValues(alpha: 0.35),
@@ -427,7 +430,8 @@ class _FaceCaptureScreenState extends State<FaceCaptureScreen> {
             // index is actually 1 (Kotlin reference assumption) or
             // something else for these specific model files. Remove
             // this block once we know the right interpretation.
-            if (_lastLiveness != null) _buildSpoofDebugOverlay(),
+            if (DevConstants.showLivenessDiagnostic && _lastLiveness != null)
+              _buildSpoofDebugOverlay(),
             // ===== END DIAGNOSTIC OVERLAY =====
           ],
         );

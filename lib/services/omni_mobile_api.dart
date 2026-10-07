@@ -127,7 +127,8 @@ class OmniMobileApi {
   /// Wired in main.dart. Called whenever a call is refused with
   /// `kiosk_only`: HR switched "Attendance on kiosk only" on after the
   /// last /me, so the session flag is stale. Typical wiring:
-  /// SessionService.refreshMe, which flips the Home tab to My day.
+  /// SessionService.refreshMe (My day's tile drops its check-in button
+  /// on the next day load, which also reports `kiosk_only`).
   static void Function()? onKioskOnly;
 
   Map<String, String> get _headers => {

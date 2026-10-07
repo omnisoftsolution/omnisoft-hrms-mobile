@@ -19,6 +19,7 @@ AttendanceStatus _status({
   bool checkedIn = false,
   bool office = true,
   bool flexible = false,
+  List<String>? requiredSsids,
 }) => AttendanceStatus.fromJson({
   'checked_in': checkedIn,
   'hours_today': 0,
@@ -30,6 +31,8 @@ AttendanceStatus _status({
     'office_radius_meters': 200,
   },
   'flexible_location': flexible,
+  if (requiredSsids != null)
+    'network_gate': {'wifi_required': true, 'expected_ssids': requiredSsids},
 });
 
 LocationResult _at(double lat, double lng) => LocationResult(
@@ -230,6 +233,21 @@ void main() {
       expect(h.api.checkOuts, hasLength(1));
       expect(h.api.checkIns, isEmpty);
     });
+
+    test(
+      'Wi-Fi gate not met: the button stays ready, the tap says why',
+      () async {
+        final h = _Harness(status: _status(requiredSsids: ['hq-wifi']));
+        await h.controller.refreshStatus();
+        expect(h.controller.lastWifi?.ssid, 'office');
+        expect(h.controller.buttonState, AttendanceButtonState.ready);
+        final outcome = await h.perform();
+        expect(outcome?.error, friendlyError('wifi_not_recognized'));
+        expect(h.captures, 0);
+        expect(h.api.checkIns, isEmpty);
+        expect(h.api.checkOuts, isEmpty);
+      },
+    );
 
     test('a cancelled capture is silent', () async {
       final h = _Harness();
