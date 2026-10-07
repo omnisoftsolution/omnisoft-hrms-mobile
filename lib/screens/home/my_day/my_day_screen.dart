@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../../../core/error_messages.dart';
 import '../../../core/theme.dart';
+import '../../../models/attendance_ask.dart';
 import '../../../models/auto_close_previous.dart';
 import '../../../models/expense_record.dart';
 import '../../../models/face_capture_result.dart';
@@ -22,6 +23,7 @@ import '../../face_scan/face_capture_screen.dart';
 import '../../face_scan/face_enrollment_screen.dart';
 import '../../payroll/payslips_screen.dart';
 import 'auto_closed_banner.dart';
+import 'declaration_sheet.dart';
 import 'day_timeline.dart';
 import 'for_you_list.dart';
 import 'my_day_display.dart';
@@ -368,6 +370,7 @@ class MyDayScreenState extends State<MyDayScreen> {
       if (!outcome.checkedIn) _autoClosed = null;
       if (outcome.autoClosed != null) _autoClosed = outcome.autoClosed;
     });
+    final undo = _undoAction(outcome);
     messenger.showSnackBar(
       SnackBar(
         content: Text(
@@ -376,9 +379,133 @@ class MyDayScreenState extends State<MyDayScreen> {
               : 'Checked out successfully!',
         ),
         backgroundColor: AppTheme.primary,
+        // A bar with an action would otherwise stay until tapped; the undo
+        // window closes it (spec 2026-10-07 §4.4).
+        persist: false,
+        duration: undo == null
+            ? const Duration(seconds: 4)
+            : _undoDuration(outcome.undoUntil!),
+        action: undo,
       ),
     );
     await refresh();
+    final ask = outcome.ask;
+    if (ask != null && mounted) await _askAfterPunch(ask);
+  }
+
+  /// UNDO while the server's window is open (connector 2.54.0); null on
+  /// 2.53.x or once `undo_until` has passed.
+  SnackBarAction? _undoAction(AttendanceActionOutcome outcome) {
+    final until = outcome.undoUntil;
+    final id = outcome.attendanceId;
+    if (until == null ||
+        id == null ||
+        !DateTime.now().toUtc().isBefore(until)) {
+      return null;
+    }
+    return SnackBarAction(
+      label: 'UNDO',
+      textColor: Colors.white,
+      onPressed: () => _undo(id),
+    );
+  }
+
+  /// min(time left in the undo window, 10 s).
+  static Duration _undoDuration(DateTime until) {
+    final left = until.difference(DateTime.now().toUtc());
+    const cap = Duration(seconds: 10);
+    return left < cap ? left : cap;
+  }
+
+  /// Spec §4.4: the server deletes the stray check-in (or reopens the
+  /// check-out) and answers with the status, applied before the reload.
+  Future<void> _undo(int attendanceId) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final api = _api();
+    try {
+      final status = await api.undoPunch(attendanceId);
+      _controller?.applyStatus(status);
+    } catch (e) {
+      if (!mounted) return;
+      messenger.removeCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(friendlyError(e)),
+          backgroundColor: AppTheme.error,
+        ),
+      );
+      return;
+    }
+    if (!mounted) return;
+    messenger.removeCurrentSnackBar();
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('Punch undone'),
+        backgroundColor: AppTheme.primary,
+      ),
+    );
+    await refresh();
+  }
+
+  /// Spec §4.2: the question right after a check-in. The row already
+  /// exists; Skip and the "nothing to declare" answers post nothing.
+  Future<void> _askAfterPunch(AttendanceAsk ask) async {
+    final answer = await showDeclarationSheet(
+      context,
+      title: ask.title,
+      options: ask.options,
+      day: ask.tappedAt.toLocal(),
+      footnote: ask.footnote,
+    );
+    if (!mounted || answer == null) return;
+    if (answer.code == 'undo') {
+      await _undo(ask.attendanceId);
+      return;
+    }
+    if (nothingToDeclare.contains(answer.code)) return;
+    await _declare(
+      trigger: ask.trigger,
+      attendanceId: ask.attendanceId,
+      answer: answer,
+    );
+  }
+
+  /// Posts one answer to attendance/declare; true when it went through.
+  Future<bool> _declare({
+    required String trigger,
+    required int attendanceId,
+    required DeclarationAnswer answer,
+  }) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final api = _api();
+    try {
+      await api.declare(
+        attendanceId: attendanceId,
+        trigger: trigger,
+        answerCode: answer.code,
+        declaredTime: answer.time,
+        note: answer.note,
+      );
+    } catch (e) {
+      if (!mounted) return false;
+      messenger.removeCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(friendlyError(e)),
+          backgroundColor: AppTheme.error,
+        ),
+      );
+      return false;
+    }
+    if (!mounted) return true;
+    messenger.removeCurrentSnackBar();
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('Sent to HR'),
+        backgroundColor: AppTheme.primary,
+      ),
+    );
+    return true;
   }
 
   Future<void> _onTap(ForYouItem item) async {

@@ -121,7 +121,7 @@ class _DeclarationSheetState extends State<DeclarationSheet> {
     final option = _option;
     if (option == null || !_ready) return;
     final t = _times[option.code];
-    final day = widget.day;
+    final day = widget.day.toLocal();
     Navigator.of(context).pop(
       DeclarationAnswer(
         code: option.code,
