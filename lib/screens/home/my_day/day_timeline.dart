@@ -68,13 +68,24 @@ bool _overlaps(String aStart, String aEnd, String bStart, String bEnd) =>
 /// so the tests check the data and not the paint. [now] only matters for
 /// the open-break badge and whether the shift end has passed.
 @visibleForTesting
-List<TimelineEvent> buildTimeline(MyDay day, {DateTime? now}) {
+List<TimelineEvent> buildTimeline(
+  MyDay day, {
+  DateTime? now,
+  String? phoneHint,
+}) {
   final shift = day.shift;
   final punches = day.punches;
   if (shift == null && punches.isEmpty) return const [];
   final nowUtc = (now ?? DateTime.now()).toUtc();
   final display = displayOf(day);
   final open = day.state == 'checked_in' || day.state == 'on_break';
+  final kiosk = day.kioskOnly;
+  final checkInHere = kiosk
+      ? 'Check in at the kiosk'
+      : 'Check in from your phone';
+  final checkOutHere = kiosk
+      ? 'Check out at the kiosk'
+      : 'Check out from your phone';
   final events = <TimelineEvent>[];
   final punchKinds = Map<TimelineEvent, String>.identity();
 
@@ -85,8 +96,8 @@ List<TimelineEvent> buildTimeline(MyDay day, {DateTime? now}) {
         at: shift.start,
         title: 'Shift starts',
         sub: missing
-            ? 'No kiosk check-in yet'
-            : (punches.isEmpty ? 'Check in at the kiosk' : shift.blocksLabel),
+            ? (kiosk ? 'No kiosk check-in yet' : 'No check-in yet')
+            : (punches.isEmpty ? checkInHere : shift.blocksLabel),
         kind: TimelineKind.anchor,
         tone: missing
             ? MyDayColors.missing
@@ -103,7 +114,9 @@ List<TimelineEvent> buildTimeline(MyDay day, {DateTime? now}) {
         TimelineEvent(
           at: nowAt.compareTo(shift.start) < 0 ? shift.start : nowAt,
           title: 'Now',
-          sub: 'If you are at work, check in at the kiosk',
+          sub: kiosk
+              ? 'If you are at work, check in at the kiosk'
+              : (phoneHint ?? 'Check in from your phone'),
           kind: TimelineKind.now,
           tone: MyDayColors.missing,
           current: true,
@@ -215,7 +228,7 @@ List<TimelineEvent> buildTimeline(MyDay day, {DateTime? now}) {
         title: 'Shift ends',
         sub: display == MyDayDisplay.early && beforeEnd
             ? 'Coming back? This counts as a break.'
-            : (passed && !open ? shift.label : 'Check out at the kiosk'),
+            : (passed && !open ? shift.label : checkOutHere),
         kind: TimelineKind.anchor,
         tone: passed ? MyDayColors.work : _grey,
         upcoming: !passed,
@@ -315,18 +328,22 @@ List<TimelineEvent> _withRails(
 
 /// Today as a timeline with a drawn rail (spec 2026-10-06 §4.4).
 class DayTimeline extends StatelessWidget {
-  const DayTimeline({super.key, required this.day, this.now});
+  const DayTimeline({super.key, required this.day, this.now, this.phoneHint});
 
   final MyDay day;
 
   /// Injected clock for tests; defaults to the real time.
   final DateTime? now;
 
+  /// Phone check-in: the Now row's line on a missing day (from the
+  /// controller: at the office, outside, set up your face…).
+  final String? phoneHint;
+
   static const emptyText = 'No attendance recorded today.';
 
   @override
   Widget build(BuildContext context) {
-    final events = buildTimeline(day, now: now);
+    final events = buildTimeline(day, now: now, phoneHint: phoneHint);
     final text = Theme.of(context).textTheme;
     if (events.isEmpty) {
       return Padding(
