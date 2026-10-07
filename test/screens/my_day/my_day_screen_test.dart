@@ -5,9 +5,15 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:omni_hr/models/attendance_status.dart';
 import 'package:omni_hr/models/expense_record.dart';
+import 'package:omni_hr/models/face_capture_result.dart';
+import 'package:omni_hr/models/location_result.dart';
+import 'package:omni_hr/models/wifi_info_result.dart';
 import 'package:omni_hr/models/my_day.dart';
 import 'package:omni_hr/screens/home/my_day/my_day_screen.dart';
+import 'package:omni_hr/services/attendance_action_controller.dart';
+import 'package:omni_hr/services/face_recognition_service.dart';
 import 'package:omni_hr/services/omni_mobile_api.dart';
 import 'package:omni_hr/services/session_service.dart';
 
@@ -28,6 +34,47 @@ class _FakeApi extends OmniMobileApi {
   /// When set, fetchMyDay / getExpenseList wait for it before answering.
   Completer<void>? fetchGate;
   Completer<void>? expenseGate;
+
+  AttendanceStatus attendance = AttendanceStatus.fromJson({
+    'checked_in': false,
+    'hours_today': 0,
+    'employee_id': 1,
+    'auth_type': 'app',
+    'office_latitude': 1.3,
+    'office_longitude': 103.8,
+    'office_radius_meters': 200,
+    'flexible_location': false,
+  });
+  final checkIns = <bool>[];
+
+  @override
+  Future<AttendanceStatus> getAttendanceStatus() async => attendance;
+
+  @override
+  Future<Map<String, dynamic>> checkIn({
+    double? latitude,
+    double? longitude,
+    bool faceVerified = true,
+    String? deviceId,
+    bool devLocation = false,
+    bool isMocked = false,
+    double? accuracy,
+    String? wifiSsid,
+    String? wifiBssid,
+  }) async {
+    checkIns.add(faceVerified);
+    attendance = AttendanceStatus.fromJson({
+      'checked_in': true,
+      'hours_today': 0,
+      'employee_id': 1,
+      'auth_type': 'app',
+      'office_latitude': 1.3,
+      'office_longitude': 103.8,
+      'office_radius_meters': 200,
+      'flexible_location': false,
+    });
+    return const {};
+  }
 
   @override
   Future<MyDay> fetchMyDay() async {
@@ -53,6 +100,20 @@ class _Calls {
   final leave = <int>[];
   final expense = <int>[];
   int sessionRefreshes = 0;
+  int captures = 0;
+}
+
+/// A session that already knows the user approves leave.
+class _ApproverSession extends SessionService {
+  _ApproverSession({required this.count});
+
+  final int count;
+
+  @override
+  bool get leaveApprovalsEnabled => true;
+
+  @override
+  int get leaveApprovalsPendingCount => count;
 }
 
 Widget _host(
@@ -70,6 +131,28 @@ Widget _host(
       onOpenLeave: (id) => calls?.leave.add(id),
       onOpenExpense: (id) => calls?.expense.add(id),
       refreshSession: () async => calls?.sessionRefreshes++,
+      controllerBuilder: (session) => AttendanceActionController(
+        session: session,
+        apiBuilder: (_) => api,
+        getLocation: () async => LocationResult(
+          status: LocationStatus.ready,
+          latitude: 1.3,
+          longitude: 103.8,
+          accuracy: 5,
+        ),
+        getWifi: () async => const WifiInfoResult.ready(ssid: 'office'),
+        getDeviceId: () async => 'device-1',
+        isEnrolled: () => true,
+        verifyFace: (_) async => FaceVerifyResult(ok: true),
+        refreshEnrolled: () async {},
+        devLocation: false,
+        simulateFace: false,
+      ),
+      captureFace: () async {
+        calls?.captures++;
+        return FaceCaptureResult.success('/tmp/face.jpg');
+      },
+      enrol: () async {},
       destinationBuilder: (item, expense) => Scaffold(
         appBar: AppBar(),
         body: Text('DEST ${item.kind} ${expense?.id ?? '-'}'),
@@ -543,4 +626,98 @@ void main() {
     expect(find.text('DEST my_expense 88'), findsOneWidget);
     expect(api.expenseCalls, 2);
   });
+
+  testWidgets('phone day: the tile carries Check in and the live place', (
+    tester,
+  ) async {
+    _tallScreen(tester);
+    final day = sampleMyDay(state: 'not_in', punches: [], kioskOnly: false);
+    await tester.pumpWidget(_host(_FakeApi([day])));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('status-action')), findsOneWidget);
+    expect(find.text('Check in'), findsOneWidget);
+    expect(find.byKey(const ValueKey('status-kiosk-button')), findsNothing);
+    expect(find.byKey(const ValueKey('status-pin-on')), findsOneWidget);
+    expect(find.textContaining('Office (0 m)'), findsOneWidget);
+  });
+
+  testWidgets('tapping Check in captures, posts and reloads the day', (
+    tester,
+  ) async {
+    _tallScreen(tester);
+    final before = sampleMyDay(state: 'not_in', punches: [], kioskOnly: false);
+    final after = sampleMyDay(kioskOnly: false);
+    final api = _FakeApi([before, after]);
+    final calls = _Calls();
+    await tester.pumpWidget(_host(api, calls: calls));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('status-action')));
+    await tester.pumpAndSettle();
+    expect(calls.captures, 1);
+    expect(api.checkIns, [true]);
+    expect(find.text('Checked in successfully!'), findsOneWidget);
+    expect(api.calls, 2);
+    expect(find.text('Check out'), findsOneWidget);
+  });
+
+  testWidgets('a missing phone day has no red For-you row', (tester) async {
+    _tallScreen(tester);
+    final day = sampleMyDay(
+      state: 'not_in',
+      missing: true,
+      punches: [],
+      kioskOnly: false,
+    );
+    await tester.pumpWidget(_host(_FakeApi([day])));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('for-you-missing')), findsNothing);
+    expect(find.text('No check-in'), findsOneWidget);
+  });
+
+  testWidgets('kiosk-only day: no action button', (tester) async {
+    _tallScreen(tester);
+    await tester.pumpWidget(_host(_FakeApi([sampleMyDay()])));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('status-action')), findsNothing);
+    expect(find.byKey(const ValueKey('status-kiosk-button')), findsOneWidget);
+  });
+
+  testWidgets(
+    'a For-you approvals count that differs from the session re-pulls /me',
+    (tester) async {
+      _tallScreen(tester);
+      final day = sampleMyDay(
+        forYou: [
+          {
+            'kind': 'leave_approvals',
+            'count': 2,
+            'oldest_at': '2026-10-05 01:00:00',
+          },
+        ],
+      );
+      final calls = _Calls();
+      await tester.pumpWidget(
+        _host(
+          _FakeApi([day]),
+          calls: calls,
+          session: _ApproverSession(count: 1),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(calls.sessionRefreshes, 1);
+
+      // The numbers agree: nothing to re-pull. A session that does not yet
+      // know the user approves (the default SessionService) is left alone.
+      final agreed = _Calls();
+      await tester.pumpWidget(
+        _host(
+          _FakeApi([day]),
+          calls: agreed,
+          session: _ApproverSession(count: 2),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(agreed.sessionRefreshes, 0);
+    },
+  );
 }
