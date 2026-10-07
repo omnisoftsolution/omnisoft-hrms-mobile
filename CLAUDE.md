@@ -52,9 +52,10 @@ master (f82a8db): android/gradle.properties sets `kotlin.jvm.target.validation.m
 pinned machine-wide via `flutter config --jdk-dir` → temurin-17. If the error returns, re-check both.
 
 ## Geofence / mock-location (recurring bug area)
-- lib/screens/home/home_screen.dart — client fast-fail gate `_isInsideRadius`; fallback
-  `_defaultRadiusMeters = 200` mirrors the connector default; 60s GPS polling; clears stale
-  "outside geofence" banner when a later fix is inside (radius-widened-by-admin case).
+- lib/services/attendance_action_controller.dart — client fast-fail gate `isInsideRadius`;
+  fallback `defaultRadiusMeters = 200` mirrors the connector default; `sampleLocation()` runs
+  every 60 s from `MyDayScreen` (`_gpsTimer`); `placeLabel` / `isOutside` drive the tile's
+  place line, pin badge and button. `perform()` = the old `HomeScreen._onCheckAction`.
 - lib/models/attendance_status.dart — officeRadiusMeters ← `office_radius_meters`, geofenceSource.
 - lib/services/location_service.dart + lib/models/location_result.dart — isMocked from geolocator.
 - lib/services/omni_mobile_api.dart — attendance body ALWAYS sends `is_mocked`; `location_accuracy` when known.
@@ -65,8 +66,7 @@ pinned machine-wide via `flutter config --jdk-dir` → temurin-17. If the error 
   "Remote" outside the fence. Server logs coords + tags in_work_from/out_work_from
   and flags remote punches for HR review; coords required + mock hard-denied
   server-side for these employees.
-Server enforces; the client radius check is UX only. Radius-update bugs: check home_screen's cached
-status/distance recompute path first.
+Radius-update bugs: check the controller's cached status/distance recompute path first.
 
 ## Liveness mirror — HELD, own cadence
 Branch `feat/liveness-confidence-threshold` @ 479c32d (unmerged, unpushed) mirrors the kiosk's
@@ -193,9 +193,10 @@ Spec + plan live in the connector repo:
 
 - `SessionService.attendanceKioskOnly` ← `employee.attendance_kiosk_only` on `/login` and
   `/me` (connector 2.51.0+; missing key = false; prefs key `attendance_kiosk_only`).
-- `lib/screens/home/home_tab_root.dart` picks the Home tab's root: `MyDayScreen` when the
-  flag is true, the classic `HomeScreen` otherwise. It sits inside the tab Navigator's
-  route (built once), so it must stay the thing that listens to the session.
+- The Home tab is `MyDayScreen` for everyone since 1.29.0 (`home_tab_root.dart` and the
+  classic `home_screen.dart` are gone). `SessionService.attendanceKioskOnly` only has to
+  agree with `today.kiosk_only`; My day re-pulls `/me` when the day says the flag is off
+  while the session still says on (HR cleared it).
 - `lib/screens/home/my_day/`: `my_day_screen.dart` (one call, `OmniMobileApi.fetchMyDay()`
   → `POST /home/my_day`; keeps the last loaded day on a failed refresh),
   `status_tile.dart` (1.27.0; replaced `today_card.dart` — the action slot was dropped,
@@ -203,7 +204,7 @@ Spec + plan live in the connector repo:
   For-you kinds are dropped at parse time.
 - The server enforces kiosk-only (`kiosk_only`, HTTP 403). `OmniMobileApi.onKioskOnly`
   (wired in `main.dart`) re-pulls `/me` when any call is refused that way, which swaps
-  the classic home for My day. `home_screen.dart` has no kiosk-only code.
+  the classic home for My day. The kiosk-only flag decides only whether the tile shows the check-in button.
 - Refresh: first build, pull down, Home tab tap/re-tap (`HomeShell._onTabTap`), return
   from a pushed screen, app resume (`AppLifecycleListener`). No polling. Overlapping
   `refresh()` calls share one in-flight request. A `kiosk_only: false` answer re-pulls
@@ -217,7 +218,7 @@ Spec + plan live in the connector repo:
   connector's shared `_get_employee` helper.
 - `today.punches` may include a check-in carried over from the previous day (night
   shift); `DayTimeline` orders purely by time and does not look at the date.
-- Tests: `test/screens/my_day/`, `test/screens/home_tab_root_test.dart`,
+- Tests: `test/screens/my_day/`,
   `test/models/my_day_test.dart`, `test/services/my_day_api_test.dart`,
   `test/services/session_kiosk_only_test.dart`; fixture `test/fixtures/my_day_fixture.dart`.
 
@@ -247,3 +248,32 @@ Spec + plan live in the connector repo:
   `late_minutes`, `early_minutes`, `place`, `approver`); on a 2.52.0 connector the sheet shows
   the kind only ("Worked · on time", "Public holiday", …).
 - Tests: `test/screens/my_day/day_sheet_test.dart`, `week_strip_test.dart`, `test/models/my_day_test.dart`.
+
+### 1.29.0 — My day for everyone (spec `…/2026-10-07-my-day-for-everyone-design.md` in the connector repo)
+- `lib/services/attendance_action_controller.dart`: `AttendanceActionController` (ChangeNotifier)
+  holds `/attendance/status`, the GPS + Wi-Fi samples, `needsEnrollment`, `buttonState`
+  (`enroll` / `ready` / `blocked` / `acting`) and `perform({captureFace, enrol})`, the punch flow
+  moved verbatim from the deleted `HomeScreen`. Every external call is an injectable seam
+  (`apiBuilder`, `getLocation`, `getWifi`, `getDeviceId`, `isEnrolled`, `verifyFace`,
+  `refreshEnrolled`); no widgets, no navigator.
+- `MyDayScreen` owns one controller while `today.kiosk_only` is false (`_syncController`),
+  samples GPS every 60 s, pushes `FaceCaptureScreen` / `FaceEnrollmentScreen` on the **root**
+  navigator, shows the `AutoClosedBanner` above the week strip, and re-pulls `/me` when the
+  session knows the user approves and the For-you `leave_approvals` count differs from
+  `session.leaveApprovalsPendingCount`.
+- `StatusTile(action:, place:, pinOn:)`: `TileAction` (filled / outlined, face / faceSetup icon,
+  `enabled`), the live place appended to the subtitle, a pin badge instead of the kiosk button.
+  Labels: "Check in", "Check out", "Check in again" (outlined, after a closed row), "Set up your
+  face · 10 seconds"; dimmed and dead while outside the office.
+- `buildTimeline(day, {now, phoneHint})`: phone wording when `!day.kioskOnly`; the missing day's
+  red For-you row is kiosk-only.
+- Leave approvals: the `leave_approvals` For-you card is the only Home entry (no card when nothing
+  waits). `LeaveApprovalsRow` (`lib/screens/leave/leave_approvals_row.dart`) tops the Leave tab
+  for approvers and opens `ApprovalsScreen(initialSegment: 1)` (Recent) when nothing waits.
+  `LeaveTabIcon` (`lib/screens/home/leave_tab_icon.dart`) badges the LEAVE destination with the
+  count and wiggles once when it goes up (not on the Leave tab, not under reduced motion).
+  `approvalsBreakdown()` lives in `lib/core/approvals_breakdown.dart`.
+- Tests: `test/services/attendance_action_controller_test.dart`,
+  `test/screens/my_day/{status_tile,day_timeline,my_day_screen}_test.dart`,
+  `test/screens/leave_approvals_row_test.dart`, `test/screens/home/leave_tab_icon_test.dart`,
+  `test/core/approvals_breakdown_test.dart`.
