@@ -3,6 +3,28 @@ import 'package:flutter/material.dart';
 import '../../../models/my_day.dart';
 import 'my_day_display.dart';
 
+enum TileActionIcon { face, faceSetup }
+
+enum TileActionStyle { filled, outlined }
+
+/// The button inside the status tile for phone check-in employees (spec
+/// 2026-10-07 §4.2). The screen decides the label and whether it is live.
+class TileAction {
+  const TileAction({
+    required this.label,
+    required this.onPressed,
+    this.icon = TileActionIcon.face,
+    this.style = TileActionStyle.filled,
+    this.enabled = true,
+  });
+
+  final String label;
+  final VoidCallback onPressed;
+  final TileActionIcon icon;
+  final TileActionStyle style;
+  final bool enabled;
+}
+
 /// The explanation behind the kiosk icon button (same text as 1.26.0).
 Future<void> showKioskSheet(BuildContext context) {
   return showModalBottomSheet<void>(
@@ -79,12 +101,29 @@ IconData _icon(MyDayDisplay display) {
 
 /// The coloured card at the top of My day (spec 2026-10-06 §4.2).
 class StatusTile extends StatelessWidget {
-  const StatusTile({super.key, required this.day, this.now});
+  const StatusTile({
+    super.key,
+    required this.day,
+    this.now,
+    this.action,
+    this.place = '',
+    this.pinOn,
+  });
 
   final MyDay day;
 
   /// Injectable clock for tests.
   final DateTime? now;
+
+  /// Phone check-in only; ignored on a kiosk-only day.
+  final TileAction? action;
+
+  /// Live place reading appended to the subtitle ("Office (40 m)").
+  final String place;
+
+  /// Pin badge: true = location known, false = outside / no office,
+  /// null = no badge (kiosk-only days show the kiosk button instead).
+  final bool? pinOn;
 
   @override
   Widget build(BuildContext context) {
@@ -180,7 +219,9 @@ class StatusTile extends StatelessWidget {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      displaySubtitle(day, display, now: now),
+                      place.isEmpty
+                          ? displaySubtitle(day, display, now: now)
+                          : '${displaySubtitle(day, display, now: now)} · $place',
                       style: text.bodySmall?.copyWith(
                         color: white.withValues(alpha: 0.9),
                       ),
@@ -203,6 +244,24 @@ class StatusTile extends StatelessWidget {
                   ),
                   icon: const Icon(
                     Icons.tablet_android_outlined,
+                    color: white,
+                    size: 22,
+                  ),
+                )
+              else if (pinOn != null)
+                Container(
+                  key: ValueKey(pinOn! ? 'status-pin-on' : 'status-pin-off'),
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: white.withValues(alpha: 0.14),
+                    border: Border.all(color: white.withValues(alpha: 0.35)),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(
+                    pinOn!
+                        ? Icons.location_on_outlined
+                        : Icons.location_off_outlined,
                     color: white,
                     size: 22,
                   ),
@@ -247,8 +306,69 @@ class StatusTile extends StatelessWidget {
               ),
             ],
           ),
+          if (action != null && !day.kioskOnly) ...[
+            const SizedBox(height: 16),
+            _ActionButton(action: action!, fill: tone.fill),
+          ],
         ],
       ),
+    );
+  }
+}
+
+class _ActionButton extends StatelessWidget {
+  const _ActionButton({required this.action, required this.fill});
+
+  final TileAction action;
+  final Color fill;
+
+  @override
+  Widget build(BuildContext context) {
+    const white = Colors.white;
+    final icon = Icon(
+      action.icon == TileActionIcon.faceSetup
+          ? Icons.face_retouching_natural
+          : Icons.face_rounded,
+      size: 24,
+    );
+    final label = Text(
+      action.label,
+      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+    );
+    final onPressed = action.enabled ? action.onPressed : null;
+    final Widget button;
+    if (action.style == TileActionStyle.outlined) {
+      button = OutlinedButton.icon(
+        key: const ValueKey('status-action'),
+        onPressed: onPressed,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: white,
+          disabledForegroundColor: white,
+          side: BorderSide(color: white.withValues(alpha: 0.6), width: 2),
+          shape: const StadiumBorder(),
+        ),
+        icon: icon,
+        label: label,
+      );
+    } else {
+      button = FilledButton.icon(
+        key: const ValueKey('status-action'),
+        onPressed: onPressed,
+        style: FilledButton.styleFrom(
+          backgroundColor: white,
+          foregroundColor: fill,
+          disabledBackgroundColor: white,
+          disabledForegroundColor: fill,
+          shape: const StadiumBorder(),
+        ),
+        icon: icon,
+        label: label,
+      );
+    }
+    return SizedBox(
+      width: double.infinity,
+      height: 52,
+      child: Opacity(opacity: action.enabled ? 1 : 0.45, child: button),
     );
   }
 }
