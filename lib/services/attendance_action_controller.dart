@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart';
 import '../core/constants.dart';
 import '../core/error_messages.dart';
 import '../core/wifi_gate.dart';
+import '../core/datetime_utils.dart';
+import '../models/attendance_ask.dart';
 import '../models/attendance_status.dart';
 import '../models/auto_close_previous.dart';
 import '../models/face_capture_result.dart';
@@ -28,12 +30,24 @@ class AttendanceActionOutcome {
     this.checkedIn = false,
     this.autoClosed,
     this.enrolled = false,
+    this.ask,
+    this.undoUntil,
+    this.attendanceId,
   });
 
   const AttendanceActionOutcome.success({
     required bool checkedIn,
     AutoClosePrevious? autoClosed,
-  }) : this._(checkedIn: checkedIn, autoClosed: autoClosed);
+    AttendanceAsk? ask,
+    DateTime? undoUntil,
+    int? attendanceId,
+  }) : this._(
+         checkedIn: checkedIn,
+         autoClosed: autoClosed,
+         ask: ask,
+         undoUntil: undoUntil,
+         attendanceId: attendanceId,
+       );
 
   const AttendanceActionOutcome.failure(String error) : this._(error: error);
 
@@ -48,6 +62,15 @@ class AttendanceActionOutcome {
   /// Echoed by the connector when it auto-closed a forgotten attendance.
   final AutoClosePrevious? autoClosed;
   final bool enrolled;
+
+  /// Connector 2.54.0: the question to ask after a check-in, else null.
+  final AttendanceAsk? ask;
+
+  /// Connector 2.54.0: UNDO is offered until this time (UTC), else null.
+  final DateTime? undoUntil;
+
+  /// The row just punched (`attendance_id` of the response).
+  final int? attendanceId;
 
   bool get ok => error == null && !enrolled;
 }
@@ -238,6 +261,15 @@ class AttendanceActionController extends ChangeNotifier {
     _notify();
   }
 
+  /// The status attendance/undo answered with (spec 2026-10-07 §4.4): the
+  /// tile redraws without a second /attendance/status call.
+  void applyStatus(AttendanceStatus value) {
+    status = value;
+    statusFetchedAt = DateTime.now();
+    statusError = null;
+    _notify();
+  }
+
   bool _disposed = false;
 
   @override
@@ -348,9 +380,10 @@ class AttendanceActionController extends ChangeNotifier {
       final deviceId = await _getDeviceId();
       final wasCheckedIn = status?.checkedIn == true;
       AutoClosePrevious? autoClosed;
+      var resp = const <String, dynamic>{};
       try {
         if (wasCheckedIn) {
-          await api.checkOut(
+          resp = await api.checkOut(
             latitude: latitude,
             longitude: longitude,
             faceVerified: faceVerified,
@@ -362,7 +395,7 @@ class AttendanceActionController extends ChangeNotifier {
             wifiBssid: wifiInfo.bssid,
           );
         } else {
-          final resp = await api.checkIn(
+          resp = await api.checkIn(
             latitude: latitude,
             longitude: longitude,
             faceVerified: faceVerified,
@@ -387,9 +420,15 @@ class AttendanceActionController extends ChangeNotifier {
         return AttendanceActionOutcome.failure(friendlyError(e));
       }
       await refreshStatus();
+      final until = resp['undo_until'];
+      final id = resp['attendance_id'];
       return AttendanceActionOutcome.success(
         checkedIn: !wasCheckedIn,
         autoClosed: autoClosed,
+        // Connector 2.54.0 keys; absent on 2.53.x: nothing asked or undone.
+        ask: wasCheckedIn ? null : AttendanceAsk.tryParse(resp['ask']),
+        undoUntil: until is String ? DateTimeUtils.parseOdooUtc(until) : null,
+        attendanceId: id is num ? id.toInt() : null,
       );
     } finally {
       _setActing(false);

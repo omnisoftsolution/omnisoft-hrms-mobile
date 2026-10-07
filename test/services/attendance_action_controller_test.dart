@@ -51,6 +51,7 @@ class _FakeApi extends OmniMobileApi {
   final checkIns = <Map<String, dynamic>>[];
   final checkOuts = <Map<String, dynamic>>[];
   Map<String, dynamic> checkInResponse = const {};
+  Map<String, dynamic> checkOutResponse = const {};
 
   @override
   Future<AttendanceStatus> getAttendanceStatus() async {
@@ -89,7 +90,7 @@ class _FakeApi extends OmniMobileApi {
   }) async {
     checkOuts.add({'lat': latitude, 'lng': longitude});
     status = _status(checkedIn: false);
-    return const {};
+    return checkOutResponse;
   }
 }
 
@@ -301,5 +302,79 @@ void main() {
         await expectLater(pending, completes); // no "used after dispose"
       },
     );
+  });
+
+  group('forgot something (connector 2.54.0)', () {
+    const lateAsk = <String, dynamic>{
+      'trigger': 'late_first_in',
+      'attendance_id': 812,
+      'tapped_at': '2026-10-07 06:58:00',
+      'shift_start': '2026-10-07 01:00:00',
+      'shift_end': '2026-10-07 10:00:00',
+      'last_out': null,
+      'suggested_time': '2026-10-07 01:00:00',
+      'options': [
+        {'code': 'started_at', 'label': 'I started at', 'needs_time': true},
+        {
+          'code': 'just_arriving',
+          'label': 'Just arriving',
+          'needs_time': false,
+        },
+      ],
+    };
+
+    test('a check-in carries ask, undo_until and the row id', () async {
+      final h = _Harness();
+      h.api.checkInResponse = {
+        'attendance_id': 812,
+        'undo_until': '2026-10-07 07:00:00',
+        'ask': lateAsk,
+      };
+      await h.controller.refreshStatus();
+      final outcome = await h.perform();
+      expect(outcome?.ok, isTrue);
+      expect(outcome?.attendanceId, 812);
+      expect(outcome?.undoUntil, DateTime.utc(2026, 10, 7, 7));
+      expect(outcome?.ask?.trigger, 'late_first_in');
+      expect(
+        outcome?.ask?.options.first.suggestedTime,
+        DateTime.utc(2026, 10, 7, 1),
+      );
+    });
+
+    test('a check-out carries undo_until, never an ask', () async {
+      final h = _Harness(status: _status(checkedIn: true));
+      h.api.checkOutResponse = {
+        'attendance_id': 812,
+        'undo_until': '2026-10-07 10:02:00',
+        'ask': lateAsk,
+      };
+      await h.controller.refreshStatus();
+      final outcome = await h.perform();
+      expect(outcome?.checkedIn, isFalse);
+      expect(outcome?.undoUntil, DateTime.utc(2026, 10, 7, 10, 2));
+      expect(outcome?.attendanceId, 812);
+      expect(outcome?.ask, isNull);
+    });
+
+    test('a 2.53.x response: nothing to ask, no undo', () async {
+      final h = _Harness();
+      h.api.checkInResponse = {'attendance_id': 812};
+      await h.controller.refreshStatus();
+      final outcome = await h.perform();
+      expect(outcome?.ask, isNull);
+      expect(outcome?.undoUntil, isNull);
+      expect(outcome?.attendanceId, 812);
+    });
+
+    test('applyStatus replaces the status and notifies', () {
+      final h = _Harness()..controller.status = _status(checkedIn: true);
+      var notified = 0;
+      h.controller.addListener(() => notified++);
+      h.controller.applyStatus(_status());
+      expect(h.controller.status?.checkedIn, isFalse);
+      expect(h.controller.statusFetchedAt, isNotNull);
+      expect(notified, 1);
+    });
   });
 }

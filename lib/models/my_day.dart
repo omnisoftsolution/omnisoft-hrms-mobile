@@ -3,6 +3,8 @@
 /// ("yyyy-MM-dd HH:mm:ss"); widgets format them with DateTimeUtils.
 library;
 
+import 'attendance_ask.dart';
+
 String _str(Object? v) => v is String ? v : '';
 int _int(Object? v) => v is num ? v.toInt() : 0;
 double _dbl(Object? v) => v is num ? v.toDouble() : 0.0;
@@ -233,6 +235,13 @@ class ForYouItem {
   final String period;
   final String issuedOn;
 
+  // yesterday_incomplete (connector 2.54.0, spec 2026-10-07 §3.6)
+  final String title;
+  final String body;
+  final String date;
+  final int attendanceId;
+  final List<AskOption> options;
+
   const ForYouItem({
     required this.kind,
     this.id = 0,
@@ -249,6 +258,11 @@ class ForYouItem {
     this.currency = '',
     this.period = '',
     this.issuedOn = '',
+    this.title = '',
+    this.body = '',
+    this.date = '',
+    this.attendanceId = 0,
+    this.options = const [],
   });
 
   /// The connector may add kinds later; 1.26.0 ignores what it does not
@@ -271,6 +285,11 @@ class ForYouItem {
     currency: _str(json['currency']),
     period: _str(json['period']),
     issuedOn: _str(json['issued_on']),
+    title: _str(json['title']),
+    body: _str(json['body']),
+    date: _str(json['date']),
+    attendanceId: _int(json['attendance_id']),
+    options: AskOption.listFrom(json['options']),
   );
 }
 

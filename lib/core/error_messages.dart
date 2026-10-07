@@ -79,8 +79,10 @@ String friendlyErrorCode(String code, {int? retryAfter}) {
 /// text unless that text is a short, obviously-safe snake_case code.
 String friendlyError(Object e) {
   if (e is ApiException && _identityCodes.contains(e.errorCode)) {
-    return friendlyErrorCode(e.errorCode,
-        retryAfter: (e.data?['retry_after'] as num?)?.toInt());
+    return friendlyErrorCode(
+      e.errorCode,
+      retryAfter: (e.data?['retry_after'] as num?)?.toInt(),
+    );
   }
 
   final approval = _approvalMessage(e);
@@ -163,6 +165,29 @@ String friendlyError(Object e) {
         'or close the record in the web app.';
   }
 
+  // --- Forgot something? (connector 2.54.0) ---
+  if (raw.contains('undo_expired')) {
+    return 'It is too late to undo this punch. Ask HR to correct it.';
+  }
+  if (raw.contains('undo_not_last')) {
+    return 'Only your latest punch can be undone.';
+  }
+  if (raw.contains('bad_time')) {
+    return "That time doesn't fit this punch. Pick another time.";
+  }
+  if (raw.contains('too_old')) {
+    return 'This day can no longer be changed from the app. Tell HR directly.';
+  }
+  if (raw.contains('not_yours')) {
+    return 'This punch is not yours.';
+  }
+  if (raw.contains('already_answered')) {
+    return 'You already answered this question.';
+  }
+  if (raw.contains('invalid_answer')) {
+    return 'That answer is no longer available. Pull down to refresh.';
+  }
+
   // --- Leave ---
   if (raw.contains('overlap')) {
     return 'You already have a leave request on these dates.';
@@ -237,7 +262,8 @@ String friendlyDecisionError(Object e) {
     final raw = e.errorCode.trim();
     // 'Unknown error' is ApiException.fromBody's default when the body
     // has no `error` key; it is not a sentence from Odoo.
-    final safe = raw.contains(' ') &&
+    final safe =
+        raw.contains(' ') &&
         raw != 'Unknown error' &&
         raw.length <= 300 &&
         !raw.contains('://') &&

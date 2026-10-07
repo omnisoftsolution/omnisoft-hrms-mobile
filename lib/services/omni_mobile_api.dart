@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
+import 'package:intl/intl.dart';
 import '../models/approval_detail.dart';
 import '../models/approval_item.dart';
 import '../models/attendance_record.dart';
@@ -106,16 +107,36 @@ Map<String, dynamic> buildRefuseBody({
   };
 }
 
+/// Body for /attendance/declare (connector 2.54.0, spec 2026-10-07 §3.3).
+/// [declaredTime] goes out as the API's UTC string; an empty note and a
+/// missing time are left out. Top-level so it is unit-testable.
+Map<String, dynamic> buildDeclareBody({
+  required int attendanceId,
+  required String trigger,
+  required String answerCode,
+  DateTime? declaredTime,
+  String note = '',
+}) {
+  final trimmed = note.trim();
+  return {
+    'attendance_id': attendanceId,
+    'trigger': trigger,
+    'answer_code': answerCode,
+    if (declaredTime != null)
+      'declared_time': DateFormat(
+        'yyyy-MM-dd HH:mm:ss',
+        'en_US',
+      ).format(declaredTime.toUtc()),
+    if (trimmed.isNotEmpty) 'note': trimmed,
+  };
+}
+
 class OmniMobileApi {
   final String baseUrl;
   final String db;
   final String token;
 
-  OmniMobileApi({
-    required this.baseUrl,
-    required this.db,
-    required this.token,
-  });
+  OmniMobileApi({required this.baseUrl, required this.db, required this.token});
 
   /// Wired in main.dart at app boot. Called whenever any /api/v1/...
   /// call returns `error: invalid_session` (or the legacy alias
@@ -132,31 +153,30 @@ class OmniMobileApi {
   static void Function()? onKioskOnly;
 
   Map<String, String> get _headers => {
-        'Content-Type': 'application/json',
-        if (token.isNotEmpty) 'Authorization': 'Bearer $token',
-      };
+    'Content-Type': 'application/json',
+    if (token.isNotEmpty) 'Authorization': 'Bearer $token',
+  };
 
-  Uri _uri(String path) =>
-      Uri.parse('$baseUrl/api/v1/omni_mobile$path?db=$db');
+  Uri _uri(String path) => Uri.parse('$baseUrl/api/v1/omni_mobile$path?db=$db');
 
-  Future<Map<String, dynamic>> _post(String path,
-      [Map<String, dynamic>? body]) async {
+  Future<Map<String, dynamic>> _post(
+    String path, [
+    Map<String, dynamic>? body,
+  ]) async {
     // 30s timeout so the UI can't hang forever if the server stops
     // responding cleanly (Android symptom: CHECK OUT button stuck on
     // SCANNING…). 30s is generous enough for cellular + a real
     // geofence/overtime computation on the connector.
     final http.Response response;
     try {
-      response = await http.post(
-        _uri(path),
-        headers: _headers,
-        body: jsonEncode(body ?? {}),
-      ).timeout(
-        const Duration(seconds: 30),
-        onTimeout: () {
-          throw ApiException('timeout');
-        },
-      );
+      response = await http
+          .post(_uri(path), headers: _headers, body: jsonEncode(body ?? {}))
+          .timeout(
+            const Duration(seconds: 30),
+            onTimeout: () {
+              throw ApiException('timeout');
+            },
+          );
     } on ApiException {
       // Our own timeout sentinel from onTimeout — re-throw as-is.
       rethrow;
@@ -203,14 +223,17 @@ class OmniMobileApi {
     String? deviceLabel,
     String? appVersion,
     String? emailCode,
-  }) =>
-      _post('/login', buildLoginBody(
-          login: login,
-          password: password,
-          deviceId: deviceId,
-          deviceLabel: deviceLabel,
-          appVersion: appVersion,
-          emailCode: emailCode));
+  }) => _post(
+    '/login',
+    buildLoginBody(
+      login: login,
+      password: password,
+      deviceId: deviceId,
+      deviceLabel: deviceLabel,
+      appVersion: appVersion,
+      emailCode: emailCode,
+    ),
+  );
 
   Future<Map<String, dynamic>> activate({
     required String login,
@@ -221,23 +244,27 @@ class OmniMobileApi {
     String? deviceLabel,
     String? appVersion,
     String? newLogin,
-  }) =>
-      _post('/auth/activate', buildActivateBody(
-          login: login,
-          token: token,
-          code: code,
-          password: password,
-          deviceId: deviceId,
-          deviceLabel: deviceLabel,
-          appVersion: appVersion,
-          newLogin: newLogin));
+  }) => _post(
+    '/auth/activate',
+    buildActivateBody(
+      login: login,
+      token: token,
+      code: code,
+      password: password,
+      deviceId: deviceId,
+      deviceLabel: deviceLabel,
+      appVersion: appVersion,
+      newLogin: newLogin,
+    ),
+  );
 
   Future<Map<String, dynamic>> refresh({
     required String refreshToken,
     required String deviceId,
-  }) =>
-      _post('/auth/refresh',
-          buildRefreshBody(refreshToken: refreshToken, deviceId: deviceId));
+  }) => _post(
+    '/auth/refresh',
+    buildRefreshBody(refreshToken: refreshToken, deviceId: deviceId),
+  );
 
   Future<List<Map<String, dynamic>>> devicesList() async {
     final data = await _post('/auth/devices/list');
@@ -250,16 +277,16 @@ class OmniMobileApi {
   Future<void> passwordChange({
     required String currentPassword,
     required String newPassword,
-  }) =>
-      _post('/auth/password/change', {
-        'current_password': currentPassword,
-        'new_password': newPassword
-      });
+  }) => _post('/auth/password/change', {
+    'current_password': currentPassword,
+    'new_password': newPassword,
+  });
 
   /// Always resolves on 200; the body may carry error == 'mail_not_configured'.
-  Future<Map<String, dynamic>> passwordResetRequest(String login) =>
-      _post('/auth/password/reset_request',
-          {'login': login.trim().toLowerCase()});
+  Future<Map<String, dynamic>> passwordResetRequest(String login) => _post(
+    '/auth/password/reset_request',
+    {'login': login.trim().toLowerCase()},
+  );
 
   Future<Map<String, dynamic>> logout({bool forgetDevice = false}) =>
       _post('/logout', {if (forgetDevice) 'forget_device': true});
@@ -292,8 +319,7 @@ class OmniMobileApi {
     final data = await _post('/notifications/list');
     final list = (data['notifications'] as List<dynamic>?) ?? const [];
     return list
-        .map((e) =>
-            NotificationRecord.fromJson(e as Map<String, dynamic>))
+        .map((e) => NotificationRecord.fromJson(e as Map<String, dynamic>))
         .toList();
   }
 
@@ -328,17 +354,20 @@ class OmniMobileApi {
     String? wifiSsid,
     String? wifiBssid,
   }) async {
-    return _post('/attendance/check_in', buildAttendanceBody(
-      latitude: latitude,
-      longitude: longitude,
-      faceVerified: faceVerified,
-      deviceId: deviceId,
-      devLocation: devLocation,
-      isMocked: isMocked,
-      accuracy: accuracy,
-      wifiSsid: wifiSsid,
-      wifiBssid: wifiBssid,
-    ));
+    return _post(
+      '/attendance/check_in',
+      buildAttendanceBody(
+        latitude: latitude,
+        longitude: longitude,
+        faceVerified: faceVerified,
+        deviceId: deviceId,
+        devLocation: devLocation,
+        isMocked: isMocked,
+        accuracy: accuracy,
+        wifiSsid: wifiSsid,
+        wifiBssid: wifiBssid,
+      ),
+    );
   }
 
   Future<Map<String, dynamic>> checkOut({
@@ -352,17 +381,70 @@ class OmniMobileApi {
     String? wifiSsid,
     String? wifiBssid,
   }) async {
-    return _post('/attendance/check_out', buildAttendanceBody(
-      latitude: latitude,
-      longitude: longitude,
-      faceVerified: faceVerified,
-      deviceId: deviceId,
-      devLocation: devLocation,
-      isMocked: isMocked,
-      accuracy: accuracy,
-      wifiSsid: wifiSsid,
-      wifiBssid: wifiBssid,
-    ));
+    return _post(
+      '/attendance/check_out',
+      buildAttendanceBody(
+        latitude: latitude,
+        longitude: longitude,
+        faceVerified: faceVerified,
+        deviceId: deviceId,
+        devLocation: devLocation,
+        isMocked: isMocked,
+        accuracy: accuracy,
+        wifiSsid: wifiSsid,
+        wifiBssid: wifiBssid,
+      ),
+    );
+  }
+
+  // -- Forgot something? (connector 2.54.0+) --
+
+  /// Sends the sheet's answer. True when the server recorded a declaration
+  /// (false for the "nothing to declare" answers).
+  Future<bool> declare({
+    required int attendanceId,
+    required String trigger,
+    required String answerCode,
+    DateTime? declaredTime,
+    String note = '',
+  }) async {
+    final data = await _post(
+      '/attendance/declare',
+      buildDeclareBody(
+        attendanceId: attendanceId,
+        trigger: trigger,
+        answerCode: answerCode,
+        declaredTime: declaredTime,
+        note: note,
+      ),
+    );
+    return data['recorded'] == true;
+  }
+
+  /// Undoes the punch [attendanceId] inside the server's window and returns
+  /// the fresh attendance status, so no second call is needed (spec §3.5).
+  Future<AttendanceStatus> undoPunch(int attendanceId) async {
+    final data = await _post('/attendance/undo', {
+      'attendance_id': attendanceId,
+    });
+    final status = data['status'];
+    return AttendanceStatus.fromJson(
+      status is Map ? Map<String, dynamic>.from(status) : <String, dynamic>{},
+    );
+  }
+
+  /// Answers HR's "Ask the employee" (the existing review/answer route).
+  Future<void> answerReview({
+    required int notificationId,
+    required String answerCode,
+    String note = '',
+  }) async {
+    final trimmed = note.trim();
+    await _post('/attendance/review/answer', {
+      'notification_id': notificationId,
+      'answer_code': answerCode,
+      if (trimmed.isNotEmpty) 'note': trimmed,
+    });
   }
 
   Future<List<AttendanceRecord>> getAttendanceHistory() async {
@@ -476,17 +558,12 @@ class OmniMobileApi {
   /// side. The returned [ExpenseListPage.hasMore] is `true` when the
   /// server returned a full page (i.e. there may be more).
   Future<ExpenseListPage> getExpenseList({int? beforeId}) async {
-    final data = await _post('/expense/list', {
-      'before_id': ?beforeId,
-    });
+    final data = await _post('/expense/list', {'before_id': ?beforeId});
     final list = data['expenses'] as List<dynamic>? ?? const [];
     final records = list
         .map((e) => ExpenseRecord.fromJson(e as Map<String, dynamic>))
         .toList();
-    return ExpenseListPage(
-      records: records,
-      hasMore: data['has_more'] == true,
-    );
+    return ExpenseListPage(records: records, hasMore: data['has_more'] == true);
   }
 
   /// Fetch the bytes of a single expense receipt. Returns the
@@ -494,8 +571,7 @@ class OmniMobileApi {
   /// preview / system-viewer hand-off. Mirrors `getAttachment` on
   /// the leave side.
   Future<Map<String, dynamic>> getExpenseAttachment(int attachmentId) {
-    return _post('/expense/attachment/get',
-        {'attachment_id': attachmentId});
+    return _post('/expense/attachment/get', {'attachment_id': attachmentId});
   }
 
   /// Modify a submitted (or draft) expense before approval. Server
@@ -579,8 +655,8 @@ class OmniMobileApi {
     String? attachmentDataB64,
     bool devSkipReceipt = false,
   }) async {
-    final hasAttachment = attachmentDataB64 != null &&
-        attachmentDataB64.isNotEmpty;
+    final hasAttachment =
+        attachmentDataB64 != null && attachmentDataB64.isNotEmpty;
     return _post('/expense/submit', {
       'product_id': productId,
       'name': name,
@@ -622,9 +698,7 @@ class OmniMobileApi {
   /// PDF receipt). The connector OCRs each page and merges the result,
   /// counting the whole call as a single OCR attempt. `pages` must be
   /// non-empty; the connector caps at its own max-pages limit.
-  Future<OcrResult> scanReceiptPages({
-    required List<Uint8List> pages,
-  }) async {
+  Future<OcrResult> scanReceiptPages({required List<Uint8List> pages}) async {
     final data = await _post('/expense/ocr_scan', {
       'images_b64': [for (final p in pages) base64Encode(p)],
       'mimetype': 'image/jpeg',
@@ -636,7 +710,8 @@ class OmniMobileApi {
   Future<CalendarInfoResponse> getPublicHolidays() async {
     final data = await _post('/public_holidays');
     final list = data['holidays'] as List<dynamic>;
-    final weekdays = (data['working_weekdays'] as List<dynamic>?)
+    final weekdays =
+        (data['working_weekdays'] as List<dynamic>?)
             ?.map((e) => (e as num).toInt())
             .toList() ??
         const [0, 1, 2, 3, 4]; // server convention: Mon=0..Sun=6
@@ -741,7 +816,8 @@ class OmniMobileApi {
     final data = await _post('/leave/approvals/get', {'leave_id': leaveId});
     final leave = data['leave'];
     return ApprovalDetail.fromJson(
-        leave is Map ? Map<String, dynamic>.from(leave) : <String, dynamic>{});
+      leave is Map ? Map<String, dynamic>.from(leave) : <String, dynamic>{},
+    );
   }
 
   /// Approve as the signed-in user. Returns the new Odoo state
@@ -750,8 +826,10 @@ class OmniMobileApi {
     required int leaveId,
     required String expectedState,
   }) async {
-    final data = await _post('/leave/approvals/approve',
-        buildApproveBody(leaveId: leaveId, expectedState: expectedState));
+    final data = await _post(
+      '/leave/approvals/approve',
+      buildApproveBody(leaveId: leaveId, expectedState: expectedState),
+    );
     return data['state']?.toString() ?? '';
   }
 
@@ -763,9 +841,13 @@ class OmniMobileApi {
     required String reason,
   }) async {
     final data = await _post(
-        '/leave/approvals/refuse',
-        buildRefuseBody(
-            leaveId: leaveId, expectedState: expectedState, reason: reason));
+      '/leave/approvals/refuse',
+      buildRefuseBody(
+        leaveId: leaveId,
+        expectedState: expectedState,
+        reason: reason,
+      ),
+    );
     return data['state']?.toString() ?? '';
   }
 }
@@ -774,10 +856,7 @@ class CalendarInfoResponse {
   final List<PublicHoliday> holidays;
   final List<int> workingWeekdays; // Odoo: Mon=0..Sun=6
 
-  CalendarInfoResponse({
-    required this.holidays,
-    required this.workingWeekdays,
-  });
+  CalendarInfoResponse({required this.holidays, required this.workingWeekdays});
 }
 
 /// One page of the user's expenses, returned by [OmniMobileApi.getExpenseList].
@@ -820,8 +899,7 @@ class ApiException implements Exception {
     return ApiException(
       code,
       data: body,
-      distanceFromOffice:
-          (body['distance_from_office'] as num?)?.toDouble(),
+      distanceFromOffice: (body['distance_from_office'] as num?)?.toDouble(),
       allowedRadius: (body['allowed_radius'] as num?)?.toDouble(),
     );
   }
