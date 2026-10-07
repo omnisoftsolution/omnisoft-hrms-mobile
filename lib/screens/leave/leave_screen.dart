@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import '../../core/approvals_breakdown.dart';
 import '../../core/theme.dart';
 import '../../core/error_messages.dart';
 import '../../core/leave_units.dart';
@@ -16,7 +17,9 @@ import '../../widgets/feature_locked_pane.dart';
 import '../../widgets/omni_app_bar.dart';
 import '../../widgets/primary_button.dart';
 import '../../widgets/range_picker_dialog.dart';
+import '../approvals/approvals_screen.dart';
 import '../home/home_shell.dart';
+import 'leave_approvals_row.dart';
 import '../../utils/leave_backdate.dart';
 
 /// Renders the remaining-balance indicator for a leave type. Returns
@@ -48,8 +51,12 @@ import '../../utils/leave_backdate.dart';
   }
   // Hour-unit types render hours-first with the day equivalent from
   // the server-provided hours_per_day: "112h (14d) left".
-  final amount = balanceAmountLabel(n, t.requestUnit, t.hoursPerDay,
-      longForm: longForm);
+  final amount = balanceAmountLabel(
+    n,
+    t.requestUnit,
+    t.hoursPerDay,
+    longForm: longForm,
+  );
   return (
     label: longForm ? '$amount remaining' : '$amount left',
     color: AppTheme.onSurfaceVariant,
@@ -89,12 +96,10 @@ class LeaveScreenState extends State<LeaveScreen> {
   List<LeaveType> _types = [];
   bool _loading = true;
   String? _error;
+  String _approvalsBreakdown = '';
 
-  OmniMobileApi _api(SessionService s) => OmniMobileApi(
-        baseUrl: s.clientUrl,
-        db: s.clientDb,
-        token: s.token,
-      );
+  OmniMobileApi _api(SessionService s) =>
+      OmniMobileApi(baseUrl: s.clientUrl, db: s.clientDb, token: s.token);
 
   @override
   void initState() {
@@ -115,6 +120,44 @@ class LeaveScreenState extends State<LeaveScreen> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+    unawaited(_refreshApprovalsBreakdown());
+  }
+
+  /// Per-type line for the approvals row; best-effort, approvers with
+  /// something waiting only.
+  Future<void> _refreshApprovalsBreakdown() async {
+    if (!mounted) return;
+    final session = context.read<SessionService>();
+    if (!session.leaveApprovalsEnabled ||
+        session.leaveApprovalsPendingCount == 0) {
+      if (_approvalsBreakdown.isNotEmpty && mounted) {
+        setState(() => _approvalsBreakdown = '');
+      }
+      return;
+    }
+    try {
+      final items = await _api(session).getPendingApprovals();
+      if (mounted) {
+        setState(() => _approvalsBreakdown = approvalsBreakdown(items));
+      }
+    } catch (_) {
+      // keep the last line; the count on the row is still right
+    }
+  }
+
+  /// Pushed on this tab's Navigator so the bottom bar stays visible;
+  /// Recent when nothing waits. The count is refreshed on the way back.
+  Future<void> _openApprovals() async {
+    final session = context.read<SessionService>();
+    final segment = session.leaveApprovalsPendingCount > 0 ? 0 : 1;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ApprovalsScreen(initialSegment: segment),
+      ),
+    );
+    if (!mounted) return;
+    await session.refreshMe();
+    if (mounted) unawaited(_refreshApprovalsBreakdown());
   }
 
   void _openApplyForm(LeaveType type) async {
@@ -155,29 +198,27 @@ class LeaveScreenState extends State<LeaveScreen> {
       body: !session.featureTimeOff
           ? const FeatureLockedPane(
               featureName: 'Time Off',
-              subtitle: 'Your subscription does not include leave '
+              subtitle:
+                  'Your subscription does not include leave '
                   'application. Contact your administrator to upgrade.',
             )
           : _loading
-              ? const Center(child: CircularProgressIndicator())
-              : _error != null
-                  ? RefreshIndicator(
-                      onRefresh: refresh,
-                      child: ListView(
-                        padding: const EdgeInsets.fromLTRB(20, 80, 20, 24),
-                        children: [
-                          ErrorStateView(message: _error!, onRetry: refresh),
-                        ],
-                      ),
-                    )
-                  : RefreshIndicator(
-                      onRefresh: refresh,
-                      child: _buildList(),
-                    ),
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+          ? RefreshIndicator(
+              onRefresh: refresh,
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(20, 80, 20, 24),
+                children: [ErrorStateView(message: _error!, onRetry: refresh)],
+              ),
+            )
+          : RefreshIndicator(onRefresh: refresh, child: _buildList()),
     );
   }
 
   Widget _buildList() {
+    final showRow = context.watch<SessionService>().leaveApprovalsEnabled;
+    final offset = showRow ? 1 : 0;
     // Flat list ordered by Odoo's hr.leave.type.sequence — the
     // connector returns types in `sequence asc, id asc` order, so
     // we render them as received. HR controls ordering by drag-
@@ -185,10 +226,16 @@ class LeaveScreenState extends State<LeaveScreen> {
     // needed when the order changes.
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-      itemCount: _types.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      itemCount: _types.length + offset,
+      separatorBuilder: (_, i) => SizedBox(height: showRow && i == 0 ? 16 : 8),
       itemBuilder: (_, i) {
-        final type = _types[i];
+        if (showRow && i == 0) {
+          return LeaveApprovalsRow(
+            breakdown: _approvalsBreakdown,
+            onTap: _openApprovals,
+          );
+        }
+        final type = _types[i - offset];
         return Opacity(
           // Exhausted-allocation tiles fade in place. The red
           // "0d left" badge in _tileSubtitle is the explanation;
@@ -198,8 +245,7 @@ class LeaveScreenState extends State<LeaveScreen> {
           child: Card(
             child: ListTile(
               leading: CircleAvatar(
-                backgroundColor:
-                    AppTheme.primary.withValues(alpha: 0.1),
+                backgroundColor: AppTheme.primary.withValues(alpha: 0.1),
                 child: Icon(
                   _categoryIcon(type.mobileCategory),
                   color: AppTheme.primary,
@@ -208,9 +254,7 @@ class LeaveScreenState extends State<LeaveScreen> {
               title: Text(type.name),
               subtitle: _tileSubtitle(type),
               trailing: const Icon(Icons.chevron_right),
-              onTap: _isExhausted(type)
-                  ? null
-                  : () => _openApplyForm(type),
+              onTap: _isExhausted(type) ? null : () => _openApplyForm(type),
             ),
           ),
         );
@@ -342,9 +386,10 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
   }
 
   String get _hourLabel => customHoursLabel(
-      naiveHours: _hourCount,
-      serverHours: _previewHours,
-      loading: _previewLoading);
+    naiveHours: _hourCount,
+    serverHours: _previewHours,
+    loading: _previewLoading,
+  );
 
   String? get _hourCaption =>
       customHoursCaption(naiveHours: _hourCount, serverHours: _previewHours);
@@ -359,8 +404,7 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
     _previewLoading = false;
     if (!_hourlyCustom || _hourCount <= 0) return;
     _previewLoading = true;
-    _previewDebounce =
-        Timer(const Duration(milliseconds: 300), _fetchPreview);
+    _previewDebounce = Timer(const Duration(milliseconds: 300), _fetchPreview);
   }
 
   Future<void> _fetchPreview() async {
@@ -444,9 +488,16 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
 
   Future<void> _pickRange() async {
     final today = DateTime.now();
-    final firstDate = backdateFirstDate(widget.leaveType.allowBackdated, widget.leaveType.earliestBackdateDate, today);
-    final lastDate = DateTime(today.year, today.month, today.day)
-        .add(const Duration(days: 365));
+    final firstDate = backdateFirstDate(
+      widget.leaveType.allowBackdated,
+      widget.leaveType.earliestBackdateDate,
+      today,
+    );
+    final lastDate = DateTime(
+      today.year,
+      today.month,
+      today.day,
+    ).add(const Duration(days: 365));
     final holidays = context.read<HolidayService>();
     if (_hourlyCustom) {
       final picked = await showAutoDatePicker(
@@ -513,18 +564,21 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
 
   Future<void> _submit() async {
     if (!_periodValid) {
-      setState(() => _error = _hourlyCustom
-          ? (_hourCount <= 0
-              ? 'End time must be after start time.'
-              : 'The selected time is outside your work schedule.')
-          : _isHourly
-              ? 'The selected range contains no working days.'
-              : 'Afternoon → Morning on the same date is not a valid range.');
+      setState(
+        () => _error = _hourlyCustom
+            ? (_hourCount <= 0
+                  ? 'End time must be after start time.'
+                  : 'The selected time is outside your work schedule.')
+            : _isHourly
+            ? 'The selected range contains no working days.'
+            : 'Afternoon → Morning on the same date is not a valid range.',
+      );
       return;
     }
     if (widget.leaveType.mobileRequiresDocument && _document == null) {
-      setState(() =>
-          _error = 'A supporting document is required for this leave type.');
+      setState(
+        () => _error = 'A supporting document is required for this leave type.',
+      );
       return;
     }
     setState(() {
@@ -541,8 +595,9 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
       final response = await api.applyLeave(
         holidayStatusId: widget.leaveType.id,
         dateFrom: DateFormat('yyyy-MM-dd').format(_dateFrom),
-        dateTo: DateFormat('yyyy-MM-dd').format(
-            _hourlyCustom ? _dateFrom : _dateTo),
+        dateTo: DateFormat(
+          'yyyy-MM-dd',
+        ).format(_hourlyCustom ? _dateFrom : _dateTo),
         reason: _reasonController.text.trim(),
         dateFromPeriod: _isHalfDay ? _fromPeriod : null,
         dateToPeriod: _isHalfDay ? _toPeriod : null,
@@ -603,15 +658,20 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(label,
-                      style: TextStyle(
-                          fontSize: 12,
-                          color: AppTheme.onSurfaceVariant)),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppTheme.onSurfaceVariant,
+                    ),
+                  ),
                   const SizedBox(height: 2),
                   Text(
                     time.format(context),
                     style: const TextStyle(
-                        fontSize: 14, fontWeight: FontWeight.w600),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ],
               ),
@@ -631,11 +691,14 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
       children: [
         SizedBox(
           width: 110,
-          child: Text(label,
-              style: TextStyle(
-                  fontSize: 13,
-                  color: AppTheme.onSurfaceVariant,
-                  fontWeight: FontWeight.w500)),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 13,
+              color: AppTheme.onSurfaceVariant,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
         ),
         Expanded(
           child: SegmentedButton<String>(
@@ -655,8 +718,7 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
             onSelectionChanged: (s) => onChanged(s.first),
             style: ButtonStyle(
               visualDensity: VisualDensity.compact,
-              textStyle: WidgetStateProperty.all(
-                  const TextStyle(fontSize: 12)),
+              textStyle: WidgetStateProperty.all(const TextStyle(fontSize: 12)),
             ),
           ),
         ),
@@ -697,225 +759,244 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
       behavior: HitTestBehavior.opaque,
       onTap: () => FocusScope.of(context).unfocus(),
       child: SingleChildScrollView(
-      padding: EdgeInsets.only(
-        left: 24,
-        right: 24,
-        top: 24,
-        bottom: mq.viewInsets.bottom + mq.viewPadding.bottom + 24,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Text(widget.leaveType.name,
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w700)),
-              ),
-              // Always-visible dismiss affordance. The native drag-to-
-              // dismiss strip is too small to grab on iPhone 8 / X
-              // when the keyboard is up; an explicit button removes
-              // the softlock risk on every screen size.
-              IconButton(
-                tooltip: 'Close',
-                icon: const Icon(Icons.close),
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(
-                    minWidth: 40, minHeight: 40),
-                onPressed: () => Navigator.of(context).maybePop(),
-              ),
-            ],
-          ),
-          if (balance != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                balance.label,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: balance.color,
-                ),
-              ),
-            ),
-          if (widget.leaveType.mobileRequiresDocument)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                'Supporting document required.',
-                style: TextStyle(fontSize: 12, color: AppTheme.error),
-              ),
-            ),
-          if (_isHourly) ...[
-            const SizedBox(height: 16),
-            SegmentedButton<bool>(
-              segments: const [
-                ButtonSegment(value: true, label: Text('Full day(s)')),
-                ButtonSegment(value: false, label: Text('Specific hours')),
-              ],
-              selected: {_hourlyAllDay},
-              onSelectionChanged: (selection) => setState(() {
-                _hourlyAllDay = selection.first;
-                // Custom hours are single-day by Odoo semantics; clamp
-                // the range when switching into that mode.
-                if (!_hourlyAllDay) _dateTo = _dateFrom;
-                _error = null;
-                _schedulePreview();
-              }),
-            ),
-          ],
-          const SizedBox(height: 20),
-          InkWell(
-            onTap: _pickRange,
-            borderRadius: BorderRadius.circular(12),
-            child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              decoration: BoxDecoration(
-                border: Border.all(color: AppTheme.outline),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.calendar_today,
-                      size: 18, color: AppTheme.primary),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(_hourlyCustom ? 'Leave date' : 'Leave dates',
-                            style: TextStyle(
-                                fontSize: 12,
-                                color: AppTheme.onSurfaceVariant)),
-                        const SizedBox(height: 2),
-                        Text(
-                          _hourlyCustom
-                              ? '${fmt.format(_dateFrom)}  ·  $_hourLabel'
-                              : _isHourly
-                                  ? '${fmt.format(_dateFrom)} → ${fmt.format(_dateTo)}  ·  ${compactDaysWithHours(_dayCount, _hoursPerDay)}'
-                                  : '${fmt.format(_dateFrom)} → ${fmt.format(_dateTo)}  ·  $_dayCountLabel',
-                          style: const TextStyle(
-                              fontSize: 14, fontWeight: FontWeight.w600),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Icon(Icons.chevron_right, color: AppTheme.outline),
-                ],
-              ),
-            ),
-          ),
-          if (_hourlyCustom) ...[
-            const SizedBox(height: 12),
+        padding: EdgeInsets.only(
+          left: 24,
+          right: 24,
+          top: 24,
+          bottom: mq.viewInsets.bottom + mq.viewPadding.bottom + 24,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
-                  child: _timeBox(
-                      label: 'From', time: _hourFrom,
-                      onTap: () => _pickTime(true)),
+                  child: Text(
+                    widget.leaveType.name,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _timeBox(
-                      label: 'To', time: _hourTo,
-                      onTap: () => _pickTime(false)),
+                // Always-visible dismiss affordance. The native drag-to-
+                // dismiss strip is too small to grab on iPhone 8 / X
+                // when the keyboard is up; an explicit button removes
+                // the softlock risk on every screen size.
+                IconButton(
+                  tooltip: 'Close',
+                  icon: const Icon(Icons.close),
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 40,
+                    minHeight: 40,
+                  ),
+                  onPressed: () => Navigator.of(context).maybePop(),
                 ),
               ],
             ),
-            if (_hourCaption != null)
+            if (balance != null)
               Padding(
-                padding: const EdgeInsets.only(top: 8, left: 4),
+                padding: const EdgeInsets.only(top: 4),
                 child: Text(
-                  _hourCaption!,
+                  balance.label,
                   style: TextStyle(
-                    fontSize: 12,
-                    color: _customHoursOutsideSchedule
-                        ? AppTheme.error
-                        : AppTheme.onSurfaceVariant,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: balance.color,
                   ),
                 ),
               ),
-          ],
-          if (_isHalfDay) ...[
-            const SizedBox(height: 16),
-            _periodRow(
-              label: 'Start period',
-              value: _fromPeriod,
-              onChanged: (v) => setState(() {
-                _fromPeriod = v;
-                _error = null;
-              }),
-            ),
-            const SizedBox(height: 12),
-            _periodRow(
-              label: 'End period',
-              value: _toPeriod,
-              onChanged: (v) => setState(() {
-                _toPeriod = v;
-                _error = null;
-              }),
-            ),
-          ],
-          const SizedBox(height: 16),
-          TextField(
-            controller: _reasonController,
-            decoration: const InputDecoration(
-              labelText: 'Reason (optional)',
-              prefixIcon: Icon(Icons.notes),
-            ),
-            maxLines: 2,
-          ),
-          if (widget.leaveType.mobileRequiresDocument ||
-              _document != null) ...[
-            const SizedBox(height: 12),
-            DocumentPickerField(
-              picked: _document,
-              required: widget.leaveType.mobileRequiresDocument,
-              onChanged: (d) => setState(() {
-                _document = d;
-                _error = null;
-              }),
-            ),
-          ],
-          if (_error != null) ...[
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppTheme.error.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppTheme.error.withValues(alpha: 0.3)),
+            if (widget.leaveType.mobileRequiresDocument)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  'Supporting document required.',
+                  style: TextStyle(fontSize: 12, color: AppTheme.error),
+                ),
               ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            if (_isHourly) ...[
+              const SizedBox(height: 16),
+              SegmentedButton<bool>(
+                segments: const [
+                  ButtonSegment(value: true, label: Text('Full day(s)')),
+                  ButtonSegment(value: false, label: Text('Specific hours')),
+                ],
+                selected: {_hourlyAllDay},
+                onSelectionChanged: (selection) => setState(() {
+                  _hourlyAllDay = selection.first;
+                  // Custom hours are single-day by Odoo semantics; clamp
+                  // the range when switching into that mode.
+                  if (!_hourlyAllDay) _dateTo = _dateFrom;
+                  _error = null;
+                  _schedulePreview();
+                }),
+              ),
+            ],
+            const SizedBox(height: 20),
+            InkWell(
+              onTap: _pickRange,
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
+                decoration: BoxDecoration(
+                  border: Border.all(color: AppTheme.outline),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.calendar_today,
+                      size: 18,
+                      color: AppTheme.primary,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _hourlyCustom ? 'Leave date' : 'Leave dates',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppTheme.onSurfaceVariant,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            _hourlyCustom
+                                ? '${fmt.format(_dateFrom)}  ·  $_hourLabel'
+                                : _isHourly
+                                ? '${fmt.format(_dateFrom)} → ${fmt.format(_dateTo)}  ·  ${compactDaysWithHours(_dayCount, _hoursPerDay)}'
+                                : '${fmt.format(_dateFrom)} → ${fmt.format(_dateTo)}  ·  $_dayCountLabel',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Icon(Icons.chevron_right, color: AppTheme.outline),
+                  ],
+                ),
+              ),
+            ),
+            if (_hourlyCustom) ...[
+              const SizedBox(height: 12),
+              Row(
                 children: [
-                  Icon(Icons.error_outline, color: AppTheme.error, size: 18),
-                  const SizedBox(width: 8),
                   Expanded(
-                    child: Text(
-                      _error!,
-                      style: TextStyle(color: AppTheme.error, fontSize: 13),
+                    child: _timeBox(
+                      label: 'From',
+                      time: _hourFrom,
+                      onTap: () => _pickTime(true),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _timeBox(
+                      label: 'To',
+                      time: _hourTo,
+                      onTap: () => _pickTime(false),
                     ),
                   ),
                 ],
               ),
+              if (_hourCaption != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8, left: 4),
+                  child: Text(
+                    _hourCaption!,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: _customHoursOutsideSchedule
+                          ? AppTheme.error
+                          : AppTheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+            ],
+            if (_isHalfDay) ...[
+              const SizedBox(height: 16),
+              _periodRow(
+                label: 'Start period',
+                value: _fromPeriod,
+                onChanged: (v) => setState(() {
+                  _fromPeriod = v;
+                  _error = null;
+                }),
+              ),
+              const SizedBox(height: 12),
+              _periodRow(
+                label: 'End period',
+                value: _toPeriod,
+                onChanged: (v) => setState(() {
+                  _toPeriod = v;
+                  _error = null;
+                }),
+              ),
+            ],
+            const SizedBox(height: 16),
+            TextField(
+              controller: _reasonController,
+              decoration: const InputDecoration(
+                labelText: 'Reason (optional)',
+                prefixIcon: Icon(Icons.notes),
+              ),
+              maxLines: 2,
+            ),
+            if (widget.leaveType.mobileRequiresDocument ||
+                _document != null) ...[
+              const SizedBox(height: 12),
+              DocumentPickerField(
+                picked: _document,
+                required: widget.leaveType.mobileRequiresDocument,
+                onChanged: (d) => setState(() {
+                  _document = d;
+                  _error = null;
+                }),
+              ),
+            ],
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppTheme.error.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: AppTheme.error.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.error_outline, color: AppTheme.error, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _error!,
+                        style: TextStyle(color: AppTheme.error, fontSize: 13),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            const SizedBox(height: 20),
+            PrimaryButton(
+              label: 'SUBMIT LEAVE',
+              loading: _submitting,
+              onPressed: _submitting ? null : _submit,
             ),
           ],
-          const SizedBox(height: 20),
-          PrimaryButton(
-            label: 'SUBMIT LEAVE',
-            loading: _submitting,
-            onPressed: _submitting ? null : _submit,
-          ),
-        ],
-      ),
+        ),
       ),
     );
   }
@@ -938,16 +1019,17 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
           ? '${fmt.format(_dateFrom)}  ·  $dur'
           : '${fmt.format(_dateFrom)} → ${fmt.format(_dateTo)}  ·  $dur';
     } else if (_isHalfDay) {
-      final period = '${_fromPeriod.toUpperCase()} → ${_toPeriod.toUpperCase()}';
+      final period =
+          '${_fromPeriod.toUpperCase()} → ${_toPeriod.toUpperCase()}';
       datesBlurb = _isSameDate
           ? '${fmt.format(_dateFrom)}  ·  $_dayCountLabel  ·  $period'
           : '${fmt.format(_dateFrom)} → ${fmt.format(_dateTo)}  '
-              '·  $_dayCountLabel  ·  $period';
+                '·  $_dayCountLabel  ·  $period';
     } else {
       datesBlurb = _isSameDate
           ? '${fmt.format(_dateFrom)}  ·  $_dayCountLabel'
           : '${fmt.format(_dateFrom)} → ${fmt.format(_dateTo)}  '
-              '·  $_dayCountLabel';
+                '·  $_dayCountLabel';
     }
     final reason = _reasonController.text.trim();
     final approver = session.employeeTimeOffApprover;
@@ -981,26 +1063,23 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
           Center(
             child: Text(
               'Leave request submitted',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w700),
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
             ),
           ),
           const SizedBox(height: 4),
           Center(
             child: Text(
               'Waiting for approval',
-              style: TextStyle(
-                fontSize: 13,
-                color: AppTheme.onSurfaceVariant,
-              ),
+              style: TextStyle(fontSize: 13, color: AppTheme.onSurfaceVariant),
             ),
           ),
           const SizedBox(height: 24),
           Divider(
-              height: 1,
-              color: AppTheme.outlineVariant.withValues(alpha: 0.6)),
+            height: 1,
+            color: AppTheme.outlineVariant.withValues(alpha: 0.6),
+          ),
           const SizedBox(height: 16),
           _summaryRow('Type', widget.leaveType.name),
           _summaryRow('Dates', datesBlurb),
@@ -1020,16 +1099,13 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
             label: const Text('VIEW IN HISTORY'),
             style: OutlinedButton.styleFrom(
               minimumSize: const Size.fromHeight(48),
-              side: BorderSide(
-                color: AppTheme.outline.withValues(alpha: 0.5),
-              ),
+              side: BorderSide(color: AppTheme.outline.withValues(alpha: 0.5)),
               foregroundColor: AppTheme.primary,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(100),
               ),
             ),
-            onPressed: () =>
-                Navigator.of(context).pop(_submittedLeaveId),
+            onPressed: () => Navigator.of(context).pop(_submittedLeaveId),
           ),
         ],
       ),
@@ -1057,10 +1133,7 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-              ),
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
             ),
           ),
         ],
@@ -1068,4 +1141,3 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
     );
   }
 }
-

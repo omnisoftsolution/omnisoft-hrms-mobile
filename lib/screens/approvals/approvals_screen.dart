@@ -16,12 +16,16 @@ import 'approval_detail_screen.dart';
 /// first). Recent = this user's own decisions of the last 30 days. Both
 /// come from the connector; this screen decides nothing itself.
 class ApprovalsScreen extends StatefulWidget {
-  const ApprovalsScreen({super.key, this.apiBuilder});
+  const ApprovalsScreen({super.key, this.apiBuilder, this.initialSegment = 0});
 
   /// Test seam: builds the API client from the session. Defaults to the
   /// real [OmniMobileApi] for the session's company and token. Passed on
   /// to the detail screen this one opens.
   final OmniMobileApi Function(SessionService session)? apiBuilder;
+
+  /// 0 = Pending (default), 1 = Recent — the Leave tab row opens Recent
+  /// when nothing waits.
+  final int initialSegment;
 
   @override
   State<ApprovalsScreen> createState() => _ApprovalsScreenState();
@@ -29,7 +33,7 @@ class ApprovalsScreen extends StatefulWidget {
 
 class _ApprovalsScreenState extends State<ApprovalsScreen> {
   late final OmniMobileApi _api;
-  int _segment = 0; // 0 = Pending, 1 = Recent
+  late int _segment; // 0 = Pending, 1 = Recent
   List<ApprovalItem> _pending = const [];
   List<ApprovalItem> _recent = const [];
   bool _loading = true;
@@ -39,12 +43,14 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
   void initState() {
     super.initState();
     final session = context.read<SessionService>();
-    _api = widget.apiBuilder?.call(session) ??
+    _api =
+        widget.apiBuilder?.call(session) ??
         OmniMobileApi(
           baseUrl: session.clientUrl,
           db: session.clientDb,
           token: session.token,
         );
+    _segment = widget.initialSegment;
     _load();
   }
 
@@ -54,8 +60,10 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
       _error = null;
     });
     try {
-      final results = await Future.wait(
-          [_api.getPendingApprovals(), _api.getRecentApprovals()]);
+      final results = await Future.wait([
+        _api.getPendingApprovals(),
+        _api.getRecentApprovals(),
+      ]);
       if (!mounted) return;
       setState(() {
         _pending = results[0];
@@ -72,10 +80,14 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
   }
 
   Future<void> _open(ApprovalItem item) async {
-    await Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => ApprovalDetailScreen(
-          leaveId: item.id, apiBuilder: widget.apiBuilder),
-    ));
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ApprovalDetailScreen(
+          leaveId: item.id,
+          apiBuilder: widget.apiBuilder,
+        ),
+      ),
+    );
     // Whatever happened there (decided, already decided, gone), the
     // lists are stale now.
     if (mounted) await _load();
@@ -94,7 +106,11 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: EdgeInsets.fromLTRB(
-              16, 16, 16, MediaQuery.viewPaddingOf(context).bottom + 24),
+            16,
+            16,
+            16,
+            MediaQuery.viewPaddingOf(context).bottom + 24,
+          ),
           children: [
             _Segments(
               labels: [
@@ -117,8 +133,11 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
                 padding: const EdgeInsets.symmetric(vertical: 64),
                 child: Column(
                   children: [
-                    const Icon(Icons.inbox_outlined,
-                        size: 48, color: AppTheme.outline),
+                    const Icon(
+                      Icons.inbox_outlined,
+                      size: 48,
+                      color: AppTheme.outline,
+                    ),
                     const SizedBox(height: 12),
                     Text(
                       recent
@@ -126,7 +145,9 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
                           : 'Nothing waiting for you',
                       textAlign: TextAlign.center,
                       style: const TextStyle(
-                          fontSize: 14, color: AppTheme.onSurfaceVariant),
+                        fontSize: 14,
+                        color: AppTheme.onSurfaceVariant,
+                      ),
                     ),
                   ],
                 ),
@@ -193,7 +214,9 @@ class _Segments extends StatelessWidget {
                 child: Container(
                   padding: const EdgeInsets.symmetric(vertical: 10),
                   decoration: BoxDecoration(
-                    color: i == value ? AppTheme.surfaceContainerLowest : Colors.transparent,
+                    color: i == value
+                        ? AppTheme.surfaceContainerLowest
+                        : Colors.transparent,
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Text(
@@ -245,9 +268,10 @@ class _ApprovalRow extends StatelessWidget {
       return item.refusalReason.isEmpty ? '' : '"${item.refusalReason}"';
     }
     if (item.outcome == 'waiting_hr') return 'Second approval pending';
-    final names = [item.firstApproverName, item.secondApproverName]
-        .where((n) => n.isNotEmpty)
-        .toList();
+    final names = [
+      item.firstApproverName,
+      item.secondApproverName,
+    ].where((n) => n.isNotEmpty).toList();
     return names.isEmpty ? '' : 'Approved by ${names.join(' and ')}';
   }
 
@@ -290,7 +314,9 @@ class _ApprovalRow extends StatelessWidget {
                         const SizedBox(width: 8),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 3),
+                            horizontal: 10,
+                            vertical: 3,
+                          ),
                           decoration: BoxDecoration(
                             color: _chipColor.withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(999),
@@ -311,22 +337,29 @@ class _ApprovalRow extends StatelessWidget {
                   Text(
                     '${item.leaveTypeName} · ${item.datesLabel}',
                     style: const TextStyle(
-                        fontSize: 13, color: AppTheme.onSurface),
+                      fontSize: 13,
+                      color: AppTheme.onSurface,
+                    ),
                   ),
                   if (meta.isNotEmpty || item.hasAttachment) ...[
                     const SizedBox(height: 2),
                     Row(
                       children: [
                         if (item.hasAttachment) ...[
-                          const Icon(Icons.attach_file_rounded,
-                              size: 14, color: AppTheme.outline),
+                          const Icon(
+                            Icons.attach_file_rounded,
+                            size: 14,
+                            color: AppTheme.outline,
+                          ),
                           const SizedBox(width: 2),
                         ],
                         Expanded(
                           child: Text(
                             meta,
                             style: const TextStyle(
-                                fontSize: 12, color: AppTheme.onSurfaceVariant),
+                              fontSize: 12,
+                              color: AppTheme.onSurfaceVariant,
+                            ),
                           ),
                         ),
                       ],
@@ -339,7 +372,9 @@ class _ApprovalRow extends StatelessWidget {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                          fontSize: 12, color: AppTheme.onSurfaceVariant),
+                        fontSize: 12,
+                        color: AppTheme.onSurfaceVariant,
+                      ),
                     ),
                   ],
                 ],
