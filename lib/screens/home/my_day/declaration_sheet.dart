@@ -212,7 +212,14 @@ class _DeclarationSheetState extends State<DeclarationSheet> {
                           )
                         : null,
                     onPressed: _ready ? _send : null,
-                    child: Text(undo ? 'Undo check-in' : 'Send to HR'),
+                    // Nothing reaches HR for these answers (review M3).
+                    child: Text(
+                      undo
+                          ? 'Undo check-in'
+                          : nothingToDeclare.contains(_selected)
+                          ? 'Done'
+                          : 'Send to HR',
+                    ),
                   ),
                 ],
               ),

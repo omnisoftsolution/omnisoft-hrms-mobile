@@ -111,6 +111,11 @@ class MyDayScreenState extends State<MyDayScreen> {
   Timer? _gpsTimer;
   AutoClosePrevious? _autoClosed;
 
+  /// Punches undone here, or being undone: their question never opens
+  /// (the snackbar's UNDO can beat the reload that precedes the sheet).
+  final Set<int> _undoneAttendanceIds = {};
+  final Set<int> _undoingAttendanceIds = {};
+
   @override
   void initState() {
     super.initState();
@@ -422,8 +427,10 @@ class MyDayScreenState extends State<MyDayScreen> {
   Future<void> _undo(int attendanceId) async {
     final messenger = ScaffoldMessenger.of(context);
     final api = _api();
+    _undoingAttendanceIds.add(attendanceId);
     try {
       final status = await api.undoPunch(attendanceId);
+      _undoneAttendanceIds.add(attendanceId);
       _controller?.applyStatus(status);
     } catch (e) {
       if (!mounted) return;
@@ -435,6 +442,8 @@ class MyDayScreenState extends State<MyDayScreen> {
         ),
       );
       return;
+    } finally {
+      _undoingAttendanceIds.remove(attendanceId);
     }
     if (!mounted) return;
     messenger.removeCurrentSnackBar();
@@ -450,6 +459,10 @@ class MyDayScreenState extends State<MyDayScreen> {
   /// Spec §4.2: the question right after a check-in. The row already
   /// exists; Skip and the "nothing to declare" answers post nothing.
   Future<void> _askAfterPunch(AttendanceAsk ask) async {
+    if (_undoneAttendanceIds.contains(ask.attendanceId) ||
+        _undoingAttendanceIds.contains(ask.attendanceId)) {
+      return;
+    }
     final answer = await showDeclarationSheet(
       context,
       title: ask.title,

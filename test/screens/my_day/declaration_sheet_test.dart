@@ -197,27 +197,30 @@ void main() {
     expect(result.answer?.time, DateTime(2026, 10, 7, 13).toUtc());
   });
 
-  testWidgets('choosing undo turns the button into Undo check-in', (
-    tester,
-  ) async {
-    final result = _Result();
-    await tester.pumpWidget(
-      _host(
-        result,
-        options: const [
-          AskOption(code: 'overtime', label: 'Yes, overtime'),
-          AskOption(code: 'undo', label: 'No — undo this check-in'),
-        ],
-      ),
-    );
-    await _open(tester);
-    expect(find.text('Send to HR'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('declaration-option-undo')));
-    await tester.pump();
-    expect(find.text('Undo check-in'), findsOneWidget);
-    await _send(tester);
-    expect(result.answer?.code, 'undo');
-  });
+  testWidgets(
+    'overtime reads Done; choosing undo turns it into Undo check-in',
+    (tester) async {
+      final result = _Result();
+      await tester.pumpWidget(
+        _host(
+          result,
+          options: const [
+            AskOption(code: 'overtime', label: 'Yes, overtime'),
+            AskOption(code: 'undo', label: 'No — undo this check-in'),
+          ],
+        ),
+      );
+      await _open(tester);
+      // Nothing reaches HR for overtime (review M3).
+      expect(find.text('Done'), findsOneWidget);
+      expect(find.text('Send to HR'), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('declaration-option-undo')));
+      await tester.pump();
+      expect(find.text('Undo check-in'), findsOneWidget);
+      await _send(tester);
+      expect(result.answer?.code, 'undo');
+    },
+  );
 
   testWidgets('the sheet opens on the root navigator', (tester) async {
     final rootKey = GlobalKey<NavigatorState>();

@@ -131,6 +131,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           backgroundColor: AppTheme.error,
         ),
       );
+      // A 409 already_answered must not reopen the sheet on the next tap.
+      await svc.refreshList();
       return;
     }
     await svc.markRead(n.id);

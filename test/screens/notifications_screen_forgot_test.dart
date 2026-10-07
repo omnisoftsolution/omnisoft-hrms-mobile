@@ -12,6 +12,7 @@ class _FakeNotifications extends NotificationService {
 
   final List<NotificationRecord> _list;
   final List<int> marked = [];
+  int refreshes = 0;
 
   @override
   List<NotificationRecord> get items => _list;
@@ -26,7 +27,7 @@ class _FakeNotifications extends NotificationService {
   String? get lastError => null;
 
   @override
-  Future<void> refreshList() async {}
+  Future<void> refreshList() async => refreshes++;
 
   @override
   Future<void> markRead(int id) async => marked.add(id);
@@ -74,7 +75,7 @@ void main() {
     taps = [];
   });
 
-  Widget host(_FakeNotifications svc) =>
+  Widget host(_FakeNotifications svc, {Object? failWith}) =>
       ChangeNotifierProvider<NotificationService>.value(
         value: svc,
         child: MaterialApp(
@@ -85,7 +86,10 @@ void main() {
                   required int notificationId,
                   required String answerCode,
                   required String note,
-                }) async => answers.add((notificationId, answerCode, note)),
+                }) async {
+                  if (failWith != null) throw failWith;
+                  answers.add((notificationId, answerCode, note));
+                },
           ),
         ),
       );
@@ -120,6 +124,25 @@ void main() {
       expect(find.text('Sent to HR'), findsOneWidget);
     },
   );
+
+  testWidgets('a failed answer shows the error and refreshes the list', (
+    tester,
+  ) async {
+    final svc = _FakeNotifications([_query()]);
+    await tester.pumpWidget(host(svc, failWith: Exception('already_answered')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('HR has a question about 2026-10-06'));
+    await tester.pumpAndSettle();
+    final before = svc.refreshes;
+    await tester.tap(find.byKey(const ValueKey('declaration-option-early')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('declaration-send')));
+    await tester.pumpAndSettle();
+    expect(find.byType(SnackBar), findsOneWidget);
+    expect(find.text('Sent to HR'), findsNothing);
+    expect(svc.marked, isEmpty);
+    expect(svc.refreshes, before + 1);
+  });
 
   testWidgets('an answered question does not reopen the sheet', (tester) async {
     final svc = _FakeNotifications([_query(answered: true)]);

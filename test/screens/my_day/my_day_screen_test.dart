@@ -1175,6 +1175,41 @@ void main() {
       },
     );
 
+    testWidgets('UNDO before the reload finishes: no question afterwards', (
+      tester,
+    ) async {
+      _tallScreen(tester);
+      final until = DateTime.now()
+          .toUtc()
+          .add(const Duration(minutes: 2))
+          .toIso8601String();
+      final api =
+          _FakeApi([
+              sampleMyDay(state: 'not_in', punches: [], kioskOnly: false),
+              sampleMyDay(kioskOnly: false),
+            ])
+            ..checkInResponse = {
+              'attendance_id': 812,
+              'ask': lateAsk(),
+              'undo_until': until,
+            };
+      await tester.pumpWidget(_host(api));
+      await tester.pumpAndSettle();
+      final gate = Completer<void>();
+      api.fetchGate = gate;
+      await tester.tap(find.byKey(const ValueKey('status-action')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.text('UNDO'), findsOneWidget);
+      await tester.tap(find.text('UNDO'));
+      await tester.pump();
+      gate.complete();
+      await tester.pumpAndSettle();
+      expect(api.undos, [812]);
+      expect(api.declares, isEmpty);
+      expect(find.byType(DeclarationSheet), findsNothing);
+    });
+
     testWidgets('an expired undo_until offers no UNDO', (tester) async {
       final until = DateTime.now()
           .toUtc()
