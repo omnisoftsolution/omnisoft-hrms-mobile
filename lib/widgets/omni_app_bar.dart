@@ -76,12 +76,10 @@ class OmniAppBar extends StatelessWidget implements PreferredSizeWidget {
             // the currently-active tab's stack — the bottom nav stays
             // highlighted on that tab while viewing Profile, and the
             // tab's back history diverges per tab.
-            onTap: () =>
-                Navigator.of(context, rootNavigator: true).push(
-              MaterialPageRoute(
-                builder: (_) => const ProfileScreen(),
-              ),
-            ),
+            onTap: () => Navigator.of(
+              context,
+              rootNavigator: true,
+            ).push(MaterialPageRoute(builder: (_) => const ProfileScreen())),
             child: Tooltip(
               message: 'Profile',
               child: EmployeeAvatar(
@@ -120,6 +118,10 @@ class OmniAppBar extends StatelessWidget implements PreferredSizeWidget {
             Navigator.of(context, rootNavigator: true).pop();
             await shell?.navigateToApproval(leaveId);
           },
+          onMyDayTap: () async {
+            Navigator.of(context, rootNavigator: true).pop();
+            await shell?.navigateToMyDay();
+          },
         ),
       ),
     );
@@ -132,8 +134,11 @@ class OmniBellButton extends StatelessWidget {
   final int unreadCount;
   final VoidCallback onPressed;
 
-  const OmniBellButton(
-      {super.key, required this.unreadCount, required this.onPressed});
+  const OmniBellButton({
+    super.key,
+    required this.unreadCount,
+    required this.onPressed,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -161,10 +166,8 @@ class OmniBellButton extends StatelessWidget {
             top: 8,
             right: 8,
             child: Container(
-              constraints:
-                  const BoxConstraints(minWidth: 18, minHeight: 18),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+              constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
               decoration: BoxDecoration(
                 color: AppTheme.error,
                 shape: BoxShape.rectangle,

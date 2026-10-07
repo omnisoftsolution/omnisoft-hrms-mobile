@@ -3,9 +3,22 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/error_messages.dart';
 import '../../core/theme.dart';
+import '../../models/attendance_ask.dart';
 import '../../models/notification_record.dart';
 import '../../services/notification_service.dart';
+import '../../services/omni_mobile_api.dart';
+import '../../services/session_service.dart';
+import '../home/my_day/declaration_sheet.dart';
+
+/// Posts the answer to HR's question (the review/answer route).
+typedef ReviewAnswerPoster =
+    Future<void> Function({
+      required int notificationId,
+      required String answerCode,
+      required String note,
+    });
 
 /// In-app notifications inbox. Pushed from the bell icon on
 /// MyDayScreen. Tap a kind-routable notification → marks read and
@@ -21,11 +34,21 @@ class NotificationsScreen extends StatefulWidget {
   /// Called when an approver taps an "Approval needed" notification.
   final void Function(int leaveId)? onApprovalTap;
 
+  /// Called when the user taps "HR updated your attendance" (My day).
+  final VoidCallback? onMyDayTap;
+
+  /// Test seam: posts the answer to HR's question (defaults to the
+  /// review/answer route through the session).
+  @visibleForTesting
+  final ReviewAnswerPoster? answerReview;
+
   const NotificationsScreen({
     super.key,
     this.onLeaveTap,
     this.onExpenseTap,
     this.onApprovalTap,
+    this.onMyDayTap,
+    this.answerReview,
   });
 
   @override
@@ -43,8 +66,18 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   Future<void> _handleTap(NotificationRecord n) async {
     final svc = context.read<NotificationService>();
+    if (n.isAttendanceQuery &&
+        !n.answered &&
+        AskOption.listFrom(n.payload['options']).isNotEmpty) {
+      await _answer(n, svc);
+      return;
+    }
     if (!n.read) await svc.markRead(n.id);
     if (!mounted) return;
+    if (n.isDeclarationApplied) {
+      widget.onMyDayTap?.call();
+      return;
+    }
     if (n.isApprovalRequestKind) {
       final leaveId = n.leaveIdHint;
       if (leaveId != null && widget.onApprovalTap != null) {
@@ -67,6 +100,64 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     // System / unknown — no navigation, but keep the screen open so
     // the user sees the read-state flip.
   }
+
+  /// HR's "Ask the employee" (spec 2026-10-07 §4.5): the payload's options
+  /// in the declaration sheet, posted to review/answer, then marked read.
+  Future<void> _answer(NotificationRecord n, NotificationService svc) async {
+    final post =
+        widget.answerReview ?? _reviewAnswer(context.read<SessionService>());
+    final messenger = ScaffoldMessenger.of(context);
+    final question = n.payload['question'];
+    final answer = await showDeclarationSheet(
+      context,
+      title: question is String && question.isNotEmpty ? question : n.title,
+      options: AskOption.listFrom(n.payload['options']),
+      day:
+          DateTime.tryParse(n.payload['date']?.toString() ?? '') ??
+          DateTime.now(),
+      footnote: 'HR will review your answer.',
+    );
+    if (!mounted || answer == null) return;
+    try {
+      await post(
+        notificationId: n.id,
+        answerCode: answer.code,
+        note: answer.note,
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(friendlyError(e)),
+          backgroundColor: AppTheme.error,
+        ),
+      );
+      return;
+    }
+    await svc.markRead(n.id);
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('Sent to HR'),
+        backgroundColor: AppTheme.primary,
+      ),
+    );
+    await svc.refreshList();
+  }
+
+  static ReviewAnswerPoster _reviewAnswer(SessionService session) =>
+      ({
+        required int notificationId,
+        required String answerCode,
+        required String note,
+      }) =>
+          OmniMobileApi(
+            baseUrl: session.clientUrl,
+            db: session.clientDb,
+            token: session.token,
+          ).answerReview(
+            notificationId: notificationId,
+            answerCode: answerCode,
+            note: note,
+          );
 
   @override
   Widget build(BuildContext context) {
@@ -96,17 +187,18 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         child: svc.loading && items.isEmpty
             ? const Center(child: CircularProgressIndicator())
             : svc.lastError != null && items.isEmpty
-                ? _emptyState(svc.lastError!, isError: true)
-                : items.isEmpty
-                    ? _emptyState('No notifications yet')
-                    : ListView.separated(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 12),
-                        itemCount: items.length,
-                        separatorBuilder: (_, _) =>
-                            const SizedBox(height: 8),
-                        itemBuilder: (_, i) => _tile(items[i]),
-                      ),
+            ? _emptyState(svc.lastError!, isError: true)
+            : items.isEmpty
+            ? _emptyState('No notifications yet')
+            : ListView.separated(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+                itemCount: items.length,
+                separatorBuilder: (_, _) => const SizedBox(height: 8),
+                itemBuilder: (_, i) => _tile(items[i]),
+              ),
       ),
     );
   }
@@ -152,6 +244,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       'leave_approval_requested' => Icons.fact_check_outlined,
       'expense_approved' => Icons.receipt_long_rounded,
       'expense_refused' => Icons.receipt_long_rounded,
+      'attendance_query' => Icons.help_outline,
+      'attendance_declaration_applied' => Icons.event_available,
       _ => Icons.notifications_rounded,
     };
     final iconColor = switch (n.kind) {
@@ -161,12 +255,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       'leave_approval_requested' => AppTheme.primary,
       'expense_approved' => AppTheme.primary,
       'expense_refused' => AppTheme.error,
+      'attendance_query' => AppTheme.secondary,
+      'attendance_declaration_applied' => AppTheme.primary,
       _ => AppTheme.outline,
     };
     final created = n.createDate;
-    final timeLabel = created != null
-        ? _relativeTime(created)
-        : '';
+    final timeLabel = created != null ? _relativeTime(created) : '';
 
     return Material(
       color: Colors.white,

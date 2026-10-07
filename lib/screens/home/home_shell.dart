@@ -244,6 +244,15 @@ class HomeShellState extends State<HomeShell> {
     _myDayKey.currentState?.refresh();
   }
 
+  /// Reached from "HR updated your attendance" (spec 2026-10-07 §3.7):
+  /// the Home tab at its root, reloaded.
+  Future<void> navigateToMyDay() async {
+    _homeNavKey.currentState?.popUntil((r) => r.isFirst);
+    if (_index != 0) setState(() => _index = 0);
+    await WidgetsBinding.instance.endOfFrame;
+    await _myDayKey.currentState?.refresh();
+  }
+
   /// Wraps the given root screen in its own Navigator so that pushes
   /// from inside the screen stay within this tab — keeping the
   /// HomeShell's bottom NavigationBar visible.

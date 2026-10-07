@@ -9,6 +9,9 @@ class NotificationRecord {
   final bool read;
   final DateTime? createDate;
 
+  /// attendance_query: the employee already replied (one answer only).
+  final bool answered;
+
   NotificationRecord({
     required this.id,
     required this.kind,
@@ -17,7 +20,15 @@ class NotificationRecord {
     this.payload = const {},
     this.read = false,
     this.createDate,
+    this.answered = false,
   });
+
+  /// HR's "Ask the employee" (spec 2026-10-07 §4.5): answered in the app
+  /// with the declaration sheet.
+  bool get isAttendanceQuery => kind == 'attendance_query';
+
+  /// HR applied the employee's declared time (connector 2.54.0).
+  bool get isDeclarationApplied => kind == 'attendance_declaration_applied';
 
   /// Tap-through hint: where the app should send the user.
   ///
@@ -81,6 +92,7 @@ class NotificationRecord {
       payload: payload,
       read: json['read'] == true,
       createDate: _parseDateTime(json['create_date']),
+      answered: json['answered'] == true,
     );
   }
 
@@ -90,9 +102,15 @@ class NotificationRecord {
     if (s.isEmpty) return null;
     final parsed = DateTime.tryParse(s);
     if (parsed == null) return null;
-    return parsed.isUtc ? parsed.toLocal() : DateTime.utc(
-      parsed.year, parsed.month, parsed.day,
-      parsed.hour, parsed.minute, parsed.second,
-    ).toLocal();
+    return parsed.isUtc
+        ? parsed.toLocal()
+        : DateTime.utc(
+            parsed.year,
+            parsed.month,
+            parsed.day,
+            parsed.hour,
+            parsed.minute,
+            parsed.second,
+          ).toLocal();
   }
 }
