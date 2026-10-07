@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'leave_tab_icon.dart';
 import 'my_day/my_day_screen.dart';
 import '../approvals/approval_detail_screen.dart';
 import '../expenses/expenses_screen.dart';
@@ -259,6 +260,7 @@ class HomeShellState extends State<HomeShell> {
 
   @override
   Widget build(BuildContext context) {
+    final pending = context.watch<SessionService>().leaveApprovalsPendingCount;
     return ScaffoldMessenger(
       key: _scaffoldMessengerKey,
       // PopScope intercepts the Android system back button so it pops
@@ -335,22 +337,30 @@ class HomeShellState extends State<HomeShell> {
             child: NavigationBar(
               selectedIndex: _index,
               onDestinationSelected: _onTabTap,
-              destinations: const [
-                NavigationDestination(
+              destinations: [
+                const NavigationDestination(
                   icon: Icon(Icons.home_outlined),
                   selectedIcon: Icon(Icons.home_rounded),
                   label: 'HOME',
                 ),
                 NavigationDestination(
-                  icon: Icon(Icons.event_note_outlined),
-                  selectedIcon: Icon(Icons.event_note_rounded),
+                  icon: LeaveTabIcon(
+                    count: pending,
+                    selected: _index == 1,
+                    icon: const Icon(Icons.event_note_outlined),
+                  ),
+                  selectedIcon: LeaveTabIcon(
+                    count: pending,
+                    selected: _index == 1,
+                    icon: const Icon(Icons.event_note_rounded),
+                  ),
                   label: 'LEAVE',
                 ),
-                NavigationDestination(
+                const NavigationDestination(
                   icon: Icon(Icons.history_rounded),
                   label: 'HISTORY',
                 ),
-                NavigationDestination(
+                const NavigationDestination(
                   icon: Icon(Icons.receipt_long_outlined),
                   selectedIcon: Icon(Icons.receipt_long_rounded),
                   label: 'EXPENSES',
