@@ -12,6 +12,7 @@ import 'package:omni_hr/models/face_capture_result.dart';
 import 'package:omni_hr/models/location_result.dart';
 import 'package:omni_hr/models/wifi_info_result.dart';
 import 'package:omni_hr/models/my_day.dart';
+import 'package:omni_hr/screens/home/my_day/check_in_out_screen.dart';
 import 'package:omni_hr/screens/home/my_day/declaration_sheet.dart';
 import 'package:omni_hr/screens/home/my_day/my_day_screen.dart';
 import 'package:omni_hr/services/attendance_action_controller.dart';
@@ -194,6 +195,7 @@ Widget _host(
   bool enrolled = true,
   _Calls? enrolCalls,
   Future<LocationResult> Function()? getLocation,
+  bool signaturePage = false,
 }) => ChangeNotifierProvider<SessionService>(
   create: (_) => session ?? SessionService(),
   child: MaterialApp(
@@ -226,10 +228,22 @@ Widget _host(
           simulateFace: false,
         ),
       ),
-      captureFace: () async {
-        calls?.captures++;
-        return FaceCaptureResult.success('/tmp/face.jpg');
-      },
+      captureFace: signaturePage
+          ? null
+          : () async {
+              calls?.captures++;
+              return FaceCaptureResult.success('/tmp/face.jpg');
+            },
+      signatureCaptureBuilder: signaturePage
+          ? (onResult) => TextButton(
+              key: const ValueKey('fake-capture'),
+              onPressed: () {
+                calls?.captures++;
+                onResult(FaceCaptureResult.success('/tmp/face.jpg'));
+              },
+              child: const Text('SNAP'),
+            )
+          : null,
       enrol: () async => enrolCalls?.enrolments++,
       destinationBuilder: (item, expense) => Scaffold(
         appBar: AppBar(),
@@ -743,6 +757,31 @@ void main() {
     expect(api.checkIns, [true]);
     expect(find.text('Checked in successfully!'), findsOneWidget);
     expect(api.calls, 2);
+    expect(find.text('Check out'), findsOneWidget);
+  });
+
+  testWidgets('Check in opens the signature page, counts down and posts', (
+    tester,
+  ) async {
+    _tallScreen(tester);
+    final before = sampleMyDay(state: 'not_in', punches: [], kioskOnly: false);
+    final after = sampleMyDay(kioskOnly: false);
+    final api = _FakeApi([before, after]);
+    final calls = _Calls();
+    await tester.pumpWidget(_host(api, calls: calls, signaturePage: true));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('status-action')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byType(CheckInOutScreen), findsOneWidget);
+    expect(find.text('CHECK IN'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 1));
+    await tester.tap(find.byKey(const ValueKey('fake-capture')));
+    await tester.pumpAndSettle(const Duration(seconds: 2));
+    expect(calls.captures, 1);
+    expect(api.checkIns, [true]);
+    expect(find.byType(CheckInOutScreen), findsNothing);
+    expect(find.text('Checked in successfully!'), findsOneWidget);
     expect(find.text('Check out'), findsOneWidget);
   });
 

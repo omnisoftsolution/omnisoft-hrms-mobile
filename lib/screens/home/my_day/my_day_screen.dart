@@ -19,10 +19,10 @@ import '../../../widgets/feature_locked_pane.dart';
 import '../../../widgets/omni_app_bar.dart';
 import '../../approvals/approvals_screen.dart';
 import '../../expenses/expense_detail_screen.dart';
-import '../../face_scan/face_capture_screen.dart';
 import '../../face_scan/face_enrollment_screen.dart';
 import '../../payroll/payslips_screen.dart';
 import 'auto_closed_banner.dart';
+import 'check_in_out_screen.dart';
 import 'declaration_sheet.dart';
 import 'day_timeline.dart';
 import 'for_you_list.dart';
@@ -45,6 +45,7 @@ class MyDayScreen extends StatefulWidget {
     this.refreshSession,
     this.controllerBuilder,
     this.captureFace,
+    this.signatureCaptureBuilder,
     this.enrol,
   });
 
@@ -80,9 +81,14 @@ class MyDayScreen extends StatefulWidget {
   final AttendanceActionController Function(SessionService session)?
   controllerBuilder;
 
-  /// Test seam: replaces the full-screen face capture.
+  /// Test seam: punches without the signature page, with this capture.
   @visibleForTesting
   final Future<FaceCaptureResult> Function()? captureFace;
+
+  /// Test seam: replaces the signature page's circular camera.
+  @visibleForTesting
+  final Widget Function(ValueChanged<FaceCaptureResult> onResult)?
+  signatureCaptureBuilder;
 
   /// Test seam: replaces the full-screen face enrolment.
   @visibleForTesting
@@ -318,15 +324,39 @@ class MyDayScreenState extends State<MyDayScreen> {
     return 'Check in now';
   }
 
-  Future<FaceCaptureResult> _captureFace() async {
+  /// The punch. Normally on the signature page (1.30.1: pulsing circle,
+  /// 3-2-1 camera, tick); face setup and the [MyDayScreen.captureFace]
+  /// seam run without it. A run that threw on the page is rethrown here.
+  Future<AttendanceActionOutcome?> _perform(
+    AttendanceActionController c,
+  ) async {
     final custom = widget.captureFace;
-    if (custom != null) return custom();
-    // Root navigator: the camera covers the bottom bar.
-    final result = await Navigator.of(context, rootNavigator: true)
-        .push<FaceCaptureResult>(
-          MaterialPageRoute(builder: (_) => const FaceCaptureScreen()),
+    if (custom != null || c.buttonState == AttendanceButtonState.enroll) {
+      return c.perform(
+        captureFace: custom ?? () async => FaceCaptureResult.cancelled(),
+        enrol: _enrol,
+      );
+    }
+    if (c.acting) return null;
+    final session = context.read<SessionService>();
+    // Root navigator: the page covers the bottom bar.
+    final page = await Navigator.of(context, rootNavigator: true)
+        .push<CheckInOutResult>(
+          MaterialPageRoute(
+            builder: (_) => CheckInOutScreen(
+              checkingOut: c.status?.checkedIn == true,
+              shiftLabel: _day?.shift?.label ?? '',
+              placeLabel: c.placeLabel,
+              faceEnabled: session.featureFaceVerification,
+              geoEnabled: session.featureGeolocation,
+              captureBuilder: widget.signatureCaptureBuilder,
+              run: (capture) => c.perform(captureFace: capture, enrol: _enrol),
+            ),
+          ),
         );
-    return result ?? FaceCaptureResult.cancelled();
+    final error = page?.error;
+    if (error != null) throw error;
+    return page?.outcome;
   }
 
   Future<void> _enrol() async {
@@ -343,7 +373,7 @@ class MyDayScreenState extends State<MyDayScreen> {
     if (c == null) return;
     final AttendanceActionOutcome? result;
     try {
-      result = await c.perform(captureFace: _captureFace, enrol: _enrol);
+      result = await _perform(c);
     } catch (e) {
       // A device lookup or a UI step threw outside perform()'s own catch.
       if (!mounted) return;

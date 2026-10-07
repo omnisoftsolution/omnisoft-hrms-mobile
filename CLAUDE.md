@@ -320,3 +320,19 @@ Spec + plan live in the connector repo:
   `test/core/error_messages_forgot_test.dart`, `test/screens/my_day/declaration_sheet_test.dart`,
   `test/screens/notifications_screen_forgot_test.dart`, plus groups in
   `attendance_action_controller_test.dart`, `my_day_screen_test.dart`, `for_you_list_test.dart`.
+
+### 1.30.1 — signature check-in page restored
+1.29.0 had replaced the classic home's signature punch (pulsing `BigCheckButton` + inline 3-2-1
+`InlineFaceCapture`) with the bare full-screen `FaceCaptureScreen`; Willy wants the signature back.
+- `lib/widgets/big_check_button.dart` and `lib/widgets/silent_face_capture.dart` are restored
+  unchanged from master (ccd2554). **Do not delete them again.**
+- `CheckInOutScreen` (`lib/screens/home/my_day/check_in_out_screen.dart`): the tile's Check in /
+  Check out pushes it on the root navigator and it starts by itself — pulsing circle while the
+  GPS / Wi-Fi gates run (at least `minPulse` 900 ms), the 3-2-1 camera, the scanning circle while
+  verify + POST run, a green tick ("Checked in HH:MM", `successHold` 1.1 s), then it pops a
+  `CheckInOutResult` (outcome or error). My day then shows the snackbar, UNDO and any question.
+  `PopScope(canPop: false)`: the camera's ✕ is the way out. Face setup (enrol state) skips the page.
+- `FaceCaptureScreen` is now only used by face enrolment.
+- Seams: `MyDayScreen.captureFace` (punch without the page, the older tests) and
+  `MyDayScreen.signatureCaptureBuilder` / `CheckInOutScreen.captureBuilder` (fake camera).
+  Tests: `test/screens/my_day/check_in_out_screen_test.dart` + one My day test.
