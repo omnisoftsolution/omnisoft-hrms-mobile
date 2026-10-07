@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:omni_hr/models/attendance_ask.dart';
 import 'package:omni_hr/models/my_day.dart';
 import 'package:omni_hr/screens/home/my_day/for_you_list.dart';
 import 'package:omni_hr/screens/home/my_day/my_day_colors.dart';
@@ -180,5 +181,57 @@ void main() {
     expect(find.text(ForYouList.emptyText), findsNothing);
     await tester.tap(find.byKey(const ValueKey('for-you-missing')));
     expect(tapped, 1);
+  });
+
+  const yesterday = ForYouItem(
+    kind: 'yesterday_incomplete',
+    date: '2026-10-06',
+    attendanceId: 798,
+    title: 'Yesterday looks incomplete',
+    body: 'No check-out was recorded for Tue 6 Oct. Tell HR when you left.',
+    options: [AskOption(code: 'left_at', label: 'I left at', needsTime: true)],
+  );
+
+  test('yesterday_incomplete texts', () {
+    expect(forYouTitle(yesterday), 'Yesterday looks incomplete');
+    expect(
+      forYouSubtitle(yesterday),
+      'No check-out was recorded for Tue 6 Oct. Tell HR when you left.',
+    );
+    expect(
+      forYouTitle(const ForYouItem(kind: 'yesterday_incomplete')),
+      'Yesterday looks incomplete',
+    );
+  });
+
+  testWidgets('the yesterday card: amber, first, Tell HR calls onYesterday', (
+    tester,
+  ) async {
+    final told = <ForYouItem>[];
+    final tapped = <ForYouItem>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: ForYouList(
+              items: [yesterday, payslip],
+              onTap: tapped.add,
+              onYesterday: told.add,
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(find.byType(YesterdayCard), findsOneWidget);
+    expect(find.byIcon(Icons.history), findsOneWidget);
+    expect(find.text('Yesterday looks incomplete'), findsOneWidget);
+    expect(find.text('Tell HR'), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.byType(YesterdayCard)).dy,
+      lessThan(tester.getTopLeft(find.byType(ListTile)).dy),
+    );
+    await tester.tap(find.byKey(const ValueKey('for-you-yesterday-tell')));
+    expect(told, [yesterday]);
+    expect(tapped, isEmpty);
   });
 }

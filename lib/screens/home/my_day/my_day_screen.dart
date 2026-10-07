@@ -508,6 +508,27 @@ class MyDayScreenState extends State<MyDayScreen> {
     return true;
   }
 
+  /// Spec §4.3: "Tell HR" on the yesterday card. The item disappears on
+  /// the next load because the day is declared.
+  Future<void> _onYesterday(ForYouItem item) async {
+    final day = DateTime.tryParse(item.date);
+    if (day == null || item.attendanceId == 0 || item.options.isEmpty) return;
+    final answer = await showDeclarationSheet(
+      context,
+      title: item.body.isEmpty ? forYouTitle(item) : item.body,
+      options: item.options,
+      day: day,
+      footnote: 'HR will review your answer.',
+    );
+    if (!mounted || answer == null) return;
+    final sent = await _declare(
+      trigger: 'yesterday',
+      attendanceId: item.attendanceId,
+      answer: answer,
+    );
+    if (sent && mounted) await refresh();
+  }
+
   Future<void> _onTap(ForYouItem item) async {
     if (!item.isKnown) return;
     // id 0 = the server omitted it: there is nothing to open.
@@ -656,6 +677,7 @@ class MyDayScreenState extends State<MyDayScreen> {
                   onTap: _onTap,
                   missing: attendanceOn && day.missing && day.kioskOnly,
                   onMissingTap: () => showKioskSheet(context),
+                  onYesterday: _onYesterday,
                 ),
               ],
             ),

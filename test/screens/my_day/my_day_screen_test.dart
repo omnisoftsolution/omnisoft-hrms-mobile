@@ -1211,4 +1211,67 @@ void main() {
       expect(find.text('Punch undone'), findsOneWidget);
     });
   });
+
+  group('yesterday looks incomplete (connector 2.54.0)', () {
+    final item = <String, dynamic>{
+      'kind': 'yesterday_incomplete',
+      'date': '2026-10-04',
+      'verdict': 'no_checkout',
+      'attendance_id': 798,
+      'title': 'Yesterday looks incomplete',
+      'body': 'No check-out was recorded for Sun 4 Oct. Tell HR when you left.',
+      'options': [
+        {
+          'code': 'left_at',
+          'label': 'I left at',
+          'needs_time': true,
+          'suggested_time': '2026-10-04 10:00:00',
+        },
+      ],
+    };
+
+    testWidgets('Tell HR opens the sheet and posts with trigger yesterday', (
+      tester,
+    ) async {
+      _tallScreen(tester);
+      final api = _FakeApi([
+        sampleMyDay(forYou: [item]),
+      ]);
+      await tester.pumpWidget(_host(api));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Tell HR'));
+      await tester.pumpAndSettle();
+      expect(find.byType(DeclarationSheet), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(DeclarationSheet),
+          matching: find.text(
+            'No check-out was recorded for Sun 4 Oct. Tell HR when you left.',
+          ),
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('declaration-send')));
+      await tester.pumpAndSettle();
+      expect(api.declares, [
+        {
+          'attendance_id': 798,
+          'trigger': 'yesterday',
+          'answer_code': 'left_at',
+          'declared_time': DateTime.utc(2026, 10, 4, 10),
+          'note': '',
+        },
+      ]);
+      expect(find.text('Sent to HR'), findsOneWidget);
+      expect(api.calls, 2);
+    });
+
+    testWidgets('no item (connector 2.53.x): no card', (tester) async {
+      _tallScreen(tester);
+      await tester.pumpWidget(_host(_FakeApi([sampleMyDay()])));
+      await tester.pumpAndSettle();
+      expect(find.text('Tell HR'), findsNothing);
+      expect(find.text('Yesterday looks incomplete'), findsNothing);
+    });
+  });
 }

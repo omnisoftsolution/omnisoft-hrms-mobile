@@ -199,10 +199,11 @@ class MyDayPunch {
   }
 }
 
-/// One "For you" row. One flat class for the four kinds; a field that a
-/// kind does not use keeps its default.
+/// One "For you" row. One flat class for every kind; a field that a kind
+/// does not use keeps its default.
 class ForYouItem {
   static const knownKinds = {
+    'yesterday_incomplete',
     'leave_approvals',
     'my_leave',
     'my_expense',
