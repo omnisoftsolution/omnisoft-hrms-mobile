@@ -293,3 +293,30 @@ Spec + plan live in the connector repo:
   `test/screens/my_day/{status_tile,day_timeline,my_day_screen}_test.dart`,
   `test/screens/leave_approvals_row_test.dart`, `test/screens/home/leave_tab_icon_test.dart`,
   `test/core/approvals_breakdown_test.dart`.
+
+### 1.30.0 — Forgot something? (spec `…/2026-10-07-forgot-something-design.md` in the connector repo, connector 2.54.0)
+- `lib/models/attendance_ask.dart`: `AttendanceAsk.tryParse(resp['ask'])` (null on 2.53.x → nothing
+  asked), `AskOption` (`needsTime`, `suggestedTime` UTC), `DeclarationAnswer`, `awayLabel`,
+  `nothingToDeclare` (`start_now`, `just_arriving`, `overtime` post nothing). Titles and the
+  footnote ("Your check-in stays at 09:12. HR will review your answer.") are built in the app;
+  option labels come from the server.
+- `AttendanceActionController.perform` parses `ask` (check-in only), `undo_until` and
+  `attendance_id` into the outcome; `applyStatus()` takes the status `attendance/undo` returns.
+- `lib/screens/home/my_day/declaration_sheet.dart`: `showDeclarationSheet` on the **root**
+  navigator (covers the bar); one option at a time, time chip → `showTimePicker` 24 h `en_US`,
+  optional note, "Send to HR" / "Skip" ("Undo check-in" in red for `undo`). Used after a
+  check-in (`MyDayScreen._askAfterPunch`), by the For-you `YesterdayCard` (`trigger: yesterday`)
+  and by the bell for HR's `attendance_query` (posts to `review/answer`, then marks read).
+- Punch snackbar: `UNDO` while `now < undoUntil`, `persist: false` (Flutter keeps a bar with an
+  action until tapped otherwise), duration min(window, 10 s); Undo → `undoPunch` →
+  `applyStatus` → reload, "Punch undone".
+- Bell: `attendance_declaration_applied` ("HR updated your attendance", `event_available`) opens
+  My day via `HomeShellState.navigateToMyDay()`; `NotificationRecord.answered` stops a second
+  answer.
+- API: `OmniMobileApi.declare` / `undoPunch` / `answerReview`, `buildDeclareBody` (declared time
+  as the API's UTC string). New error codes in `friendlyError`: `undo_expired`, `undo_not_last`,
+  `bad_time`, `too_old`, `not_yours`, `already_answered`, `invalid_answer`.
+- Tests: `test/models/attendance_ask_test.dart`, `test/services/forgot_something_api_test.dart`,
+  `test/core/error_messages_forgot_test.dart`, `test/screens/my_day/declaration_sheet_test.dart`,
+  `test/screens/notifications_screen_forgot_test.dart`, plus groups in
+  `attendance_action_controller_test.dart`, `my_day_screen_test.dart`, `for_you_list_test.dart`.
