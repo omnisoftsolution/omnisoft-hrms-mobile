@@ -210,7 +210,7 @@ class AttendanceActionController extends ChangeNotifier {
     } catch (e) {
       statusError = friendlyError(e);
     }
-    notifyListeners();
+    _notify();
     await sampleLocation();
   }
 
@@ -244,12 +244,27 @@ class AttendanceActionController extends ChangeNotifier {
         // keep the last reading
       }
     }
+    _notify();
+  }
+
+  bool _disposed = false;
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
+
+  /// An in-flight sample / refresh / punch can finish after the screen
+  /// disposed us; notifying then would throw.
+  void _notify() {
+    if (_disposed) return;
     notifyListeners();
   }
 
   void _setActing(bool value) {
     acting = value;
-    notifyListeners();
+    _notify();
   }
 
   /// The punch: face setup short-circuit, fresh GPS fix + geofence
@@ -266,7 +281,7 @@ class AttendanceActionController extends ChangeNotifier {
     if (needsEnrollment) {
       await enrol();
       await _refreshEnrolled();
-      notifyListeners();
+      _notify();
       return const AttendanceActionOutcome.enrolment();
     }
 

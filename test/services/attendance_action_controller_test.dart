@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omni_hr/core/error_messages.dart';
 import 'package:omni_hr/models/attendance_status.dart';
@@ -253,5 +255,33 @@ void main() {
       expect(h.refreshes, 1);
       expect(h.api.checkIns, isEmpty);
     });
+
+    test(
+      'disposed while a punch awaits the GPS: completing it is silent',
+      () async {
+        final gps = Completer<LocationResult>();
+        final api = _FakeApi(_status());
+        final controller = AttendanceActionController(
+          session: SessionService(),
+          apiBuilder: (_) => api,
+          getLocation: () => gps.future,
+          getWifi: () async => const WifiInfoResult.ready(ssid: 'office'),
+          getDeviceId: () async => 'device-1',
+          isEnrolled: () => true,
+          verifyFace: (_) async => FaceVerifyResult(ok: true),
+          refreshEnrolled: () async {},
+          devLocation: false,
+          simulateFace: false,
+        );
+        final pending = controller.perform(
+          captureFace: () async => FaceCaptureResult.success('/tmp/face.jpg'),
+          enrol: () async {},
+        );
+        await Future<void>.delayed(Duration.zero);
+        controller.dispose();
+        gps.complete(_at(1.31, _officeLng));
+        await expectLater(pending, completes); // no "used after dispose"
+      },
+    );
   });
 }

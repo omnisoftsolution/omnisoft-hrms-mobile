@@ -197,6 +197,8 @@ class MyDayScreenState extends State<MyDayScreen> {
       _controller?.removeListener(_onControllerChange);
       _controller?.dispose();
       _controller = null;
+      // _load's setState ran while the controller was still set.
+      if (mounted) setState(() {});
       return;
     }
     var controller = _controller;
