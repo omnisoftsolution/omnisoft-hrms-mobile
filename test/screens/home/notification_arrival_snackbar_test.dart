@@ -60,4 +60,24 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(SnackBarAction), findsNothing);
   });
+
+  test('a decision on my leave reloads History while it is on screen (M4)', () {
+    NotificationRecord n(String kind) =>
+        NotificationRecord(id: 1, kind: kind, title: 't', body: '');
+    for (final kind in [
+      'leave_approved',
+      'leave_refused',
+      'leave_first_approved',
+    ]) {
+      expect(reloadsLeaveHistory(n(kind), tabIndex: historyTabIndex), isTrue,
+          reason: kind);
+      // Another tab: History reloads when it is opened anyway.
+      expect(reloadsLeaveHistory(n(kind), tabIndex: 0), isFalse);
+    }
+    expect(
+      reloadsLeaveHistory(n('leave_approval_requested'),
+          tabIndex: historyTabIndex),
+      isFalse,
+    );
+  });
 }

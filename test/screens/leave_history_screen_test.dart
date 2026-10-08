@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:omni_hr/core/theme.dart';
 import 'package:omni_hr/models/leave_record.dart';
 import 'package:omni_hr/screens/leave_history/leave_history_screen.dart';
+import 'package:omni_hr/services/holiday_service.dart';
 import 'package:omni_hr/services/omni_mobile_api.dart';
 import 'package:omni_hr/services/session_service.dart';
 
@@ -25,13 +28,40 @@ class FakeApi extends OmniMobileApi {
   final List<List<LeaveRecord>> pages;
   int historyCalls = 0;
   Object? cancelError;
+  Object? modifyError;
   final List<int> cancelled = [];
+  int modifies = 0;
+
+  /// When set, the next getLeaveHistory waits for it.
+  Completer<void>? gate;
 
   @override
   Future<List<LeaveRecord>> getLeaveHistory() async {
     final page = pages[historyCalls.clamp(0, pages.length - 1)];
     historyCalls++;
+    final g = gate;
+    if (g != null) {
+      gate = null;
+      await g.future;
+    }
     return page;
+  }
+
+  @override
+  Future<Map<String, dynamic>> modifyLeave({
+    required int leaveId,
+    required String dateFrom,
+    required String dateTo,
+    required String reason,
+    String? dateFromPeriod,
+    String? dateToPeriod,
+    double? hourFrom,
+    double? hourTo,
+    Map<String, dynamic>? attachment,
+  }) async {
+    modifies++;
+    if (modifyError != null) throw modifyError!;
+    return {'success': true};
   }
 
   @override
@@ -46,8 +76,11 @@ class FakeApi extends OmniMobileApi {
 }
 
 Widget host(FakeApi api, {GlobalKey<LeaveHistoryScreenState>? key}) =>
-    ChangeNotifierProvider<SessionService>(
-      create: (_) => SessionService(),
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider<SessionService>(create: (_) => SessionService()),
+        ChangeNotifierProvider<HolidayService>(create: (_) => HolidayService()),
+      ],
       child: MaterialApp(
         home: Scaffold(
           body: LeaveHistoryScreen(key: key, apiBuilder: (_) => api),
@@ -136,5 +169,104 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Cancel this leave?'), findsOneWidget);
     expect(find.text('Annual Leave\nMon 26 Oct · 1d'), findsOneWidget);
+  });
+
+  group('a request decided while the list was open (M4)', () {
+    final pending = leave({'state': 'confirm'});
+    final approved = leave({'state': 'validate'});
+
+    testWidgets('Cancel: says so without "Pull down" and reloads', (
+      tester,
+    ) async {
+      final api = FakeApi([
+        [pending],
+        [approved],
+      ])..cancelError = ApiException('not_cancellable', data: {'state': 'validate'});
+      await tester.pumpWidget(host(api));
+      await tester.pumpAndSettle();
+      expect(find.text('Pending'), findsOneWidget);
+
+      await tester.tap(find.text('Annual Leave'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cancel leave'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('This request was already decided.'), findsOneWidget);
+      expect(find.textContaining('Pull down'), findsNothing);
+      expect(api.historyCalls, 2);
+      expect(find.text('Approved'), findsOneWidget);
+      expect(find.text('Pending'), findsNothing);
+      // An approved leave has no Edit / Cancel any more.
+      expect(find.text('Edit'), findsNothing);
+      expect(find.text('Cancel'), findsNothing);
+    });
+
+    testWidgets('Edit: the sheet closes, says so and the list reloads', (
+      tester,
+    ) async {
+      final api = FakeApi([
+        [pending],
+        [approved],
+      ])..modifyError = ApiException('not_modifiable', data: {'state': 'validate'});
+      await tester.pumpWidget(host(api));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Annual Leave'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Edit'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Save changes'));
+      await tester.tap(find.text('Save changes'));
+      await tester.pumpAndSettle();
+
+      expect(api.modifies, 1);
+      expect(find.text('Save changes'), findsNothing); // sheet closed
+      expect(find.text('This request was already decided.'), findsOneWidget);
+      expect(api.historyCalls, 2);
+      expect(find.text('Approved'), findsOneWidget);
+    });
+
+    testWidgets('a quiet reload keeps the cards on screen meanwhile', (
+      tester,
+    ) async {
+      final key = GlobalKey<LeaveHistoryScreenState>();
+      final api = FakeApi([
+        [pending],
+        [approved],
+      ]);
+      await tester.pumpWidget(host(api, key: key));
+      await tester.pumpAndSettle();
+      final gate = Completer<void>();
+      api.gate = gate;
+      unawaited(key.currentState!.refresh(quiet: true));
+      await tester.pump();
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.text('Pending'), findsOneWidget);
+      gate.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('Approved'), findsOneWidget);
+    });
+
+    testWidgets('another error keeps the old message path, no reload', (
+      tester,
+    ) async {
+      final api = FakeApi([
+        [pending],
+      ])..cancelError = ApiException('network_error');
+      await tester.pumpWidget(host(api));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Annual Leave'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cancel leave'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('No internet connection. Check your network and try again.'),
+        findsOneWidget,
+      );
+      expect(api.historyCalls, 1);
+    });
   });
 }

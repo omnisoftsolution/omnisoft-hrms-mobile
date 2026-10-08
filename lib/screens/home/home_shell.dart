@@ -92,6 +92,10 @@ class HomeShellState extends State<HomeShell> {
       // ignore: discarded_futures — fire-and-forget
       context.read<SessionService>().refreshMe();
     }
+    if (reloadsLeaveHistory(fresh, tabIndex: _index)) {
+      // ignore: discarded_futures — fire-and-forget
+      _historyKey.currentState?.reloadLeaveQuietly();
+    }
     final messenger = _scaffoldMessengerKey.currentState;
     if (messenger == null) return;
     messenger
@@ -335,6 +339,16 @@ class HomeShellState extends State<HomeShell> {
     );
   }
 }
+
+/// History tab index in [HomeShell]'s bottom bar.
+const historyTabIndex = 2;
+
+/// Whether a freshly arrived notification should reload the leave list:
+/// a decision on the user's own leave (approved / refused / first
+/// approval) while the History tab is on screen. Off screen the list
+/// reloads anyway when the tab is opened.
+bool reloadsLeaveHistory(NotificationRecord fresh, {required int tabIndex}) =>
+    fresh.isLeaveKind && tabIndex == historyTabIndex;
 
 /// The snackbar shown when a notification arrives while the app is open.
 /// [onAction] runs for its VIEW / Review action, when the kind has one.

@@ -32,6 +32,14 @@ class HistoryShellState extends State<HistoryShell> {
     }
   }
 
+  /// A leave notification (approved / refused / first approval) came in
+  /// while History is on screen: reload the leave list without a
+  /// spinner, so a card that changed state does not keep stale Edit /
+  /// Cancel buttons.
+  Future<void> reloadLeaveQuietly() async {
+    await _leaveKey.currentState?.refresh(quiet: true);
+  }
+
   /// Reached via the bell → notification tap chain. Switches the
   /// segmented control to Leave (in case the user was on Attendance)
   /// and asks LeaveHistoryScreen to scroll to + highlight the matching
@@ -83,8 +91,14 @@ class HistoryShellState extends State<HistoryShell> {
                     ),
                   ],
                   selected: {_tab},
-                  onSelectionChanged: (s) =>
-                      setState(() => _tab = s.first),
+                  onSelectionChanged: (s) {
+                    setState(() => _tab = s.first);
+                    // Back on Leave: the list may be stale (decided
+                    // while the user looked at Attendance).
+                    if (s.first == _HistoryTab.leave) {
+                      _leaveKey.currentState?.refresh(quiet: true);
+                    }
+                  },
                 ),
               ),
             ),

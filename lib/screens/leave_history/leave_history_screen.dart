@@ -109,18 +109,41 @@ class LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
     }
   }
 
-  Future<void> refresh() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  /// Reload the list. [quiet] keeps the current cards on screen (no
+  /// spinner) and keeps them on a failure: used when the app, not the
+  /// user, asks for fresh data — a leave notification arrived, or a
+  /// cancel / edit found the request already decided.
+  Future<void> refresh({bool quiet = false}) async {
+    if (!quiet || _error != null) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     try {
       _leaves = await _api().getLeaveHistory();
     } catch (e) {
-      _error = friendlyError(e);
+      if (quiet && !_loading) {
+        debugPrint('leave/history quiet reload failed: $e');
+      } else {
+        _error = friendlyError(e);
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  /// The request changed on the server (decided, cancelled, deleted)
+  /// since the list was loaded: say so and reload, so the card's state
+  /// and its Edit / Cancel buttons are right again.
+  Future<void> _showChangedAndReload(Object e) async {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(friendlyError(e)),
+        backgroundColor: AppTheme.error,
+      ),
+    );
+    await refresh(quiet: true);
   }
 
   Color _stateColor(String state) => leaveStateColor(state);
@@ -156,14 +179,17 @@ class LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
       );
       await refresh();
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(friendlyError(e)),
-            backgroundColor: AppTheme.error,
-          ),
-        );
+      if (!mounted) return;
+      if (isLeaveChangedError(e)) {
+        await _showChangedAndReload(e);
+        return;
       }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(friendlyError(e)),
+          backgroundColor: AppTheme.error,
+        ),
+      );
     }
   }
 
@@ -180,7 +206,9 @@ class LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
   }
 
   Future<void> _openEditSheet(LeaveRecord r) async {
-    final saved = await showModalBottomSheet<bool>(
+    // true = saved; an error object = the request changed on the server
+    // (the sheet closes itself so the list can show what happened).
+    final outcome = await showModalBottomSheet<Object>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
@@ -193,7 +221,12 @@ class LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
       ),
       builder: (_) => _EditLeaveSheet(record: r, api: _api()),
     );
-    if (saved == true) await refresh();
+    if (!mounted) return;
+    if (outcome == true) {
+      await refresh();
+    } else if (outcome != null) {
+      await _showChangedAndReload(outcome);
+    }
   }
 
   @override
@@ -863,7 +896,13 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
         ),
       );
     } catch (e) {
-      if (mounted) setState(() => _error = _humanizeError(e));
+      if (!mounted) return;
+      if (isLeaveChangedError(e)) {
+        // Decided or gone while the sheet was open: editing is over.
+        Navigator.of(context).pop(e);
+        return;
+      }
+      setState(() => _error = _humanizeError(e));
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
