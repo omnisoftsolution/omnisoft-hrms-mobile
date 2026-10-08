@@ -266,7 +266,7 @@ class LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
                                 fontWeight: FontWeight.w600, fontSize: 15)),
                         const SizedBox(height: 4),
                         Text(
-                          '${r.dateFrom ?? ''} → ${r.dateTo ?? ''}  ·  ${r.daysLabel}',
+                          r.summaryLabel,
                           style: TextStyle(
                               fontSize: 13, color: AppTheme.onSurfaceVariant),
                         ),
@@ -482,7 +482,7 @@ class _CancelLeaveDialogState extends State<_CancelLeaveDialog> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '${r.leaveType}\n${r.dateFrom ?? ''} → ${r.dateTo ?? ''}',
+            '${r.leaveType}\n${r.summaryLabel}',
             style: TextStyle(color: AppTheme.onSurfaceVariant, fontSize: 13),
           ),
           const SizedBox(height: 16),

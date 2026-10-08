@@ -81,4 +81,23 @@ void main() {
     expect(find.text('1 day'), findsNWidgets(2)); // Used + Remaining
     expect(find.textContaining('1 days'), findsNothing);
   });
+
+  testWidgets('the card and the cancel dialog show formatted dates', (
+    tester,
+  ) async {
+    final api = FakeApi([
+      [leave({})],
+    ]);
+    await tester.pumpWidget(host(api));
+    await tester.pumpAndSettle();
+    expect(find.text('Mon 26 Oct · 1d'), findsOneWidget);
+    expect(find.textContaining('2026-10-26'), findsNothing);
+
+    await tester.tap(find.text('Annual Leave'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(find.text('Cancel this leave?'), findsOneWidget);
+    expect(find.text('Annual Leave\nMon 26 Oct · 1d'), findsOneWidget);
+  });
 }

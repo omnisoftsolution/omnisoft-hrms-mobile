@@ -1,3 +1,5 @@
+import '../core/leave_dates.dart';
+
 class LeaveRecord {
   final int id;
   final int leaveTypeId;
@@ -87,6 +89,30 @@ class LeaveRecord {
     return n == n.roundToDouble()
         ? '${n.toInt()}d'
         : '${n.toStringAsFixed(1)}d';
+  }
+
+  /// 'Mon 26 Oct', 'Thu 22 Oct – Fri 23 Oct', 'Tue 3 Nov, 14:00 – 17:00'
+  /// (specific hours: `hour_to` > 0), 'Mon 2 Nov (afternoon)' (a
+  /// half-day type, one day, both halves the same). '' without dates.
+  String get datesLabel {
+    final halfSame = requestUnit == 'half_day' &&
+            dateFromPeriod == dateToPeriod
+        ? dateFromPeriod
+        : null;
+    final custom = (hourTo ?? 0) > 0;
+    return leaveDatesLabel(
+      _parseDate(dateFrom),
+      _parseDate(dateTo),
+      hourFrom: custom ? (hourFrom ?? 0) : null,
+      hourTo: custom ? hourTo : null,
+      halfDayPeriod: halfSame,
+    );
+  }
+
+  /// [datesLabel] and the duration: 'Mon 26 Oct · 1d'.
+  String get summaryLabel {
+    final dates = datesLabel;
+    return dates.isEmpty ? daysLabel : '$dates · $daysLabel';
   }
 
   static DateTime? _parseDate(dynamic v) {
