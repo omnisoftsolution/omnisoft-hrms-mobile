@@ -111,6 +111,27 @@ void main() {
     expect(status.employeeId, 4);
   });
 
+  test(
+    'answerReview sends a corrected time as UTC (connector 2.55.0)',
+    () async {
+      final seen = <http.Request>[];
+      await _withServer(
+        () => _api().answerReview(
+          notificationId: 22,
+          answerCode: 'declared_change',
+          time: DateTime.utc(2026, 10, 8, 0, 30),
+        ),
+        reply: {'success': true, 'day_id': 6, 'answer_code': 'declared_change'},
+        seen: seen,
+      );
+      expect(jsonDecode(seen.single.body), {
+        'notification_id': 22,
+        'answer_code': 'declared_change',
+        'time': '2026-10-08 00:30:00',
+      });
+    },
+  );
+
   test('answerReview posts to the review/answer route', () async {
     final seen = <http.Request>[];
     await _withServer(

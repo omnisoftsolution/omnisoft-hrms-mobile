@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/datetime_utils.dart';
 import '../../core/error_messages.dart';
 import '../../core/theme.dart';
 import '../../models/attendance_ask.dart';
@@ -18,6 +19,7 @@ typedef ReviewAnswerPoster =
       required int notificationId,
       required String answerCode,
       required String note,
+      DateTime? time,
     });
 
 /// In-app notifications inbox. Pushed from the bell icon on
@@ -111,7 +113,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     final answer = await showDeclarationSheet(
       context,
       title: question is String && question.isNotEmpty ? question : n.title,
-      options: AskOption.listFrom(n.payload['options']),
+      // Connector 2.55.0: a question about the employee's own declaration
+      // suggests the declared time for "No, the right time is".
+      options: AskOption.listFrom(
+        n.payload['options'],
+        fallbackTime: DateTimeUtils.parseOdooUtc(
+          n.payload['suggested_time']?.toString(),
+        ),
+      ),
       day:
           DateTime.tryParse(n.payload['date']?.toString() ?? '') ??
           DateTime.now(),
@@ -123,6 +132,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         notificationId: n.id,
         answerCode: answer.code,
         note: answer.note,
+        time: answer.time,
       );
     } catch (e) {
       messenger.showSnackBar(
@@ -150,6 +160,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         required int notificationId,
         required String answerCode,
         required String note,
+        DateTime? time,
       }) =>
           OmniMobileApi(
             baseUrl: session.clientUrl,
@@ -159,6 +170,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             notificationId: notificationId,
             answerCode: answerCode,
             note: note,
+            time: time,
           );
 
   @override

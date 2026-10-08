@@ -53,6 +53,37 @@ NotificationRecord _query({bool answered = false}) => NotificationRecord(
   },
 );
 
+const _declared =
+    'You said you started at 08:00 on Thu 8 Oct (you tapped 10:44). '
+    'Is that right?';
+
+/// Connector 2.55.0: HR asks about the employee's own declaration.
+NotificationRecord _declaredQuery() => NotificationRecord(
+  id: 22,
+  kind: 'attendance_query',
+  title: 'HR has a question about Thu 8 Oct',
+  body: _declared,
+  payload: const {
+    'day_id': 6,
+    'date': '2026-10-08',
+    'question': _declared,
+    'suggested_time': '2026-10-08 00:00:00',
+    'options': [
+      {
+        'code': 'declared_ok',
+        'label': "Yes, that's right",
+        'needs_time': false,
+      },
+      {
+        'code': 'declared_change',
+        'label': 'No, the right time is',
+        'needs_time': true,
+      },
+      {'code': 'other', 'label': 'Other', 'needs_time': false},
+    ],
+  },
+);
+
 NotificationRecord _applied() => NotificationRecord(
   id: 23,
   kind: 'attendance_declaration_applied',
@@ -68,10 +99,12 @@ NotificationRecord _applied() => NotificationRecord(
 
 void main() {
   late List<(int, String, String)> answers;
+  late List<DateTime?> times;
   late List<String> taps;
 
   setUp(() {
     answers = [];
+    times = [];
     taps = [];
   });
 
@@ -86,9 +119,11 @@ void main() {
                   required int notificationId,
                   required String answerCode,
                   required String note,
+                  DateTime? time,
                 }) async {
                   if (failWith != null) throw failWith;
                   answers.add((notificationId, answerCode, note));
+                  times.add(time);
                 },
           ),
         ),
@@ -122,6 +157,34 @@ void main() {
       expect(answers, [(21, 'early', 'doctor')]);
       expect(svc.marked, [21]);
       expect(find.text('Sent to HR'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'HR asks about a declaration: the corrected time goes with the answer',
+    (tester) async {
+      final svc = _FakeNotifications([_declaredQuery()]);
+      await tester.pumpWidget(host(svc));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('HR has a question about Thu 8 Oct'));
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: find.byType(DeclarationSheet),
+          matching: find.text(_declared),
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('declaration-option-declared_change')),
+      );
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('declaration-send')));
+      await tester.pumpAndSettle();
+      expect(answers, [(22, 'declared_change', '')]);
+      // The time chip starts on the declared time the server suggested.
+      expect(times, [DateTime.utc(2026, 10, 8)]);
+      expect(svc.marked, [22]);
     },
   );
 

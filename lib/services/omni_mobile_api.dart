@@ -434,16 +434,21 @@ class OmniMobileApi {
   }
 
   /// Answers HR's "Ask the employee" (the existing review/answer route).
+  /// [time] (connector 2.55.0) is the corrected time of a
+  /// `declared_change` answer, sent as UTC like a declaration's.
   Future<void> answerReview({
     required int notificationId,
     required String answerCode,
     String note = '',
+    DateTime? time,
   }) async {
     final trimmed = note.trim();
     await _post('/attendance/review/answer', {
       'notification_id': notificationId,
       'answer_code': answerCode,
       if (trimmed.isNotEmpty) 'note': trimmed,
+      if (time != null)
+        'time': DateFormat('yyyy-MM-dd HH:mm:ss', 'en_US').format(time.toUtc()),
     });
   }
 
