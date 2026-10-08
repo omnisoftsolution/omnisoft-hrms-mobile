@@ -13,6 +13,7 @@ import '../../widgets/auto_pickers.dart';
 import '../../widgets/error_state_view.dart';
 import '../../widgets/document_picker_field.dart';
 import '../../widgets/file_viewer.dart';
+import '../../widgets/period_segmented_row.dart';
 import '../../widgets/range_picker_dialog.dart';
 import '../../utils/leave_backdate.dart';
 
@@ -891,43 +892,7 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
     required String label,
     required String value,
     required ValueChanged<String> onChanged,
-  }) {
-    return Row(
-      children: [
-        SizedBox(
-          width: 110,
-          child: Text(label,
-              style: TextStyle(
-                  fontSize: 13,
-                  color: AppTheme.onSurfaceVariant,
-                  fontWeight: FontWeight.w500)),
-        ),
-        Expanded(
-          child: SegmentedButton<String>(
-            segments: const [
-              ButtonSegment(
-                value: 'am',
-                label: Text('Morning'),
-                icon: Icon(Icons.wb_sunny_outlined, size: 16),
-              ),
-              ButtonSegment(
-                value: 'pm',
-                label: Text('Afternoon'),
-                icon: Icon(Icons.wb_twilight, size: 16),
-              ),
-            ],
-            selected: {value},
-            onSelectionChanged: (s) => onChanged(s.first),
-            style: ButtonStyle(
-              visualDensity: VisualDensity.compact,
-              textStyle: WidgetStateProperty.all(
-                  const TextStyle(fontSize: 12)),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
+  }) => PeriodSegmentedRow(label: label, value: value, onChanged: onChanged);
 
   Widget _timeBox({
     required String label,

@@ -16,6 +16,7 @@ import '../../widgets/document_picker_field.dart';
 import '../../widgets/feature_locked_pane.dart';
 import '../../widgets/omni_app_bar.dart';
 import '../../widgets/primary_button.dart';
+import '../../widgets/period_segmented_row.dart';
 import '../../widgets/range_picker_dialog.dart';
 import '../approvals/approvals_screen.dart';
 import '../home/home_shell.dart';
@@ -713,45 +714,7 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
     required String label,
     required String value,
     required ValueChanged<String> onChanged,
-  }) {
-    return Row(
-      children: [
-        SizedBox(
-          width: 110,
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 13,
-              color: AppTheme.onSurfaceVariant,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ),
-        Expanded(
-          child: SegmentedButton<String>(
-            segments: const [
-              ButtonSegment(
-                value: 'am',
-                label: Text('Morning'),
-                icon: Icon(Icons.wb_sunny_outlined, size: 16),
-              ),
-              ButtonSegment(
-                value: 'pm',
-                label: Text('Afternoon'),
-                icon: Icon(Icons.wb_twilight, size: 16),
-              ),
-            ],
-            selected: {value},
-            onSelectionChanged: (s) => onChanged(s.first),
-            style: ButtonStyle(
-              visualDensity: VisualDensity.compact,
-              textStyle: WidgetStateProperty.all(const TextStyle(fontSize: 12)),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
+  }) => PeriodSegmentedRow(label: label, value: value, onChanged: onChanged);
 
   @override
   Widget build(BuildContext context) {
