@@ -135,6 +135,26 @@ void main() {
     expect(host.popped?.outcome?.checkedIn, isTrue);
   });
 
+  testWidgets('the circle is 30% bigger than the 1.28 home button', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1170, 2532); // iPhone 12
+    tester.view.devicePixelRatio = 3.0;
+    addTearDown(tester.view.reset);
+    final host = _Host();
+    await _open(tester, host, _page(run: _happyRun));
+    expect(
+      tester.widget<BigCheckButton>(find.byType(BigCheckButton)).size,
+      260,
+    );
+    expect(tester.getSize(find.byType(BigCheckButton)).width, 308);
+    await tester.pump(const Duration(seconds: 1));
+    await tester.tap(find.byKey(const ValueKey('fake-capture')));
+    await tester.pump();
+    expect(tester.getSize(find.byKey(const ValueKey('check-done'))).width, 308);
+    await tester.pumpAndSettle(const Duration(seconds: 2));
+  });
+
   testWidgets('rows tick live as perform() reports them', (tester) async {
     final host = _Host();
     final gps = Completer<void>();

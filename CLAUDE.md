@@ -341,6 +341,8 @@ Spec + plan live in the connector repo:
   tenant doesn't need it). A failure keeps the page open: the running step turns red with the
   friendly reason, the circle reads NOT READY, Close pops `outcome: null` (My day shows nothing).
   The 1.30.1 (93) first cut had the circle off-centre (a shrink-wrapped Column) and no context.
+- Circle size `_kCircle` = 260 (the 1.28 button's 200 + 30%, Willy 2026-10-08); halo +48 → 308 for
+  the button, the camera and the tick alike. Title of the Home tab: `helloTitle()` → "Hello, Ethan".
 - `FaceCaptureScreen` is now only used by face enrolment.
 - Seams: `MyDayScreen.captureFace` (punch without the page, the older tests) and
   `MyDayScreen.signatureCaptureBuilder` / `CheckInOutScreen.captureBuilder` (fake camera).

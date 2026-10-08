@@ -88,6 +88,10 @@ class CheckInOutScreen extends StatefulWidget {
   State<CheckInOutScreen> createState() => _CheckInOutScreenState();
 }
 
+/// The circle's inner diameter: the 1.28 home button's 200 + 30% (Willy,
+/// 2026-10-08). The halo adds 48, so every phase is 308 wide.
+const double _kCircle = 260;
+
 enum _Phase { preparing, capturing, checking, done, failed }
 
 enum _Row { pending, running, done, skipped, failed }
@@ -202,13 +206,14 @@ class _CheckInOutScreenState extends State<CheckInOutScreen> {
         final build = widget.captureBuilder;
         return build != null
             ? build(_onCaptured)
-            : InlineFaceCapture(onResult: _onCaptured);
+            : InlineFaceCapture(size: _kCircle, onResult: _onCaptured);
       case _Phase.done:
         return _DoneCircle(label: _doneTitle);
       case _Phase.preparing:
       case _Phase.checking:
       case _Phase.failed:
         return BigCheckButton(
+          size: _kCircle,
           checkedIn: widget.checkingOut,
           state: switch (_phase) {
             _Phase.checking => CheckButtonState.scanning,
@@ -290,13 +295,25 @@ class _CheckInOutScreenState extends State<CheckInOutScreen> {
                     child: Row(
                       children: [
                         if (widget.hoursToday.isNotEmpty)
-                          Text(
-                            'Hours today ${widget.hoursToday}',
-                            style: muted,
+                          Flexible(
+                            child: Text(
+                              'Hours today ${widget.hoursToday}',
+                              style: muted,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         const Spacer(),
                         if (widget.lastLabel.isNotEmpty)
-                          Text(widget.lastLabel, style: muted),
+                          Flexible(
+                            child: Text(
+                              widget.lastLabel,
+                              style: muted,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.end,
+                            ),
+                          ),
                       ],
                     ),
                   ),
@@ -555,7 +572,7 @@ class _StepRow extends StatelessWidget {
   }
 }
 
-/// The green tick after a punch went through — same 248dp footprint as
+/// The green tick after a punch went through — same footprint as
 /// the button and the camera, so nothing jumps.
 class _DoneCircle extends StatelessWidget {
   const _DoneCircle({required this.label});
@@ -573,16 +590,16 @@ class _DoneCircle extends StatelessWidget {
       builder: (context, scale, child) =>
           Transform.scale(scale: scale, child: child),
       child: Container(
-        width: 248,
-        height: 248,
+        width: _kCircle + 48,
+        height: _kCircle + 48,
         alignment: Alignment.center,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           color: green.withValues(alpha: 0.12),
         ),
         child: Container(
-          width: 200,
-          height: 200,
+          width: _kCircle,
+          height: _kCircle,
           decoration: const BoxDecoration(shape: BoxShape.circle, color: green),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
