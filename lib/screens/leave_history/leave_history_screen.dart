@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
+import 'package:intl/intl.dart' hide TextDirection;
 import 'package:provider/provider.dart';
 import '../../core/theme.dart';
 import '../../core/error_messages.dart';
@@ -32,6 +32,31 @@ Color leaveStateColor(String state) {
     default:
       return AppTheme.outline;
   }
+}
+
+/// Width of a label column (labels + [gap]): the widest of [labels] in
+/// [style] at [textScaler], plus [gap], but at most [maxWidth] (a very
+/// large font then wraps the label instead of squeezing the value).
+double detailLabelColumnWidth({
+  required List<String> labels,
+  required TextStyle style,
+  required TextScaler textScaler,
+  required double gap,
+  required double maxWidth,
+}) {
+  var widest = 0.0;
+  for (final label in labels) {
+    final painter = TextPainter(
+      text: TextSpan(text: label, style: style),
+      textDirection: TextDirection.ltr,
+      textScaler: textScaler,
+      maxLines: 1,
+    )..layout();
+    if (painter.width > widest) widest = painter.width;
+    painter.dispose();
+  }
+  final width = widest.ceilToDouble() + gap;
+  return width > maxWidth ? maxWidth : width;
 }
 
 class LeaveHistoryScreen extends StatefulWidget {
@@ -494,25 +519,52 @@ class LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
     );
   }
 
+  static const _detailLabelStyle = TextStyle(
+    fontSize: 13,
+    color: AppTheme.onSurfaceVariant,
+    fontWeight: FontWeight.w500,
+  );
+
+  /// Every label the expanded card can show; the label column is as
+  /// wide as the longest one at the current font, so all values line up.
+  static const _detailLabels = [
+    'Reason',
+    'Refusal reason',
+    'Allocation',
+    'Used',
+    'Remaining',
+  ];
+
+  /// Space between a label and its value, always kept (a fixed 110 px
+  /// column let "Refusal reason" run into its value on the Samsung).
+  static const _detailGap = 12.0;
+
   Widget _detailRow(String label, String value) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            // Fits "Refusal reason" on one line.
-            width: 110,
-            child: Text(label,
-                style: TextStyle(
-                    fontSize: 13,
-                    color: AppTheme.onSurfaceVariant,
-                    fontWeight: FontWeight.w500)),
-          ),
-          Expanded(
-            child: Text(value, style: const TextStyle(fontSize: 13)),
-          ),
-        ],
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final width = detailLabelColumnWidth(
+            labels: _detailLabels,
+            style: _detailLabelStyle,
+            textScaler: MediaQuery.textScalerOf(context),
+            gap: _detailGap,
+            maxWidth: constraints.maxWidth * 0.45,
+          );
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: width - _detailGap,
+                child: Text(label, style: _detailLabelStyle),
+              ),
+              const SizedBox(width: _detailGap),
+              Expanded(
+                child: Text(value, style: const TextStyle(fontSize: 13)),
+              ),
+            ],
+          );
+        },
       ),
     );
   }

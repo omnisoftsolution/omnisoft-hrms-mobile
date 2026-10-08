@@ -166,6 +166,71 @@ void main() {
     expect(find.text('Refusal reason'), findsNothing);
   });
 
+  test('label column: longest label + gap, capped (N2)', () {
+    double w(double scale, double max) => detailLabelColumnWidth(
+      labels: const ['Used', 'Refusal reason'],
+      style: const TextStyle(fontSize: 10),
+      textScaler: TextScaler.linear(scale),
+      gap: 12,
+      maxWidth: max,
+    );
+    // FlutterTest font: every glyph is font-size wide; 14 characters.
+    expect(w(1.0, 1000), 140 + 12);
+    expect(w(2.0, 1000), 280 + 12);
+    expect(w(2.0, 200), 200);
+  });
+
+  for (final scale in [1.0, 1.3]) {
+    testWidgets('a narrow phone keeps a gap after every label (N2, x$scale)', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(360, 1400);
+      tester.view.devicePixelRatio = 1.0;
+      tester.platformDispatcher.textScaleFactorTestValue = scale;
+      addTearDown(tester.view.reset);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      const refusal = 'Project deadline that week, please pick other dates';
+      final api = FakeApi([
+        [
+          leave({
+            'state': 'refuse',
+            'reason': 'Family trip',
+            'refusal_reason': refusal,
+            'requires_allocation': true,
+            'allocation_total': 14,
+            'allocation_remaining': 13,
+          }),
+        ],
+      ]);
+      await tester.pumpWidget(host(api));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Annual Leave'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+
+      final pairs = {
+        'Reason': 'Family trip',
+        'Refusal reason': refusal,
+        'Allocation': '14 days total',
+        'Used': '1 day',
+        'Remaining': '13 days',
+      };
+      final valueLefts = <double>{};
+      pairs.forEach((label, value) {
+        final l = tester.getRect(find.text(label));
+        final v = tester.getRect(find.text(value));
+        expect(v.left - l.right, greaterThanOrEqualTo(8), reason: label);
+        valueLefts.add(v.left);
+      });
+      // One value column: every value starts at the same x …
+      expect(valueLefts.length, 1);
+      // … and a long value wraps under it rather than running off.
+      final r = tester.getRect(find.text(refusal));
+      expect(r.height, greaterThan(13 * scale * 1.5));
+      expect(r.right, lessThanOrEqualTo(360));
+    });
+  }
+
   testWidgets('the card and the cancel dialog show formatted dates', (
     tester,
   ) async {
