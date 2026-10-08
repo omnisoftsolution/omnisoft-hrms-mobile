@@ -121,9 +121,23 @@ String helloTitle(String employeeName, String userName, String userLogin) {
   return 'Hello';
 }
 
-/// 17 -> "17 min"; 65 -> "1h 05m".
-String minutesLabel(int minutes) {
-  if (minutes < 60) return '$minutes min';
+/// The one duration format every My day label uses (APP-2, 2026-10-08):
+/// 17 -> "17 min" ([long]: "17 minutes", "1 minute"); 60 -> "1h";
+/// 65 -> "1h 05m"; 389 -> "6h 29m" — never "389 minutes".
+String minutesLabel(int minutes, {bool long = false}) {
+  if (minutes < 60) {
+    if (!long) return '$minutes min';
+    return '$minutes minute${minutes == 1 ? '' : 's'}';
+  }
+  final rest = minutes % 60;
+  if (rest == 0) return '${minutes ~/ 60}h';
+  return '${minutes ~/ 60}h ${rest.toString().padLeft(2, '0')}m';
+}
+
+/// A worked total keeps the "Hours today" shape: 240 -> "4h 00m", while
+/// under an hour reads like any other duration ("45 min").
+String workedLabel(int minutes) {
+  if (minutes < 60) return minutesLabel(minutes);
   return '${minutes ~/ 60}h ${(minutes % 60).toString().padLeft(2, '0')}m';
 }
 
@@ -168,10 +182,11 @@ String displaySubtitle(MyDay day, MyDayDisplay display, {DateTime? now}) {
       if (shiftStart == null) return 'No check-in yet';
       final left = shiftStart.difference(clock).inMinutes;
       if (left <= 0) return 'Shift has started';
-      return 'Shift starts in $left minute${left == 1 ? '' : 's'}';
+      return 'Shift starts in ${minutesLabel(left, long: true)}';
     case MyDayDisplay.late:
       final at = DateTimeUtils.formatLocalTime(_firstCheckIn(day)?.at);
-      return '$at · ${day.lateMinutes} minutes after the shift start';
+      final late = minutesLabel(day.lateMinutes, long: true);
+      return '$at · $late after the shift start';
     case MyDayDisplay.checkedIn:
       final first = _firstCheckIn(day);
       final at = DateTimeUtils.formatLocalTime(first?.at);
@@ -186,10 +201,12 @@ String displaySubtitle(MyDay day, MyDayDisplay display, {DateTime? now}) {
       return 'Since $at · ${minutesLabel(mins)} so far';
     case MyDayDisplay.early:
       final at = DateTimeUtils.formatLocalTime(_lastPunch(day)?.at);
-      return 'Checked out $at · ${day.earlyMinutes} minutes before the shift end';
+      final early = minutesLabel(day.earlyMinutes, long: true);
+      return 'Checked out $at · $early before the shift end';
     case MyDayDisplay.overtime:
       final at = DateTimeUtils.formatLocalTime(_lastPunch(day)?.at);
-      return 'Checked out $at · ${day.overtimeMinutes} minutes overtime';
+      final extra = minutesLabel(day.overtimeMinutes, long: true);
+      return 'Checked out $at · $extra overtime';
     case MyDayDisplay.done:
       return 'Checked out ${DateTimeUtils.formatLocalTime(_lastPunch(day)?.at)}';
   }
