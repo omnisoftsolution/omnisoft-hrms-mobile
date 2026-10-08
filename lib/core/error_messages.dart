@@ -188,6 +188,31 @@ String friendlyError(Object e) {
     return 'That answer is no longer available. Pull down to refresh.';
   }
 
+  // --- Sign-in check failed on the server (not a wrong password) ---
+  if (raw.contains('auth_exception')) {
+    return "We couldn't check your sign-in just now. Try again.";
+  }
+
+  // --- Face enrollment upload ---
+  if (raw.contains('face_reenrollment_not_allowed')) {
+    return 'Face re-enrollment is not allowed. Please contact HR.';
+  }
+  if (raw.contains('face_image_too_large')) {
+    return 'The photo is too large. Please retake it.';
+  }
+  if (raw.contains('missing_face_image') ||
+      raw.contains('invalid_face_image_encoding')) {
+    return "The photo didn't upload correctly. Please retake it.";
+  }
+
+  // --- Attachments (leave documents, receipts) ---
+  if (raw.contains('attachment_too_large')) {
+    return 'That file is too large. Pick a smaller one.';
+  }
+  if (raw.contains('invalid_attachment')) {
+    return "That file couldn't be attached. Try another file.";
+  }
+
   // --- Plan gate ---
   if (raw.contains('feature_unavailable')) {
     return "This feature isn't included in your company's plan. Ask HR.";
@@ -197,6 +222,9 @@ String friendlyError(Object e) {
   // HR decided the request while the History screen was open.
   if (raw.contains('not_cancellable') || raw.contains('not_modifiable')) {
     return 'This request was already decided. Pull down to refresh.';
+  }
+  if (raw.contains('leave_type_not_found')) {
+    return 'This leave type is no longer available. Pull down to refresh.';
   }
   if (raw.contains('leave_type_not_allowed')) {
     return "This leave type can't be requested from the app. Ask HR.";
