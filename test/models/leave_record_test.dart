@@ -23,4 +23,18 @@ void main() {
       expect(r.earliestBackdateDate, isNull);
     });
   });
+
+  group('state labels', () {
+    LeaveRecord withState(String s) => LeaveRecord.fromJson({
+      'id': 3, 'leave_type': 'X', 'number_of_days': 1, 'state': s,
+    });
+
+    test('validate1 waits for HR; it is not approved yet', () {
+      expect(withState('validate1').stateLabel, 'Waiting for HR');
+      expect(withState('confirm').stateLabel, 'Pending');
+      expect(withState('validate').stateLabel, 'Approved');
+      expect(withState('refuse').stateLabel, 'Refused');
+      expect(withState('cancel').stateLabel, 'Cancelled');
+    });
+  });
 }

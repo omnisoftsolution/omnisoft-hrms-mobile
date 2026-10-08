@@ -112,8 +112,9 @@ class LeaveRecord {
         return 'Draft';
       case 'confirm':
         return 'Pending';
+      // First approval done, HR still has to approve: not approved yet.
       case 'validate1':
-        return 'Approved (L1)';
+        return 'Waiting for HR';
       case 'validate':
         return 'Approved';
       case 'refuse':

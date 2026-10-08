@@ -16,6 +16,23 @@ import '../../widgets/file_viewer.dart';
 import '../../widgets/range_picker_dialog.dart';
 import '../../utils/leave_backdate.dart';
 
+/// Chip colour of a leave state on the History card. `validate1` (HR
+/// still has to approve) is pending, not approved: it shares the
+/// "Pending" colour so nobody reads it as a green light.
+Color leaveStateColor(String state) {
+  switch (state) {
+    case 'validate':
+      return AppTheme.primary;
+    case 'refuse':
+      return AppTheme.error;
+    case 'confirm':
+    case 'validate1':
+      return AppTheme.secondary;
+    default:
+      return AppTheme.outline;
+  }
+}
+
 class LeaveHistoryScreen extends StatefulWidget {
   const LeaveHistoryScreen({super.key});
 
@@ -111,21 +128,7 @@ class LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
   String _fmtDays(double n) =>
       n == n.roundToDouble() ? n.toInt().toString() : n.toStringAsFixed(1);
 
-  Color _stateColor(String state) {
-    switch (state) {
-      case 'validate':
-      case 'validate1':
-        return AppTheme.primary;
-      case 'refuse':
-        return AppTheme.error;
-      case 'confirm':
-        return AppTheme.secondary;
-      case 'cancel':
-        return AppTheme.outline;
-      default:
-        return AppTheme.outline;
-    }
-  }
+  Color _stateColor(String state) => leaveStateColor(state);
 
   OmniMobileApi _api() {
     final s = context.read<SessionService>();

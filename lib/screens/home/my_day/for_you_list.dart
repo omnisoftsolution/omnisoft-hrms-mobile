@@ -61,7 +61,7 @@ String forYouSubtitle(ForYouItem item, {DateTime? now}) {
               ? 'Waiting for approval'
               : 'Waiting for ${item.approver}';
         case 'validate1':
-          return 'Waiting for second approval';
+          return 'Waiting for HR';
         case 'validate':
           return item.approver.isEmpty
               ? 'Approved'

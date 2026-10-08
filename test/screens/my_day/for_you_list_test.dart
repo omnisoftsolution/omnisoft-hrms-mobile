@@ -83,7 +83,7 @@ void main() {
       );
       expect(
         forYouSubtitle(withState('validate1')),
-        'Waiting for second approval',
+        'Waiting for HR',
       );
       expect(
         forYouSubtitle(withState('validate')),
