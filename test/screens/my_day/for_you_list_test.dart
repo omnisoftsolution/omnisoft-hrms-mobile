@@ -44,6 +44,21 @@ void main() {
       );
     });
 
+    test('my_leave shows the requested dates as sent (LEAVE-2)', () {
+      // omnihrdemo hr.leave 17: request 2026-11-04 -> 2026-11-09.
+      final item = ForYouItem.fromJson(const {
+        'kind': 'my_leave',
+        'id': 17,
+        'state': 'confirm',
+        'type': 'Childcare Leave',
+        'date_from': '2026-11-04',
+        'date_to': '2026-11-09',
+        'approver': '',
+        'reason': '',
+      });
+      expect(forYouTitle(item), 'Childcare Leave · 4 Nov – 9 Nov');
+    });
+
     test('my_leave', () {
       expect(forYouTitle(leave), 'Annual leave · 12 Oct – 13 Oct');
       expect(forYouSubtitle(leave), 'Waiting for Hendra Wijaya');
