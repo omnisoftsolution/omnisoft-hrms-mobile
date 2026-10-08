@@ -242,6 +242,56 @@ void main() {
   test('formatHoursToday and minutesLabel', () {
     expect(formatHoursToday(3.2), '3h 12m');
     expect(minutesLabel(17), '17 min');
+    expect(minutesLabel(45), '45 min');
     expect(minutesLabel(65), '1h 05m');
+    expect(minutesLabel(60), '1h');
+    expect(minutesLabel(120), '2h');
+    expect(minutesLabel(389), '6h 29m');
+    // The status tile's sentences spell short durations out.
+    expect(minutesLabel(45, long: true), '45 minutes');
+    expect(minutesLabel(1, long: true), '1 minute');
+    expect(minutesLabel(389, long: true), '6h 29m');
+    expect(minutesLabel(60, long: true), '1h');
+    // A worked total keeps the "Hours today" shape.
+    expect(workedLabel(240), '4h 00m');
+    expect(workedLabel(483), '8h 03m');
+    expect(workedLabel(45), '45 min');
+  });
+
+  test('long durations in the subtitle read in hours and minutes', () {
+    String early(int m) =>
+        displaySubtitle(sampleMyDay(earlyMinutes: m), MyDayDisplay.early);
+    String overtime(int m) =>
+        displaySubtitle(sampleMyDay(overtimeMinutes: m), MyDayDisplay.overtime);
+    String late(int m) =>
+        displaySubtitle(sampleMyDay(lateMinutes: m), MyDayDisplay.late);
+    expect(early(389), endsWith(' · 6h 29m before the shift end'));
+    expect(early(45), endsWith(' · 45 minutes before the shift end'));
+    expect(early(60), endsWith(' · 1h before the shift end'));
+    expect(overtime(120), endsWith(' · 2h overtime'));
+    expect(overtime(42), endsWith(' · 42 minutes overtime'));
+    expect(late(75), endsWith(' · 1h 15m after the shift start'));
+    expect(late(17), endsWith(' · 17 minutes after the shift start'));
+    String startsIn(DateTime now) => displaySubtitle(
+      sampleMyDay(state: 'not_in', punches: []),
+      MyDayDisplay.notIn,
+      now: now,
+    );
+    // The fixture shift starts 01:00 UTC.
+    expect(
+      startsIn(DateTime.utc(2026, 10, 4, 23, 30)),
+      'Shift starts in 1h 30m',
+    );
+    expect(
+      startsIn(DateTime.utc(2026, 10, 5, 0, 59)),
+      'Shift starts in 1 minute',
+    );
+  });
+
+  test('helloTitle greets by first name, falling back to the login', () {
+    expect(helloTitle('Ethan Smith', 'Ethan S', 'ethan@x.co'), 'Hello, Ethan');
+    expect(helloTitle('', 'Chai Yeo', 'chai'), 'Hello, Chai');
+    expect(helloTitle('  ', '', 'chai@x.co'), 'Hello, chai@x.co');
+    expect(helloTitle('', '', ''), 'Hello');
   });
 }

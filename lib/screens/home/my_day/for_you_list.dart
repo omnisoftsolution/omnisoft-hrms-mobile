@@ -38,6 +38,8 @@ String forYouTitle(ForYouItem item) {
       return item.period.isEmpty
           ? 'Payslip is ready'
           : '${item.period} payslip is ready';
+    case 'yesterday_incomplete':
+      return item.title.isEmpty ? 'Yesterday looks incomplete' : item.title;
     default:
       return '';
   }
@@ -75,6 +77,8 @@ String forYouSubtitle(ForYouItem item, {DateTime? now}) {
       return '${_expenseStateLabel(item.state)} · $money';
     case 'payslip':
       return 'Tap to view';
+    case 'yesterday_incomplete':
+      return item.body;
     default:
       return '';
   }
@@ -117,9 +121,78 @@ Widget _tile(Key key, IconData icon, MyDayTone tone, {bool inverted = false}) =>
       child: Icon(icon, size: 20, color: tone.onTint),
     );
 
+/// "Yesterday looks incomplete" (connector 2.54.0, spec 2026-10-07 §4.3):
+/// amber like the auto-closed banner, with its own "Tell HR" button.
+class YesterdayCard extends StatelessWidget {
+  const YesterdayCard({super.key, required this.item, this.onTellHr});
+
+  final ForYouItem item;
+  final VoidCallback? onTellHr;
+
+  static const _amber = Color(0xFFB45309); // amber-800
+  static const _bg = Color(0xFFFEF3C7); // amber-100
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: ValueKey('for-you-yesterday-${item.date}'),
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: _bg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _amber.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.history, size: 20, color: _amber),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  forYouTitle(item),
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: _amber,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  forYouSubtitle(item),
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: AppTheme.onSurfaceVariant,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          FilledButton(
+            key: const ValueKey('for-you-yesterday-tell'),
+            style: FilledButton.styleFrom(
+              backgroundColor: _amber,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: onTellHr,
+            child: const Text('Tell HR'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// The "For you" list of My day: one row per item, unknown kinds skipped.
 /// With [missing] a red "No check-in" row comes first (spec 2026-10-06
-/// §4.5); it is the app's own, not a server item.
+/// §4.5); it is the app's own, not a server item. A
+/// `yesterday_incomplete` item is a [YesterdayCard] that calls
+/// [onYesterday] instead of [onTap].
 class ForYouList extends StatelessWidget {
   const ForYouList({
     super.key,
@@ -127,12 +200,14 @@ class ForYouList extends StatelessWidget {
     required this.onTap,
     this.missing = false,
     this.onMissingTap,
+    this.onYesterday,
   });
 
   final List<ForYouItem> items;
   final void Function(ForYouItem item) onTap;
   final bool missing;
   final VoidCallback? onMissingTap;
+  final void Function(ForYouItem item)? onYesterday;
 
   static const emptyText = 'Nothing needs your attention.';
 
@@ -182,24 +257,30 @@ class ForYouList extends StatelessWidget {
             ),
           ),
         for (final item in known)
-          Card(
-            margin: const EdgeInsets.only(bottom: 8),
-            child: ListTile(
-              key: ValueKey('for-you-${item.kind}-${item.id}'),
-              leading: _tile(
-                ValueKey('for-you-tile-${item.kind}-${item.id}'),
-                _icon(item.kind),
-                _tone(item.kind),
+          if (item.kind == 'yesterday_incomplete')
+            YesterdayCard(
+              item: item,
+              onTellHr: onYesterday == null ? null : () => onYesterday!(item),
+            )
+          else
+            Card(
+              margin: const EdgeInsets.only(bottom: 8),
+              child: ListTile(
+                key: ValueKey('for-you-${item.kind}-${item.id}'),
+                leading: _tile(
+                  ValueKey('for-you-tile-${item.kind}-${item.id}'),
+                  _icon(item.kind),
+                  _tone(item.kind),
+                ),
+                title: Text(forYouTitle(item)),
+                subtitle: Text(forYouSubtitle(item)),
+                trailing: const Icon(
+                  Icons.chevron_right,
+                  color: AppTheme.outline,
+                ),
+                onTap: () => onTap(item),
               ),
-              title: Text(forYouTitle(item)),
-              subtitle: Text(forYouSubtitle(item)),
-              trailing: const Icon(
-                Icons.chevron_right,
-                color: AppTheme.outline,
-              ),
-              onTap: () => onTap(item),
             ),
-          ),
       ],
     );
   }

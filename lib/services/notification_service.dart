@@ -45,11 +45,7 @@ class NotificationService extends ChangeNotifier {
   OmniMobileApi? _api() {
     final s = _session;
     if (s == null || !s.isLoggedIn) return null;
-    return OmniMobileApi(
-      baseUrl: s.clientUrl,
-      db: s.clientDb,
-      token: s.token,
-    );
+    return OmniMobileApi(baseUrl: s.clientUrl, db: s.clientDb, token: s.token);
   }
 
   /// Start polling. Safe to call multiple times — re-uses the timer.
@@ -150,12 +146,9 @@ class NotificationService extends ChangeNotifier {
         payload: _items[idx].payload,
         read: true,
         createDate: _items[idx].createDate,
+        answered: _items[idx].answered,
       );
-      _items = [
-        ..._items.sublist(0, idx),
-        updated,
-        ..._items.sublist(idx + 1),
-      ];
+      _items = [..._items.sublist(0, idx), updated, ..._items.sublist(idx + 1)];
       _unreadCount = _items.where((n) => !n.read).length;
       notifyListeners();
     }
@@ -178,17 +171,20 @@ class NotificationService extends ChangeNotifier {
       // ignore — still update local state below
     }
     _items = _items
-        .map((n) => n.read
-            ? n
-            : NotificationRecord(
-                id: n.id,
-                kind: n.kind,
-                title: n.title,
-                body: n.body,
-                payload: n.payload,
-                read: true,
-                createDate: n.createDate,
-              ))
+        .map(
+          (n) => n.read
+              ? n
+              : NotificationRecord(
+                  id: n.id,
+                  kind: n.kind,
+                  title: n.title,
+                  body: n.body,
+                  payload: n.payload,
+                  read: true,
+                  createDate: n.createDate,
+                  answered: n.answered,
+                ),
+        )
         .toList();
     _unreadCount = 0;
     notifyListeners();

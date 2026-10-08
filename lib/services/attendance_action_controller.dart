@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart';
 import '../core/constants.dart';
 import '../core/error_messages.dart';
 import '../core/wifi_gate.dart';
+import '../core/datetime_utils.dart';
+import '../models/attendance_ask.dart';
 import '../models/attendance_status.dart';
 import '../models/auto_close_previous.dart';
 import '../models/face_capture_result.dart';
@@ -20,6 +22,16 @@ import 'wifi_info_service.dart';
 /// What the status tile's button should look like right now.
 enum AttendanceButtonState { enroll, ready, blocked, acting }
 
+/// The check-in page's checklist rows, in the order [perform] runs them.
+enum PunchStep { location, wifi, face, record }
+
+/// running → done (or skipped when the tenant does not require it). A
+/// step that fails just never reports done; the outcome carries why.
+enum PunchStepState { running, done, skipped }
+
+typedef PunchStepCallback =
+    void Function(PunchStep step, PunchStepState state, String detail);
+
 /// The result of [AttendanceActionController.perform]. `null` from
 /// perform means nothing happened (a second tap, a cancelled capture).
 class AttendanceActionOutcome {
@@ -28,12 +40,24 @@ class AttendanceActionOutcome {
     this.checkedIn = false,
     this.autoClosed,
     this.enrolled = false,
+    this.ask,
+    this.undoUntil,
+    this.attendanceId,
   });
 
   const AttendanceActionOutcome.success({
     required bool checkedIn,
     AutoClosePrevious? autoClosed,
-  }) : this._(checkedIn: checkedIn, autoClosed: autoClosed);
+    AttendanceAsk? ask,
+    DateTime? undoUntil,
+    int? attendanceId,
+  }) : this._(
+         checkedIn: checkedIn,
+         autoClosed: autoClosed,
+         ask: ask,
+         undoUntil: undoUntil,
+         attendanceId: attendanceId,
+       );
 
   const AttendanceActionOutcome.failure(String error) : this._(error: error);
 
@@ -48,6 +72,15 @@ class AttendanceActionOutcome {
   /// Echoed by the connector when it auto-closed a forgotten attendance.
   final AutoClosePrevious? autoClosed;
   final bool enrolled;
+
+  /// Connector 2.54.0: the question to ask after a check-in, else null.
+  final AttendanceAsk? ask;
+
+  /// Connector 2.54.0: UNDO is offered until this time (UTC), else null.
+  final DateTime? undoUntil;
+
+  /// The row just punched (`attendance_id` of the response).
+  final int? attendanceId;
 
   bool get ok => error == null && !enrolled;
 }
@@ -238,6 +271,15 @@ class AttendanceActionController extends ChangeNotifier {
     _notify();
   }
 
+  /// The status attendance/undo answered with (spec 2026-10-07 §4.4): the
+  /// tile redraws without a second /attendance/status call.
+  void applyStatus(AttendanceStatus value) {
+    status = value;
+    statusFetchedAt = DateTime.now();
+    statusError = null;
+    _notify();
+  }
+
   bool _disposed = false;
 
   @override
@@ -262,10 +304,14 @@ class AttendanceActionController extends ChangeNotifier {
   /// fast-fail, Wi-Fi gate, face capture + on-device verification, then
   /// `checkIn` / `checkOut` and a status refresh. [captureFace] shows the
   /// camera and returns its result; [enrol] shows the one-time setup.
+  /// [onStep] follows the checklist on the check-in page.
   Future<AttendanceActionOutcome?> perform({
     required Future<FaceCaptureResult> Function() captureFace,
     required Future<void> Function() enrol,
+    PunchStepCallback? onStep,
   }) async {
+    void step(PunchStep s, PunchStepState state, [String detail = '']) =>
+        onStep?.call(s, state, detail);
     if (acting) return null;
     if (!session.featureAttendance) return null;
 
@@ -283,6 +329,8 @@ class AttendanceActionController extends ChangeNotifier {
       var isMocked = false;
       double? accuracy;
       if (session.featureGeolocation) {
+        step(PunchStep.location, PunchStepState.running, 'Locating…');
+        var measured = false;
         final loc = await _getLocation();
         if (!loc.isReady) {
           return AttendanceActionOutcome.failure(loc.friendlyMessage);
@@ -307,14 +355,23 @@ class AttendanceActionController extends ChangeNotifier {
           );
           distanceMeters = distance;
           gpsFailed = false;
+          measured = true;
           if (!isInsideRadius(s, distance)) {
             return AttendanceActionOutcome.failure(
               friendlyError('outside_geofence'),
             );
           }
         }
+        step(
+          PunchStep.location,
+          PunchStepState.done,
+          measured ? placeLabel : 'Location recorded',
+        );
+      } else {
+        step(PunchStep.location, PunchStepState.skipped, 'Not required');
       }
 
+      step(PunchStep.wifi, PunchStepState.running, 'Checking…');
       final wifiInfo = await _getWifi();
       lastWifi = wifiInfo;
       final wifiFail = wifiPreCheckErrorCode(
@@ -325,9 +382,19 @@ class AttendanceActionController extends ChangeNotifier {
       if (wifiFail != null) {
         return AttendanceActionOutcome.failure(friendlyError(wifiFail));
       }
+      if (status?.wifiRequired == true) {
+        step(
+          PunchStep.wifi,
+          PunchStepState.done,
+          wifiInfo.ssid ?? 'Office network',
+        );
+      } else {
+        step(PunchStep.wifi, PunchStepState.skipped, 'Not required');
+      }
 
       var faceVerified = false;
       if (session.featureFaceVerification) {
+        step(PunchStep.face, PunchStepState.running, 'Look at the camera');
         final capture = await captureFace();
         if (!capture.success) {
           final message = capture.errorMessage;
@@ -342,15 +409,20 @@ class AttendanceActionController extends ChangeNotifier {
           );
         }
         faceVerified = capture.faceVerified;
+        step(PunchStep.face, PunchStepState.done, 'Matched');
+      } else {
+        step(PunchStep.face, PunchStepState.skipped, 'Not required');
       }
 
+      step(PunchStep.record, PunchStepState.running, 'Sending…');
       final api = _apiBuilder(session);
       final deviceId = await _getDeviceId();
       final wasCheckedIn = status?.checkedIn == true;
       AutoClosePrevious? autoClosed;
+      var resp = const <String, dynamic>{};
       try {
         if (wasCheckedIn) {
-          await api.checkOut(
+          resp = await api.checkOut(
             latitude: latitude,
             longitude: longitude,
             faceVerified: faceVerified,
@@ -362,7 +434,7 @@ class AttendanceActionController extends ChangeNotifier {
             wifiBssid: wifiInfo.bssid,
           );
         } else {
-          final resp = await api.checkIn(
+          resp = await api.checkIn(
             latitude: latitude,
             longitude: longitude,
             faceVerified: faceVerified,
@@ -387,9 +459,16 @@ class AttendanceActionController extends ChangeNotifier {
         return AttendanceActionOutcome.failure(friendlyError(e));
       }
       await refreshStatus();
+      step(PunchStep.record, PunchStepState.done);
+      final until = resp['undo_until'];
+      final id = resp['attendance_id'];
       return AttendanceActionOutcome.success(
         checkedIn: !wasCheckedIn,
         autoClosed: autoClosed,
+        // Connector 2.54.0 keys; absent on 2.53.x: nothing asked or undone.
+        ask: wasCheckedIn ? null : AttendanceAsk.tryParse(resp['ask']),
+        undoUntil: until is String ? DateTimeUtils.parseOdooUtc(until) : null,
+        attendanceId: id is num ? id.toInt() : null,
       );
     } finally {
       _setActing(false);

@@ -54,8 +54,9 @@ void main() {
     });
 
     test('longer codes that contain a new code are not swallowed', () {
+      // Not the approvals' 'not_allowed' text; the face code has its own.
       expect(friendlyError(ApiException('face_reenrollment_not_allowed')),
-          'face_reenrollment_not_allowed');
+          'Face re-enrollment is not allowed. Please contact HR.');
     });
   });
 

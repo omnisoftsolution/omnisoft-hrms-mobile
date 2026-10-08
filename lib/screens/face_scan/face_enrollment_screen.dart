@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants.dart';
+import '../../core/error_messages.dart';
 import '../../core/theme.dart';
 import '../../models/face_capture_result.dart';
 import '../../services/face_recognition_service.dart';
@@ -16,6 +17,16 @@ class FaceEnrollmentScreen extends StatefulWidget {
 
   @override
   State<FaceEnrollmentScreen> createState() => _FaceEnrollmentScreenState();
+}
+
+/// Text for a failed enrollment: the local face-quality and liveness checks
+/// keep their own friendly messages; everything from the server goes
+/// through [friendlyError] (never a raw code).
+String enrollmentErrorText(Object e) {
+  if (e is FaceQualityException || e is FaceLivenessException) {
+    return e.toString();
+  }
+  return friendlyError(e);
 }
 
 class _FaceEnrollmentScreenState extends State<FaceEnrollmentScreen> {
@@ -58,13 +69,7 @@ class _FaceEnrollmentScreenState extends State<FaceEnrollmentScreen> {
       if (!mounted) return;
       setState(() {
         _uploading = false;
-        // FaceQualityException already implements toString() with the
-        // friendly message; everything else gets the raw error trimmed.
-        var msg = e.toString().replaceFirst(RegExp(r'^Exception: '), '');
-        if (msg.contains('face_reenrollment_not_allowed')) {
-          msg = 'Face re-enrollment is not allowed. Please contact HR.';
-        }
-        _error = msg;
+        _error = enrollmentErrorText(e);
       });
     }
   }

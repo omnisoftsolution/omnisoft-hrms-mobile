@@ -8,6 +8,7 @@ import '../expenses/expenses_screen.dart';
 import '../history/history_shell.dart';
 import '../leave/leave_screen.dart';
 import '../../core/theme.dart';
+import '../../models/notification_record.dart';
 import '../../services/face_recognition_service.dart';
 import '../../services/holiday_service.dart';
 import '../../services/notification_service.dart';
@@ -96,79 +97,31 @@ class HomeShellState extends State<HomeShell> {
     messenger
       ..removeCurrentSnackBar()
       ..showSnackBar(
-        SnackBar(
-          backgroundColor: AppTheme.primary,
-          duration: const Duration(seconds: 5),
-          behavior: SnackBarBehavior.floating,
-          margin: const EdgeInsets.all(16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          content: Row(
-            children: [
-              const Icon(
-                Icons.notifications_active_rounded,
-                color: Colors.white,
-                size: 20,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      fresh.title,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 14,
-                      ),
-                    ),
-                    if (fresh.body.isNotEmpty)
-                      Text(
-                        fresh.body,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.85),
-                          fontSize: 12,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          action: fresh.snackActionLabel != null
-              ? SnackBarAction(
-                  label: fresh.snackActionLabel!,
-                  textColor: Colors.white,
-                  onPressed: () {
-                    if (fresh.isApprovalRequestKind) {
-                      final id = fresh.leaveIdHint;
-                      if (id != null) {
-                        _notifSvc?.markRead(fresh.id);
-                        navigateToApproval(id);
-                      }
-                    } else if (fresh.isLeaveKind) {
-                      final id = fresh.leaveIdHint;
-                      if (id != null) {
-                        _notifSvc?.markRead(fresh.id);
-                        navigateToLeave(id);
-                      }
-                    } else if (fresh.isExpenseKind) {
-                      final id = fresh.expenseIdHint;
-                      if (id != null) {
-                        _notifSvc?.markRead(fresh.id);
-                        navigateToExpense(id);
-                      }
-                    }
-                  },
-                )
-              : null,
-        ),
+        notificationArrivalSnackBar(fresh, onAction: () => _openArrival(fresh)),
       );
+  }
+
+  /// The arrival snackbar's VIEW / Review action.
+  void _openArrival(NotificationRecord fresh) {
+    if (fresh.isApprovalRequestKind) {
+      final id = fresh.leaveIdHint;
+      if (id != null) {
+        _notifSvc?.markRead(fresh.id);
+        navigateToApproval(id);
+      }
+    } else if (fresh.isLeaveKind) {
+      final id = fresh.leaveIdHint;
+      if (id != null) {
+        _notifSvc?.markRead(fresh.id);
+        navigateToLeave(id);
+      }
+    } else if (fresh.isExpenseKind) {
+      final id = fresh.expenseIdHint;
+      if (id != null) {
+        _notifSvc?.markRead(fresh.id);
+        navigateToExpense(id);
+      }
+    }
   }
 
   void _onTabTap(int i) {
@@ -242,6 +195,15 @@ class HomeShellState extends State<HomeShell> {
       MaterialPageRoute(builder: (_) => ApprovalDetailScreen(leaveId: leaveId)),
     );
     _myDayKey.currentState?.refresh();
+  }
+
+  /// Reached from "HR updated your attendance" (spec 2026-10-07 §3.7):
+  /// the Home tab at its root, reloaded.
+  Future<void> navigateToMyDay() async {
+    _homeNavKey.currentState?.popUntil((r) => r.isFirst);
+    if (_index != 0) setState(() => _index = 0);
+    await WidgetsBinding.instance.endOfFrame;
+    await _myDayKey.currentState?.refresh();
   }
 
   /// Wraps the given root screen in its own Navigator so that pushes
@@ -373,3 +335,63 @@ class HomeShellState extends State<HomeShell> {
     );
   }
 }
+
+/// The snackbar shown when a notification arrives while the app is open.
+/// [onAction] runs for its VIEW / Review action, when the kind has one.
+SnackBar notificationArrivalSnackBar(
+  NotificationRecord fresh, {
+  required VoidCallback onAction,
+}) => SnackBar(
+  backgroundColor: AppTheme.primary,
+  // Flutter 3.44 keeps a bar with an action until it is tapped (persist
+  // defaults to action != null); "Leave approved … VIEW" stayed for 6+
+  // minutes on the Samsung (APP-8). It times out like any other.
+  persist: false,
+  duration: const Duration(seconds: 5),
+  behavior: SnackBarBehavior.floating,
+  margin: const EdgeInsets.all(16),
+  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+  content: Row(
+    children: [
+      const Icon(
+        Icons.notifications_active_rounded,
+        color: Colors.white,
+        size: 20,
+      ),
+      const SizedBox(width: 12),
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              fresh.title,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+                fontSize: 14,
+              ),
+            ),
+            if (fresh.body.isNotEmpty)
+              Text(
+                fresh.body,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.85),
+                  fontSize: 12,
+                ),
+              ),
+          ],
+        ),
+      ),
+    ],
+  ),
+  action: fresh.snackActionLabel != null
+      ? SnackBarAction(
+          label: fresh.snackActionLabel!,
+          textColor: Colors.white,
+          onPressed: onAction,
+        )
+      : null,
+);

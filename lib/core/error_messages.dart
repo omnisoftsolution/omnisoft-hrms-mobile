@@ -79,8 +79,10 @@ String friendlyErrorCode(String code, {int? retryAfter}) {
 /// text unless that text is a short, obviously-safe snake_case code.
 String friendlyError(Object e) {
   if (e is ApiException && _identityCodes.contains(e.errorCode)) {
-    return friendlyErrorCode(e.errorCode,
-        retryAfter: (e.data?['retry_after'] as num?)?.toInt());
+    return friendlyErrorCode(
+      e.errorCode,
+      retryAfter: (e.data?['retry_after'] as num?)?.toInt(),
+    );
   }
 
   final approval = _approvalMessage(e);
@@ -163,7 +165,81 @@ String friendlyError(Object e) {
         'or close the record in the web app.';
   }
 
+  // --- Forgot something? (connector 2.54.0) ---
+  if (raw.contains('undo_expired')) {
+    return 'It is too late to undo this punch. Ask HR to correct it.';
+  }
+  if (raw.contains('undo_not_last')) {
+    return 'Only your latest punch can be undone.';
+  }
+  if (raw.contains('bad_time')) {
+    return "That time doesn't fit this punch. Pick another time.";
+  }
+  if (raw.contains('too_old')) {
+    return 'This day can no longer be changed from the app. Tell HR directly.';
+  }
+  if (raw.contains('not_yours')) {
+    return 'This punch is not yours.';
+  }
+  if (raw.contains('already_answered')) {
+    return 'You already answered this question.';
+  }
+  if (raw.contains('invalid_answer')) {
+    return 'That answer is no longer available. Pull down to refresh.';
+  }
+
+  // --- Sign-in check failed on the server (not a wrong password) ---
+  if (raw.contains('auth_exception')) {
+    return "We couldn't check your sign-in just now. Try again.";
+  }
+
+  // --- Face enrollment upload ---
+  if (raw.contains('face_reenrollment_not_allowed')) {
+    return 'Face re-enrollment is not allowed. Please contact HR.';
+  }
+  if (raw.contains('face_image_too_large')) {
+    return 'The photo is too large. Please retake it.';
+  }
+  if (raw.contains('missing_face_image') ||
+      raw.contains('invalid_face_image_encoding')) {
+    return "The photo didn't upload correctly. Please retake it.";
+  }
+
+  // --- Attachments (leave documents, receipts) ---
+  if (raw.contains('attachment_too_large')) {
+    return 'That file is too large. Pick a smaller one.';
+  }
+  if (raw.contains('invalid_attachment')) {
+    return "That file couldn't be attached. Try another file.";
+  }
+
+  // --- Two requests changed the same record at once (connector 2.56.3) ---
+  if (raw.contains('busy_retry')) {
+    return 'Someone else is updating this request. Try again.';
+  }
+
+  // --- Plan gate ---
+  if (raw.contains('feature_unavailable')) {
+    return "This feature isn't included in your company's plan. Ask HR.";
+  }
+
   // --- Leave ---
+  // HR decided the request while the History screen was open.
+  if (raw.contains('not_cancellable') || raw.contains('not_modifiable')) {
+    return 'This request was already decided. Pull down to refresh.';
+  }
+  if (raw.contains('leave_type_not_found')) {
+    return 'This leave type is no longer available. Pull down to refresh.';
+  }
+  if (raw.contains('leave_type_not_allowed')) {
+    return "This leave type can't be requested from the app. Ask HR.";
+  }
+  if (raw.contains('invalid_hours')) {
+    return 'Pick a start time before the end time.';
+  }
+  if (raw.contains('invalid_period')) {
+    return 'Pick a valid half of the day.';
+  }
   if (raw.contains('overlap')) {
     return 'You already have a leave request on these dates.';
   }
@@ -237,7 +313,8 @@ String friendlyDecisionError(Object e) {
     final raw = e.errorCode.trim();
     // 'Unknown error' is ApiException.fromBody's default when the body
     // has no `error` key; it is not a sentence from Odoo.
-    final safe = raw.contains(' ') &&
+    final safe =
+        raw.contains(' ') &&
         raw != 'Unknown error' &&
         raw.length <= 300 &&
         !raw.contains('://') &&

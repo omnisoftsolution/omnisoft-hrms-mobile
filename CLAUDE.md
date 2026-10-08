@@ -293,3 +293,57 @@ Spec + plan live in the connector repo:
   `test/screens/my_day/{status_tile,day_timeline,my_day_screen}_test.dart`,
   `test/screens/leave_approvals_row_test.dart`, `test/screens/home/leave_tab_icon_test.dart`,
   `test/core/approvals_breakdown_test.dart`.
+
+### 1.30.0 — Forgot something? (spec `…/2026-10-07-forgot-something-design.md` in the connector repo, connector 2.54.0)
+- `lib/models/attendance_ask.dart`: `AttendanceAsk.tryParse(resp['ask'])` (null on 2.53.x → nothing
+  asked), `AskOption` (`needsTime`, `suggestedTime` UTC), `DeclarationAnswer`, `awayLabel`,
+  `nothingToDeclare` (`start_now`, `just_arriving`, `overtime` post nothing). Titles and the
+  footnote ("Your check-in stays at 09:12. HR will review your answer.") are built in the app;
+  option labels come from the server.
+- `AttendanceActionController.perform` parses `ask` (check-in only), `undo_until` and
+  `attendance_id` into the outcome; `applyStatus()` takes the status `attendance/undo` returns.
+- `lib/screens/home/my_day/declaration_sheet.dart`: `showDeclarationSheet` on the **root**
+  navigator (covers the bar); one option at a time, time chip → `showTimePicker` 24 h `en_US`,
+  optional note, "Send to HR" / "Skip" ("Undo check-in" in red for `undo`). Used after a
+  check-in (`MyDayScreen._askAfterPunch`), by the For-you `YesterdayCard` (`trigger: yesterday`)
+  and by the bell for HR's `attendance_query` (posts to `review/answer`, then marks read).
+- Punch snackbar: `UNDO` while `now < undoUntil`, `persist: false` (Flutter keeps a bar with an
+  action until tapped otherwise), duration min(window, 10 s); Undo → `undoPunch` →
+  `applyStatus` → reload, "Punch undone".
+- Bell: `attendance_declaration_applied` ("HR updated your attendance", `event_available`) opens
+  My day via `HomeShellState.navigateToMyDay()`; `NotificationRecord.answered` stops a second
+  answer.
+- API: `OmniMobileApi.declare` / `undoPunch` / `answerReview`, `buildDeclareBody` (declared time
+  as the API's UTC string). New error codes in `friendlyError`: `undo_expired`, `undo_not_last`,
+  `bad_time`, `too_old`, `not_yours`, `already_answered`, `invalid_answer`.
+- Tests: `test/models/attendance_ask_test.dart`, `test/services/forgot_something_api_test.dart`,
+  `test/core/error_messages_forgot_test.dart`, `test/screens/my_day/declaration_sheet_test.dart`,
+  `test/screens/notifications_screen_forgot_test.dart`, plus groups in
+  `attendance_action_controller_test.dart`, `my_day_screen_test.dart`, `for_you_list_test.dart`.
+
+### 1.30.1 — signature check-in page restored
+1.29.0 had replaced the classic home's signature punch (pulsing `BigCheckButton` + inline 3-2-1
+`InlineFaceCapture`) with the bare full-screen `FaceCaptureScreen`; Willy wants the signature back.
+- `lib/widgets/big_check_button.dart` and `lib/widgets/silent_face_capture.dart` are restored
+  unchanged from master (ccd2554). **Do not delete them again.**
+- `CheckInOutScreen` (`lib/screens/home/my_day/check_in_out_screen.dart`): the tile's Check in /
+  Check out pushes it on the root navigator and it starts by itself — pulsing circle while the
+  GPS / Wi-Fi gates run (at least `minPulse` 900 ms), the 3-2-1 camera, the scanning circle while
+  verify + POST run, a green tick ("Checked in HH:MM", `successHold` 1.1 s), then it pops a
+  `CheckInOutResult(outcome)`. My day then shows the snackbar, UNDO and any question.
+  `PopScope(canPop: false)` while running: the camera's ✕ is the way out. Face setup (enrol
+  state) skips the page.
+- **Layout C (Willy, 2026-10-08; canvas row "Check-in page — 3 options", boards K-*)**: header
+  card (initials, name, date · shift, clock, amber late note on the day's first check-in), the
+  circle (centred, `FittedBox` scales it down on short screens), a 4-row checklist (Location,
+  Office Wi-Fi, Face, Record the check-in → "Checked in HH:MM") and "Hours today · Last out".
+  Rows follow `perform(onStep:)` (`PunchStep` running/done/skipped, "Not required" when the
+  tenant doesn't need it). A failure keeps the page open: the running step turns red with the
+  friendly reason, the circle reads NOT READY, Close pops `outcome: null` (My day shows nothing).
+  The 1.30.1 (93) first cut had the circle off-centre (a shrink-wrapped Column) and no context.
+- Circle size `_kCircle` = 260 (the 1.28 button's 200 + 30%, Willy 2026-10-08); halo +48 → 308 for
+  the button, the camera and the tick alike. Title of the Home tab: `helloTitle()` → "Hello, Ethan".
+- `FaceCaptureScreen` is now only used by face enrolment.
+- Seams: `MyDayScreen.captureFace` (punch without the page, the older tests) and
+  `MyDayScreen.signatureCaptureBuilder` / `CheckInOutScreen.captureBuilder` (fake camera).
+  Tests: `test/screens/my_day/check_in_out_screen_test.dart` + one My day test.

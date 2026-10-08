@@ -76,12 +76,10 @@ class OmniAppBar extends StatelessWidget implements PreferredSizeWidget {
             // the currently-active tab's stack — the bottom nav stays
             // highlighted on that tab while viewing Profile, and the
             // tab's back history diverges per tab.
-            onTap: () =>
-                Navigator.of(context, rootNavigator: true).push(
-              MaterialPageRoute(
-                builder: (_) => const ProfileScreen(),
-              ),
-            ),
+            onTap: () => Navigator.of(
+              context,
+              rootNavigator: true,
+            ).push(MaterialPageRoute(builder: (_) => const ProfileScreen())),
             child: Tooltip(
               message: 'Profile',
               child: EmployeeAvatar(
@@ -120,6 +118,10 @@ class OmniAppBar extends StatelessWidget implements PreferredSizeWidget {
             Navigator.of(context, rootNavigator: true).pop();
             await shell?.navigateToApproval(leaveId);
           },
+          onMyDayTap: () async {
+            Navigator.of(context, rootNavigator: true).pop();
+            await shell?.navigateToMyDay();
+          },
         ),
       ),
     );
@@ -132,8 +134,11 @@ class OmniBellButton extends StatelessWidget {
   final int unreadCount;
   final VoidCallback onPressed;
 
-  const OmniBellButton(
-      {super.key, required this.unreadCount, required this.onPressed});
+  const OmniBellButton({
+    super.key,
+    required this.unreadCount,
+    required this.onPressed,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -156,29 +161,36 @@ class OmniBellButton extends StatelessWidget {
           ),
           onPressed: onPressed,
         ),
+        // The badge is decoration only: IgnorePointer lets a tap on it
+        // reach the IconButton underneath (APP-3 — it used to swallow it).
+        // Its LEFT edge is anchored just right of the glyph's centre (the
+        // 48 dp button centres the 24 dp glyph at 24, 24) and it grows to
+        // the right, so a wide "9+" sits on the bell's top-right corner
+        // instead of hiding the bell (APP-6, was right: 8 growing left).
         if (hasUnread)
           Positioned(
-            top: 8,
-            right: 8,
-            child: Container(
-              constraints:
-                  const BoxConstraints(minWidth: 18, minHeight: 18),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-              decoration: BoxDecoration(
-                color: AppTheme.error,
-                shape: BoxShape.rectangle,
-                borderRadius: BorderRadius.circular(100),
-                border: Border.all(color: Colors.white, width: 1.5),
-              ),
-              child: Text(
-                unreadCount > 9 ? '9+' : '$unreadCount',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w800,
+            top: 4,
+            left: 26,
+            child: IgnorePointer(
+              child: Container(
+                key: const ValueKey('bell-badge'),
+                constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                decoration: BoxDecoration(
+                  color: AppTheme.error,
+                  shape: BoxShape.rectangle,
+                  borderRadius: BorderRadius.circular(100),
+                  border: Border.all(color: Colors.white, width: 1.5),
                 ),
-                textAlign: TextAlign.center,
+                child: Text(
+                  unreadCount > 9 ? '9+' : '$unreadCount',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
               ),
             ),
           ),

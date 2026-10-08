@@ -12,6 +12,8 @@ import 'package:omni_hr/models/face_capture_result.dart';
 import 'package:omni_hr/models/location_result.dart';
 import 'package:omni_hr/models/wifi_info_result.dart';
 import 'package:omni_hr/models/my_day.dart';
+import 'package:omni_hr/screens/home/my_day/check_in_out_screen.dart';
+import 'package:omni_hr/screens/home/my_day/declaration_sheet.dart';
 import 'package:omni_hr/screens/home/my_day/my_day_screen.dart';
 import 'package:omni_hr/services/attendance_action_controller.dart';
 import 'package:omni_hr/services/face_recognition_service.dart';
@@ -99,6 +101,43 @@ class _FakeApi extends OmniMobileApi {
     return const {};
   }
 
+  final declares = <Map<String, Object?>>[];
+  final undos = <int>[];
+
+  @override
+  Future<bool> declare({
+    required int attendanceId,
+    required String trigger,
+    required String answerCode,
+    DateTime? declaredTime,
+    String note = '',
+  }) async {
+    declares.add({
+      'attendance_id': attendanceId,
+      'trigger': trigger,
+      'answer_code': answerCode,
+      'declared_time': declaredTime,
+      'note': note,
+    });
+    return true;
+  }
+
+  @override
+  Future<AttendanceStatus> undoPunch(int attendanceId) async {
+    undos.add(attendanceId);
+    attendance = AttendanceStatus.fromJson({
+      'checked_in': false,
+      'hours_today': 0,
+      'employee_id': 1,
+      'auth_type': 'app',
+      'office_latitude': 1.3,
+      'office_longitude': 103.8,
+      'office_radius_meters': 200,
+      'flexible_location': false,
+    });
+    return attendance;
+  }
+
   @override
   Future<MyDay> fetchMyDay() async {
     final i = calls < script.length ? calls : script.length - 1;
@@ -156,6 +195,7 @@ Widget _host(
   bool enrolled = true,
   _Calls? enrolCalls,
   Future<LocationResult> Function()? getLocation,
+  bool signaturePage = false,
 }) => ChangeNotifierProvider<SessionService>(
   create: (_) => session ?? SessionService(),
   child: MaterialApp(
@@ -188,10 +228,22 @@ Widget _host(
           simulateFace: false,
         ),
       ),
-      captureFace: () async {
-        calls?.captures++;
-        return FaceCaptureResult.success('/tmp/face.jpg');
-      },
+      captureFace: signaturePage
+          ? null
+          : () async {
+              calls?.captures++;
+              return FaceCaptureResult.success('/tmp/face.jpg');
+            },
+      signatureCaptureBuilder: signaturePage
+          ? (onResult) => TextButton(
+              key: const ValueKey('fake-capture'),
+              onPressed: () {
+                calls?.captures++;
+                onResult(FaceCaptureResult.success('/tmp/face.jpg'));
+              },
+              child: const Text('SNAP'),
+            )
+          : null,
       enrol: () async => enrolCalls?.enrolments++,
       destinationBuilder: (item, expense) => Scaffold(
         appBar: AppBar(),
@@ -708,6 +760,31 @@ void main() {
     expect(find.text('Check out'), findsOneWidget);
   });
 
+  testWidgets('Check in opens the signature page, counts down and posts', (
+    tester,
+  ) async {
+    _tallScreen(tester);
+    final before = sampleMyDay(state: 'not_in', punches: [], kioskOnly: false);
+    final after = sampleMyDay(kioskOnly: false);
+    final api = _FakeApi([before, after]);
+    final calls = _Calls();
+    await tester.pumpWidget(_host(api, calls: calls, signaturePage: true));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('status-action')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byType(CheckInOutScreen), findsOneWidget);
+    expect(find.text('CHECK IN'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 1));
+    await tester.tap(find.byKey(const ValueKey('fake-capture')));
+    await tester.pumpAndSettle(const Duration(seconds: 2));
+    expect(calls.captures, 1);
+    expect(api.checkIns, [true]);
+    expect(find.byType(CheckInOutScreen), findsNothing);
+    expect(find.text('Checked in successfully!'), findsOneWidget);
+    expect(find.text('Check out'), findsOneWidget);
+  });
+
   testWidgets('a missing phone day has no red For-you row', (tester) async {
     _tallScreen(tester);
     final day = sampleMyDay(
@@ -778,7 +855,7 @@ void main() {
     final calls = _Calls();
     await tester.pumpWidget(_host(api, enrolled: false, enrolCalls: calls));
     await tester.pumpAndSettle();
-    expect(find.text('Set up your face · 10 seconds'), findsOneWidget);
+    expect(find.text('Set up your face'), findsOneWidget);
     expect(find.byIcon(Icons.face_retouching_natural), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('status-action')));
     await tester.pumpAndSettle();
@@ -997,5 +1074,278 @@ void main() {
       find.byKey(const ValueKey('status-action')),
     );
     expect(button.onPressed, isNotNull);
+  });
+
+  group('forgot something (connector 2.54.0)', () {
+    Map<String, dynamic> lateAsk() => {
+      'trigger': 'late_first_in',
+      'attendance_id': 812,
+      'tapped_at': '2026-10-05 10:12:00',
+      'shift_start': '2026-10-05 09:00:00',
+      'shift_end': '2026-10-05 18:00:00',
+      'last_out': null,
+      'suggested_time': '2026-10-05 09:00:00',
+      'options': [
+        {'code': 'started_at', 'label': 'I started at', 'needs_time': true},
+        {
+          'code': 'just_arriving',
+          'label': 'Just arriving',
+          'needs_time': false,
+        },
+      ],
+    };
+
+    /// A phone day: tap Check in; the connector answers [response].
+    Future<_FakeApi> punch(
+      WidgetTester tester,
+      Map<String, dynamic> response,
+    ) async {
+      _tallScreen(tester);
+      final api = _FakeApi([
+        sampleMyDay(state: 'not_in', punches: [], kioskOnly: false),
+        sampleMyDay(kioskOnly: false),
+      ])..checkInResponse = response;
+      await tester.pumpWidget(_host(api));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('status-action')));
+      await tester.pumpAndSettle();
+      return api;
+    }
+
+    testWidgets('an ask opens the sheet after the snackbar and the reload', (
+      tester,
+    ) async {
+      final api = await punch(tester, {'attendance_id': 812, 'ask': lateAsk()});
+      expect(find.text('Checked in successfully!'), findsOneWidget);
+      expect(find.byType(DeclarationSheet), findsOneWidget);
+      expect(find.text('Forgot something?'), findsOneWidget);
+      expect(find.text('I started at'), findsOneWidget);
+      expect(api.calls, 2);
+    });
+
+    testWidgets(
+      'answering posts declare with the trigger, the row and the time',
+      (tester) async {
+        final api = await punch(tester, {
+          'attendance_id': 812,
+          'ask': lateAsk(),
+        });
+        await tester.tap(find.byKey(const ValueKey('declaration-send')));
+        await tester.pumpAndSettle();
+        expect(api.declares, [
+          {
+            'attendance_id': 812,
+            'trigger': 'late_first_in',
+            'answer_code': 'started_at',
+            'declared_time': DateTime.utc(2026, 10, 5, 9),
+            'note': '',
+          },
+        ]);
+        expect(find.byType(DeclarationSheet), findsNothing);
+        expect(find.text('Sent to HR'), findsOneWidget);
+      },
+    );
+
+    testWidgets('Starting now posts nothing', (tester) async {
+      final ask = {
+        ...lateAsk(),
+        'trigger': 'break_long',
+        'last_out': '2026-10-05 05:00:00',
+        'options': [
+          {
+            'code': 'back_at',
+            'label': 'Back from break since',
+            'needs_time': true,
+          },
+          {
+            'code': 'long_break',
+            'label': 'It was a long break',
+            'needs_time': false,
+          },
+          {'code': 'start_now', 'label': 'Starting now', 'needs_time': false},
+        ],
+      };
+      final api = await punch(tester, {'attendance_id': 812, 'ask': ask});
+      await tester.tap(
+        find.byKey(const ValueKey('declaration-option-start_now')),
+      );
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('declaration-send')));
+      await tester.pumpAndSettle();
+      expect(api.declares, isEmpty);
+      expect(find.text('Sent to HR'), findsNothing);
+    });
+
+    testWidgets('Skip posts nothing', (tester) async {
+      final api = await punch(tester, {'attendance_id': 812, 'ask': lateAsk()});
+      await tester.tap(find.byKey(const ValueKey('declaration-skip')));
+      await tester.pumpAndSettle();
+      expect(find.byType(DeclarationSheet), findsNothing);
+      expect(api.declares, isEmpty);
+    });
+
+    testWidgets('no ask (connector 2.53.x): no sheet', (tester) async {
+      final api = await punch(tester, {'attendance_id': 812});
+      expect(find.text('Checked in successfully!'), findsOneWidget);
+      expect(find.byType(DeclarationSheet), findsNothing);
+      expect(find.text('UNDO'), findsNothing);
+      expect(api.declares, isEmpty);
+    });
+
+    testWidgets(
+      'UNDO before undo_until undoes the punch and applies the status',
+      (tester) async {
+        final until = DateTime.now()
+            .toUtc()
+            .add(const Duration(minutes: 2))
+            .toIso8601String();
+        final api = await punch(tester, {
+          'attendance_id': 812,
+          'undo_until': until,
+        });
+        expect(find.text('UNDO'), findsOneWidget);
+        await tester.tap(find.text('UNDO'));
+        await tester.pumpAndSettle();
+        expect(api.undos, [812]);
+        expect(find.text('Punch undone'), findsOneWidget);
+        expect(api.calls, 3);
+        expect(find.text('Check out'), findsNothing);
+        expect(find.text('Check in again'), findsOneWidget);
+      },
+    );
+
+    testWidgets('UNDO before the reload finishes: no question afterwards', (
+      tester,
+    ) async {
+      _tallScreen(tester);
+      final until = DateTime.now()
+          .toUtc()
+          .add(const Duration(minutes: 2))
+          .toIso8601String();
+      final api =
+          _FakeApi([
+              sampleMyDay(state: 'not_in', punches: [], kioskOnly: false),
+              sampleMyDay(kioskOnly: false),
+            ])
+            ..checkInResponse = {
+              'attendance_id': 812,
+              'ask': lateAsk(),
+              'undo_until': until,
+            };
+      await tester.pumpWidget(_host(api));
+      await tester.pumpAndSettle();
+      final gate = Completer<void>();
+      api.fetchGate = gate;
+      await tester.tap(find.byKey(const ValueKey('status-action')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.text('UNDO'), findsOneWidget);
+      await tester.tap(find.text('UNDO'));
+      await tester.pump();
+      gate.complete();
+      await tester.pumpAndSettle();
+      expect(api.undos, [812]);
+      expect(api.declares, isEmpty);
+      expect(find.byType(DeclarationSheet), findsNothing);
+    });
+
+    testWidgets('an expired undo_until offers no UNDO', (tester) async {
+      final until = DateTime.now()
+          .toUtc()
+          .subtract(const Duration(minutes: 1))
+          .toIso8601String();
+      await punch(tester, {'attendance_id': 812, 'undo_until': until});
+      expect(find.text('Checked in successfully!'), findsOneWidget);
+      expect(find.text('UNDO'), findsNothing);
+    });
+
+    testWidgets('after the shift: the undo answer undoes the check-in', (
+      tester,
+    ) async {
+      final ask = {
+        ...lateAsk(),
+        'trigger': 'after_end',
+        'suggested_time': null,
+        'options': [
+          {'code': 'overtime', 'label': 'Yes, overtime', 'needs_time': false},
+          {
+            'code': 'undo',
+            'label': 'No — undo this check-in',
+            'needs_time': false,
+          },
+        ],
+      };
+      final api = await punch(tester, {'attendance_id': 812, 'ask': ask});
+      await tester.tap(find.byKey(const ValueKey('declaration-option-undo')));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('declaration-send')));
+      await tester.pumpAndSettle();
+      expect(api.undos, [812]);
+      expect(api.declares, isEmpty);
+      expect(find.text('Punch undone'), findsOneWidget);
+    });
+  });
+
+  group('yesterday looks incomplete (connector 2.54.0)', () {
+    final item = <String, dynamic>{
+      'kind': 'yesterday_incomplete',
+      'date': '2026-10-04',
+      'verdict': 'no_checkout',
+      'attendance_id': 798,
+      'title': 'Yesterday looks incomplete',
+      'body': 'No check-out was recorded for Sun 4 Oct. Tell HR when you left.',
+      'options': [
+        {
+          'code': 'left_at',
+          'label': 'I left at',
+          'needs_time': true,
+          'suggested_time': '2026-10-04 10:00:00',
+        },
+      ],
+    };
+
+    testWidgets('Tell HR opens the sheet and posts with trigger yesterday', (
+      tester,
+    ) async {
+      _tallScreen(tester);
+      final api = _FakeApi([
+        sampleMyDay(forYou: [item]),
+      ]);
+      await tester.pumpWidget(_host(api));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Tell HR'));
+      await tester.pumpAndSettle();
+      expect(find.byType(DeclarationSheet), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(DeclarationSheet),
+          matching: find.text(
+            'No check-out was recorded for Sun 4 Oct. Tell HR when you left.',
+          ),
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('declaration-send')));
+      await tester.pumpAndSettle();
+      expect(api.declares, [
+        {
+          'attendance_id': 798,
+          'trigger': 'yesterday',
+          'answer_code': 'left_at',
+          'declared_time': DateTime.utc(2026, 10, 4, 10),
+          'note': '',
+        },
+      ]);
+      expect(find.text('Sent to HR'), findsOneWidget);
+      expect(api.calls, 2);
+    });
+
+    testWidgets('no item (connector 2.53.x): no card', (tester) async {
+      _tallScreen(tester);
+      await tester.pumpWidget(_host(_FakeApi([sampleMyDay()])));
+      await tester.pumpAndSettle();
+      expect(find.text('Tell HR'), findsNothing);
+      expect(find.text('Yesterday looks incomplete'), findsNothing);
+    });
   });
 }

@@ -3,8 +3,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../../core/datetime_utils.dart';
 import '../../../core/error_messages.dart';
 import '../../../core/theme.dart';
+import '../../../models/attendance_ask.dart';
 import '../../../models/auto_close_previous.dart';
 import '../../../models/expense_record.dart';
 import '../../../models/face_capture_result.dart';
@@ -18,10 +20,11 @@ import '../../../widgets/feature_locked_pane.dart';
 import '../../../widgets/omni_app_bar.dart';
 import '../../approvals/approvals_screen.dart';
 import '../../expenses/expense_detail_screen.dart';
-import '../../face_scan/face_capture_screen.dart';
 import '../../face_scan/face_enrollment_screen.dart';
 import '../../payroll/payslips_screen.dart';
 import 'auto_closed_banner.dart';
+import 'check_in_out_screen.dart';
+import 'declaration_sheet.dart';
 import 'day_timeline.dart';
 import 'for_you_list.dart';
 import 'my_day_display.dart';
@@ -43,6 +46,7 @@ class MyDayScreen extends StatefulWidget {
     this.refreshSession,
     this.controllerBuilder,
     this.captureFace,
+    this.signatureCaptureBuilder,
     this.enrol,
   });
 
@@ -78,9 +82,14 @@ class MyDayScreen extends StatefulWidget {
   final AttendanceActionController Function(SessionService session)?
   controllerBuilder;
 
-  /// Test seam: replaces the full-screen face capture.
+  /// Test seam: punches without the signature page, with this capture.
   @visibleForTesting
   final Future<FaceCaptureResult> Function()? captureFace;
+
+  /// Test seam: replaces the signature page's circular camera.
+  @visibleForTesting
+  final Widget Function(ValueChanged<FaceCaptureResult> onResult)?
+  signatureCaptureBuilder;
 
   /// Test seam: replaces the full-screen face enrolment.
   @visibleForTesting
@@ -108,6 +117,11 @@ class MyDayScreenState extends State<MyDayScreen> {
   AttendanceActionController? _controller;
   Timer? _gpsTimer;
   AutoClosePrevious? _autoClosed;
+
+  /// Punches undone here, or being undone: their question never opens
+  /// (the snackbar's UNDO can beat the reload that precedes the sheet).
+  final Set<int> _undoneAttendanceIds = {};
+  final Set<int> _undoingAttendanceIds = {};
 
   @override
   void initState() {
@@ -265,7 +279,7 @@ class MyDayScreenState extends State<MyDayScreen> {
     final state = c.buttonState;
     if (state == AttendanceButtonState.enroll) {
       return TileAction(
-        label: 'Set up your face · 10 seconds',
+        label: 'Set up your face',
         icon: TileActionIcon.faceSetup,
         onPressed: _act,
       );
@@ -304,22 +318,73 @@ class MyDayScreenState extends State<MyDayScreen> {
     final c = _controller;
     if (c == null) return null;
     if (c.buttonState == AttendanceButtonState.enroll) {
-      return 'Set up your face once, then check in';
+      return 'Takes about 10 seconds, once';
     }
     if (c.isOutside) return 'Outside the office · move closer to check in';
     if (c.hasPlace) return 'At the office · check in now';
     return 'Check in now';
   }
 
-  Future<FaceCaptureResult> _captureFace() async {
+  /// The punch. Normally on the signature page (1.30.1: header, pulsing
+  /// circle, 3-2-1 camera, live checklist, tick); face setup and the
+  /// [MyDayScreen.captureFace] seam run without it. The page shows its own
+  /// failures, so it returns null for them.
+  Future<AttendanceActionOutcome?> _perform(
+    AttendanceActionController c,
+  ) async {
     final custom = widget.captureFace;
-    if (custom != null) return custom();
-    // Root navigator: the camera covers the bottom bar.
-    final result = await Navigator.of(context, rootNavigator: true)
-        .push<FaceCaptureResult>(
-          MaterialPageRoute(builder: (_) => const FaceCaptureScreen()),
+    if (custom != null || c.buttonState == AttendanceButtonState.enroll) {
+      return c.perform(
+        captureFace: custom ?? () async => FaceCaptureResult.cancelled(),
+        enrol: _enrol,
+      );
+    }
+    if (c.acting) return null;
+    final session = context.read<SessionService>();
+    final day = _day;
+    final checkingOut = c.status?.checkedIn == true;
+    // Root navigator: the page covers the bottom bar.
+    final page = await Navigator.of(context, rootNavigator: true)
+        .push<CheckInOutResult>(
+          MaterialPageRoute(
+            builder: (_) => CheckInOutScreen(
+              checkingOut: checkingOut,
+              employeeName: session.employeeName,
+              shiftLabel: day?.shift?.label ?? '',
+              headerNote: checkingOut ? '' : _lateNote(day),
+              hoursToday: day == null ? '' : formatHoursToday(day.hoursToday),
+              lastLabel: _lastPunchLabel(day),
+              faceEnabled: session.featureFaceVerification,
+              geoEnabled: session.featureGeolocation,
+              captureBuilder: widget.signatureCaptureBuilder,
+              run: (capture, onStep) => c.perform(
+                captureFace: capture,
+                enrol: _enrol,
+                onStep: onStep,
+              ),
+            ),
+          ),
         );
-    return result ?? FaceCaptureResult.cancelled();
+    return page?.outcome;
+  }
+
+  /// "1h 53m late" for the day's first check-in after the shift start.
+  static String _lateNote(MyDay? day) {
+    if (day == null || day.punches.isNotEmpty) return '';
+    final start = DateTimeUtils.parseOdooUtc(day.shift?.start);
+    if (start == null) return '';
+    final late = DateTime.now().toUtc().difference(start).inMinutes;
+    return late > 0 ? '${minutesLabel(late)} late' : '';
+  }
+
+  /// "Last out 12:05" / "In since 07:59" from today's punches, else ''.
+  static String _lastPunchLabel(MyDay? day) {
+    if (day == null || day.punches.isEmpty) return '';
+    final last = day.punches.last;
+    final at = DateTimeUtils.formatLocalTime(last.at);
+    return last.kind == 'check_in' || last.kind == 'break_end'
+        ? 'In since $at'
+        : 'Last out $at';
   }
 
   Future<void> _enrol() async {
@@ -336,7 +401,7 @@ class MyDayScreenState extends State<MyDayScreen> {
     if (c == null) return;
     final AttendanceActionOutcome? result;
     try {
-      result = await c.perform(captureFace: _captureFace, enrol: _enrol);
+      result = await _perform(c);
     } catch (e) {
       // A device lookup or a UI step threw outside perform()'s own catch.
       if (!mounted) return;
@@ -368,6 +433,7 @@ class MyDayScreenState extends State<MyDayScreen> {
       if (!outcome.checkedIn) _autoClosed = null;
       if (outcome.autoClosed != null) _autoClosed = outcome.autoClosed;
     });
+    final undo = _undoAction(outcome);
     messenger.showSnackBar(
       SnackBar(
         content: Text(
@@ -376,9 +442,162 @@ class MyDayScreenState extends State<MyDayScreen> {
               : 'Checked out successfully!',
         ),
         backgroundColor: AppTheme.primary,
+        // A bar with an action would otherwise stay until tapped; the undo
+        // window closes it (spec 2026-10-07 §4.4).
+        persist: false,
+        duration: undo == null
+            ? const Duration(seconds: 4)
+            : _undoDuration(outcome.undoUntil!),
+        action: undo,
       ),
     );
     await refresh();
+    final ask = outcome.ask;
+    if (ask != null && mounted) await _askAfterPunch(ask);
+  }
+
+  /// UNDO while the server's window is open (connector 2.54.0); null on
+  /// 2.53.x or once `undo_until` has passed.
+  SnackBarAction? _undoAction(AttendanceActionOutcome outcome) {
+    final until = outcome.undoUntil;
+    final id = outcome.attendanceId;
+    if (until == null ||
+        id == null ||
+        !DateTime.now().toUtc().isBefore(until)) {
+      return null;
+    }
+    return SnackBarAction(
+      label: 'UNDO',
+      textColor: Colors.white,
+      onPressed: () => _undo(id),
+    );
+  }
+
+  /// min(time left in the undo window, 10 s).
+  static Duration _undoDuration(DateTime until) {
+    final left = until.difference(DateTime.now().toUtc());
+    const cap = Duration(seconds: 10);
+    return left < cap ? left : cap;
+  }
+
+  /// Spec §4.4: the server deletes the stray check-in (or reopens the
+  /// check-out) and answers with the status, applied before the reload.
+  Future<void> _undo(int attendanceId) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final api = _api();
+    _undoingAttendanceIds.add(attendanceId);
+    try {
+      final status = await api.undoPunch(attendanceId);
+      _undoneAttendanceIds.add(attendanceId);
+      _controller?.applyStatus(status);
+    } catch (e) {
+      if (!mounted) return;
+      messenger.removeCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(friendlyError(e)),
+          backgroundColor: AppTheme.error,
+        ),
+      );
+      return;
+    } finally {
+      _undoingAttendanceIds.remove(attendanceId);
+    }
+    if (!mounted) return;
+    messenger.removeCurrentSnackBar();
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('Punch undone'),
+        backgroundColor: AppTheme.primary,
+      ),
+    );
+    await refresh();
+  }
+
+  /// Spec §4.2: the question right after a check-in. The row already
+  /// exists; Skip and the "nothing to declare" answers post nothing.
+  Future<void> _askAfterPunch(AttendanceAsk ask) async {
+    if (_undoneAttendanceIds.contains(ask.attendanceId) ||
+        _undoingAttendanceIds.contains(ask.attendanceId)) {
+      return;
+    }
+    final answer = await showDeclarationSheet(
+      context,
+      title: ask.title,
+      options: ask.options,
+      day: ask.tappedAt.toLocal(),
+      footnote: ask.footnote,
+    );
+    if (!mounted || answer == null) return;
+    if (answer.code == 'undo') {
+      await _undo(ask.attendanceId);
+      return;
+    }
+    if (nothingToDeclare.contains(answer.code)) return;
+    await _declare(
+      trigger: ask.trigger,
+      attendanceId: ask.attendanceId,
+      answer: answer,
+    );
+  }
+
+  /// Posts one answer to attendance/declare; true when it went through.
+  Future<bool> _declare({
+    required String trigger,
+    required int attendanceId,
+    required DeclarationAnswer answer,
+  }) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final api = _api();
+    try {
+      await api.declare(
+        attendanceId: attendanceId,
+        trigger: trigger,
+        answerCode: answer.code,
+        declaredTime: answer.time,
+        note: answer.note,
+      );
+    } catch (e) {
+      if (!mounted) return false;
+      messenger.removeCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(friendlyError(e)),
+          backgroundColor: AppTheme.error,
+        ),
+      );
+      return false;
+    }
+    if (!mounted) return true;
+    messenger.removeCurrentSnackBar();
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('Sent to HR'),
+        backgroundColor: AppTheme.primary,
+      ),
+    );
+    return true;
+  }
+
+  /// Spec §4.3: "Tell HR" on the yesterday card. The item disappears on
+  /// the next load because the day is declared.
+  Future<void> _onYesterday(ForYouItem item) async {
+    final day = DateTime.tryParse(item.date);
+    if (day == null || item.attendanceId == 0 || item.options.isEmpty) return;
+    final answer = await showDeclarationSheet(
+      context,
+      title: item.body.isEmpty ? forYouTitle(item) : item.body,
+      options: item.options,
+      day: day,
+      footnote: 'HR will review your answer.',
+    );
+    if (!mounted || answer == null) return;
+    final sent = await _declare(
+      trigger: 'yesterday',
+      attendanceId: item.attendanceId,
+      answer: answer,
+    );
+    if (sent && mounted) await refresh();
   }
 
   Future<void> _onTap(ForYouItem item) async {
@@ -426,8 +645,17 @@ class MyDayScreenState extends State<MyDayScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final session = context.watch<SessionService>();
     return Scaffold(
-      appBar: widget.appBar ?? const OmniAppBar(title: 'My day'),
+      appBar:
+          widget.appBar ??
+          OmniAppBar(
+            title: helloTitle(
+              session.employeeName,
+              session.userName,
+              session.userLogin,
+            ),
+          ),
       body: _body(context),
     );
   }
@@ -529,6 +757,7 @@ class MyDayScreenState extends State<MyDayScreen> {
                   onTap: _onTap,
                   missing: attendanceOn && day.missing && day.kioskOnly,
                   onMissingTap: () => showKioskSheet(context),
+                  onYesterday: _onYesterday,
                 ),
               ],
             ),

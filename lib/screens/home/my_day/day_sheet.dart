@@ -35,7 +35,7 @@ String _shiftLine(MyDayWeekDay d) => d.shift.isEmpty ? '' : 'Shift ${d.shift}';
 
 DaySummary _worked(MyDayWeekDay d) {
   var head = d.workedMinutes > 0
-      ? 'Worked ${minutesLabel(d.workedMinutes)}'
+      ? 'Worked ${workedLabel(d.workedMinutes)}'
       : 'Worked';
   var tone = MyDayColors.work;
   var icon = Icons.check_circle_outline;
