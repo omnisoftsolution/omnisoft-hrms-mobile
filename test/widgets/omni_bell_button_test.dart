@@ -24,6 +24,33 @@ void main() {
     expect(taps, 1);
   });
 
+  testWidgets('a "9+" badge never covers the bell glyph centre (APP-6)', (
+    tester,
+  ) async {
+    var taps = 0;
+    await tester.pumpWidget(_host(12, () => taps++));
+    expect(find.text('9+'), findsOneWidget);
+    final badge = tester.getRect(find.byKey(const ValueKey('bell-badge')));
+    final glyph = tester.getCenter(find.byIcon(Icons.notifications_rounded));
+    expect(badge.contains(glyph), isFalse, reason: '$badge vs $glyph');
+    // It sits on the glyph's top-right corner: right of and above centre.
+    expect(badge.left, greaterThan(glyph.dx));
+    expect(badge.top, lessThan(glyph.dy));
+    // APP-3 still holds: a tap on the badge opens Notifications.
+    await tester.tapAt(tester.getCenter(find.text('9+')));
+    await tester.pumpAndSettle();
+    expect(taps, 1);
+  });
+
+  testWidgets('a single-digit badge stays off the glyph centre too', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_host(3, () {}));
+    final badge = tester.getRect(find.byKey(const ValueKey('bell-badge')));
+    final glyph = tester.getCenter(find.byIcon(Icons.notifications_rounded));
+    expect(badge.contains(glyph), isFalse);
+  });
+
   testWidgets('a tap on the bell glyph still opens Notifications', (
     tester,
   ) async {

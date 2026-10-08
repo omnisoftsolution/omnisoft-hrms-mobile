@@ -163,12 +163,17 @@ class OmniBellButton extends StatelessWidget {
         ),
         // The badge is decoration only: IgnorePointer lets a tap on it
         // reach the IconButton underneath (APP-3 — it used to swallow it).
+        // Its LEFT edge is anchored just right of the glyph's centre (the
+        // 48 dp button centres the 24 dp glyph at 24, 24) and it grows to
+        // the right, so a wide "9+" sits on the bell's top-right corner
+        // instead of hiding the bell (APP-6, was right: 8 growing left).
         if (hasUnread)
           Positioned(
-            top: 8,
-            right: 8,
+            top: 4,
+            left: 26,
             child: IgnorePointer(
               child: Container(
+                key: const ValueKey('bell-badge'),
                 constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                 decoration: BoxDecoration(
