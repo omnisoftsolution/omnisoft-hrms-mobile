@@ -173,6 +173,11 @@ class _NoAttendanceSession extends SessionService {
   bool get featureAttendance => false;
 }
 
+/// A /me approvals block that agrees with the fixture's For-you card.
+const _approver3 = {
+  'leave_approvals': {'enabled': true, 'pending_count': 3},
+};
+
 /// A session that already knows the user approves leave.
 class _ApproverSession extends SessionService {
   _ApproverSession({required this.count});
@@ -444,7 +449,9 @@ void main() {
     _tallScreen(tester);
     final calls = _Calls();
     final api = _FakeApi([sampleMyDay()]);
-    await tester.pumpWidget(_host(api, calls: calls));
+    await tester.pumpWidget(
+      _host(api, calls: calls, session: _ApproverSession(count: 3)),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.text('3 leave requests to approve'));
     await tester.pumpAndSettle();
@@ -480,7 +487,9 @@ void main() {
           'state': 'submitted',
         }),
       ];
-    await tester.pumpWidget(_host(api, calls: calls));
+    await tester.pumpWidget(
+      _host(api, calls: calls, session: _ApproverSession(count: 3)),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.text('Transport'));
     await tester.pumpAndSettle();
@@ -605,6 +614,9 @@ void main() {
           'employee': {'id': 6, 'name': 'A', 'attendance_kiosk_only': true},
         }),
       );
+      // The session agrees with the fixture's approvals card (3), so only
+      // the kiosk flag can cause a re-pull here.
+      await tester.runAsync(() => session.updateLeaveApprovalsFromMe(_approver3));
       expect(session.attendanceKioskOnly, isTrue);
 
       final calls = _Calls();
@@ -640,6 +652,7 @@ void main() {
         'employee': {'id': 6, 'name': 'A', 'attendance_kiosk_only': true},
       }),
     );
+    await tester.runAsync(() => session.updateLeaveApprovalsFromMe(_approver3));
     expect(session.attendanceKioskOnly, isTrue);
 
     final calls = _Calls();
@@ -831,14 +844,42 @@ void main() {
       await tester.pumpAndSettle();
       expect(calls.sessionRefreshes, 1);
 
-      // The numbers agree: nothing to re-pull. A session that does not yet
-      // know the user approves (the default SessionService) is left alone.
+      // A session that does not know yet that the user approves (fresh
+      // login: /login has no leave_approvals block) re-pulls too, so the
+      // LEAVE badge shows the card's count (M8).
+      final fresh = _Calls();
+      // Unmount first: a re-pump would keep the old Provider's session.
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpWidget(
+        _host(_FakeApi([day]), calls: fresh, key: UniqueKey()),
+      );
+      await tester.pumpAndSettle();
+      expect(fresh.sessionRefreshes, 1);
+
+      // No card and no approver: nothing to re-pull.
+      final none = _Calls();
+      // Unmount first: a re-pump would keep the old Provider's session.
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpWidget(
+        _host(
+          _FakeApi([sampleMyDay(forYou: [])]),
+          calls: none,
+          key: UniqueKey(),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(none.sessionRefreshes, 0);
+
+      // The numbers agree: nothing to re-pull.
       final agreed = _Calls();
+      // Unmount first: a re-pump would keep the old Provider's session.
+      await tester.pumpWidget(const SizedBox());
       await tester.pumpWidget(
         _host(
           _FakeApi([day]),
           calls: agreed,
           session: _ApproverSession(count: 2),
+          key: UniqueKey(),
         ),
       );
       await tester.pumpAndSettle();

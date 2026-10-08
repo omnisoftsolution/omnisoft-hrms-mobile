@@ -132,4 +132,82 @@ void main() {
     expect(prefs.containsKey('leave_approvals_enabled'), isFalse);
     expect(prefs.containsKey('leave_approvals_pending_count'), isFalse);
   });
+
+  group('refreshMeIfStale (M8)', () {
+    /// Counts /me calls; each answers with [answer] (null = fails).
+    SessionService counting(List<int> calls, {Map<String, dynamic>? answer}) {
+      final s = _CountingSession(calls, answer);
+      return s;
+    }
+
+    test('asks once, then not again within 30 s, then again after', () async {
+      final calls = <int>[];
+      final s = counting(calls, answer: me({
+        'leave_approvals': {'enabled': true, 'pending_count': 1},
+      }));
+      var t = DateTime(2026, 10, 8, 9);
+      s.clock = () => t;
+
+      expect(await s.refreshMeIfStale(), isTrue);
+      expect(s.leaveApprovalsEnabled, isTrue);
+      t = t.add(const Duration(seconds: 29));
+      expect(await s.refreshMeIfStale(), isFalse);
+      expect(calls.length, 1);
+      t = t.add(const Duration(seconds: 2));
+      expect(await s.refreshMeIfStale(), isTrue);
+      expect(calls.length, 2);
+    });
+
+    test('any /me counts: a resume refresh holds off the Leave tab', () async {
+      final calls = <int>[];
+      final s = counting(calls, answer: me());
+      final t = DateTime(2026, 10, 8, 9);
+      s.clock = () => t;
+      await s.refreshMe(); // e.g. app resume
+      expect(await s.refreshMeIfStale(), isFalse);
+      expect(calls.length, 1);
+    });
+
+    test('a failure does not start the wait', () async {
+      final calls = <int>[];
+      final s = counting(calls); // /me fails
+      final t = DateTime(2026, 10, 8, 9);
+      s.clock = () => t;
+      expect(await s.refreshMeIfStale(), isFalse);
+      expect(await s.refreshMeIfStale(), isFalse);
+      expect(calls.length, 2);
+    });
+
+    test('a new login resets the wait (/login has no approvals block)',
+        () async {
+      final calls = <int>[];
+      final s = counting(calls, answer: me());
+      final t = DateTime(2026, 10, 8, 9);
+      s.clock = () => t;
+      await s.refreshMeIfStale();
+      await s.saveLoginResponse({
+        'access_token': 'tok',
+        'user': {'id': 9, 'login': 'a@b.c', 'name': 'A'},
+        'employee': {'id': 6, 'name': 'A'},
+      });
+      expect(await s.refreshMeIfStale(), isTrue);
+      expect(calls.length, 2);
+    });
+  });
+}
+
+/// refreshMe goes through the real refreshMeWith with a fake /me.
+class _CountingSession extends SessionService {
+  _CountingSession(this.calls, this.answer);
+
+  final List<int> calls;
+  final Map<String, dynamic>? answer;
+
+  @override
+  Future<bool> refreshMe() => refreshMeWith(_FakeApi(() async {
+        calls.add(calls.length);
+        final a = answer;
+        if (a == null) throw ApiException('network_error');
+        return a;
+      }));
 }

@@ -16,6 +16,7 @@ import '../../widgets/document_picker_field.dart';
 import '../../widgets/feature_locked_pane.dart';
 import '../../widgets/omni_app_bar.dart';
 import '../../widgets/primary_button.dart';
+import '../../widgets/period_segmented_row.dart';
 import '../../widgets/range_picker_dialog.dart';
 import '../approvals/approvals_screen.dart';
 import '../home/home_shell.dart';
@@ -85,8 +86,31 @@ String _unitNounLong(String requestUnit) {
   }
 }
 
+/// The Approver row on the apply receipt. A 2.57.0+ connector answers
+/// `leave/apply` with `approver`: who decides the first pending step, ''
+/// when the request was approved on creation (no row then). An older
+/// connector does not send the key, so the row falls back to the Time Off
+/// approver from /me ([fallback]).
+String receiptApprover(Map<String, dynamic> response, String fallback) {
+  if (!response.containsKey('approver')) return fallback;
+  final v = response['approver'];
+  return v is String ? v.trim() : '';
+}
+
+/// The line under "Leave request submitted": a request Odoo approved on
+/// creation (`state: validate`) is not waiting for anybody.
+String receiptStatus(Map<String, dynamic> response) =>
+    response['state'] == 'validate' ? 'Approved' : 'Waiting for approval';
+
 class LeaveScreen extends StatefulWidget {
-  const LeaveScreen({super.key});
+  const LeaveScreen({super.key, this.apiBuilder, this.appBar});
+
+  /// Test seam: swaps in a fake API (fake-subclass pattern). The apply
+  /// sheet uses it too.
+  final OmniMobileApi Function(SessionService session)? apiBuilder;
+
+  /// Test seam: replaces [OmniAppBar] (bell, avatar, Google Fonts).
+  final PreferredSizeWidget? appBar;
 
   @override
   State<LeaveScreen> createState() => LeaveScreenState();
@@ -99,6 +123,7 @@ class LeaveScreenState extends State<LeaveScreen> {
   String _approvalsBreakdown = '';
 
   OmniMobileApi _api(SessionService s) =>
+      widget.apiBuilder?.call(s) ??
       OmniMobileApi(baseUrl: s.clientUrl, db: s.clientDb, token: s.token);
 
   @override
@@ -107,20 +132,39 @@ class LeaveScreenState extends State<LeaveScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => refresh());
   }
 
-  Future<void> refresh() async {
+  /// Reload the leave types, and the approvals block of /me so a user
+  /// who just became an approver gets the "Leave approvals" row (and
+  /// the LEAVE badge) on opening the tab. /me is re-pulled at most once
+  /// per 30 s ([SessionService.refreshMeIfStale]); a pull-down
+  /// ([force]) always asks.
+  Future<void> refresh({bool force = false}) async {
     setState(() {
       _loading = true;
       _error = null;
     });
+    final session = context.read<SessionService>();
+    unawaited(_refreshApprovals(session, force: force));
     try {
-      final session = context.read<SessionService>();
       _types = await _api(session).getLeaveTypes();
     } catch (e) {
       _error = friendlyError(e);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
-    unawaited(_refreshApprovalsBreakdown());
+  }
+
+  Future<void> _pullToRefresh() => refresh(force: true);
+
+  Future<void> _refreshApprovals(
+    SessionService session, {
+    required bool force,
+  }) async {
+    if (force) {
+      await session.refreshMe();
+    } else {
+      await session.refreshMeIfStale();
+    }
+    if (mounted) await _refreshApprovalsBreakdown();
   }
 
   /// Per-type line for the approvals row; best-effort, approvers with
@@ -171,6 +215,7 @@ class LeaveScreenState extends State<LeaveScreen> {
     // messenger (no descendant Scaffolds → showSnackBar asserts) and
     // findAncestorStateOfType<HomeShellState>() returns null. This
     // screen's context IS inside HomeShell, so both resolve cleanly.
+    var submitted = false;
     final leaveId = await showModalBottomSheet<int>(
       context: context,
       isScrollControlled: true,
@@ -179,8 +224,17 @@ class LeaveScreenState extends State<LeaveScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (_) => _ApplyLeaveSheet(leaveType: type),
+      builder: (_) => _ApplyLeaveSheet(
+        leaveType: type,
+        apiFor: _api,
+        onSubmitted: () => submitted = true,
+      ),
     );
+    // A new request uses up balance: reload the tiles however the sheet
+    // was closed (DONE, VIEW IN HISTORY, or dragged down from the
+    // receipt). Cancel / edit from History reload them on the next
+    // switch to this tab (HomeShell._onTabTap).
+    if (submitted && mounted) unawaited(refresh());
     // DONE pops with null → stay on Leave tab. VIEW IN HISTORY pops
     // with a positive leave id → navigate. No snackbar — the in-sheet
     // receipt is the user's confirmation; doubling it with a banner
@@ -194,7 +248,7 @@ class LeaveScreenState extends State<LeaveScreen> {
   Widget build(BuildContext context) {
     final session = context.watch<SessionService>();
     return Scaffold(
-      appBar: const OmniAppBar(title: 'Leave'),
+      appBar: widget.appBar ?? const OmniAppBar(title: 'Leave'),
       body: !session.featureTimeOff
           ? const FeatureLockedPane(
               featureName: 'Time Off',
@@ -206,13 +260,13 @@ class LeaveScreenState extends State<LeaveScreen> {
           ? const Center(child: CircularProgressIndicator())
           : _error != null
           ? RefreshIndicator(
-              onRefresh: refresh,
+              onRefresh: _pullToRefresh,
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(20, 80, 20, 24),
                 children: [ErrorStateView(message: _error!, onRetry: refresh)],
               ),
             )
-          : RefreshIndicator(onRefresh: refresh, child: _buildList()),
+          : RefreshIndicator(onRefresh: _pullToRefresh, child: _buildList()),
     );
   }
 
@@ -328,7 +382,15 @@ class LeaveScreenState extends State<LeaveScreen> {
 
 class _ApplyLeaveSheet extends StatefulWidget {
   final LeaveType leaveType;
-  const _ApplyLeaveSheet({required this.leaveType});
+  final OmniMobileApi Function(SessionService session) apiFor;
+
+  /// Called once the server has created the leave.
+  final VoidCallback onSubmitted;
+  const _ApplyLeaveSheet({
+    required this.leaveType,
+    required this.apiFor,
+    required this.onSubmitted,
+  });
 
   @override
   State<_ApplyLeaveSheet> createState() => _ApplyLeaveSheetState();
@@ -349,6 +411,10 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
   // receipt shown). Holds the leave id returned by the connector so
   // VIEW IN HISTORY can pass it back to the parent for highlight.
   int? _submittedLeaveId;
+  // From the apply response: the receipt's Approver row ('' = no row)
+  // and status line.
+  String _submittedApprover = '';
+  String _submittedStatus = 'Waiting for approval';
 
   bool get _isHalfDay => widget.leaveType.requestUnit == 'half_day';
   bool get _isHourly => widget.leaveType.requestUnit == 'hour';
@@ -411,12 +477,7 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
     if (!mounted) return;
     final seq = _previewSeq;
     try {
-      final session = context.read<SessionService>();
-      final api = OmniMobileApi(
-        baseUrl: session.clientUrl,
-        db: session.clientDb,
-        token: session.token,
-      );
+      final api = widget.apiFor(context.read<SessionService>());
       final preview = await api.previewLeave(
         holidayStatusId: widget.leaveType.id,
         dateFrom: DateFormat('yyyy-MM-dd').format(_dateFrom),
@@ -587,11 +648,7 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
     });
     try {
       final session = context.read<SessionService>();
-      final api = OmniMobileApi(
-        baseUrl: session.clientUrl,
-        db: session.clientDb,
-        token: session.token,
-      );
+      final api = widget.apiFor(session);
       final response = await api.applyLeave(
         holidayStatusId: widget.leaveType.id,
         dateFrom: DateFormat('yyyy-MM-dd').format(_dateFrom),
@@ -611,7 +668,15 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
       // / Reason / Approver / Reference) and then chooses where to go
       // via the DONE or VIEW IN HISTORY buttons in `_buildSuccess`.
       final leaveId = (response['leave_id'] as num?)?.toInt() ?? 0;
-      setState(() => _submittedLeaveId = leaveId);
+      widget.onSubmitted();
+      setState(() {
+        _submittedLeaveId = leaveId;
+        _submittedApprover = receiptApprover(
+          response,
+          session.employeeTimeOffApprover,
+        );
+        _submittedStatus = receiptStatus(response);
+      });
     } catch (e, st) {
       debugPrint('leave/apply failed: $e\n$st');
       if (mounted) setState(() => _error = _humanizeError(e));
@@ -686,45 +751,7 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
     required String label,
     required String value,
     required ValueChanged<String> onChanged,
-  }) {
-    return Row(
-      children: [
-        SizedBox(
-          width: 110,
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 13,
-              color: AppTheme.onSurfaceVariant,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ),
-        Expanded(
-          child: SegmentedButton<String>(
-            segments: const [
-              ButtonSegment(
-                value: 'am',
-                label: Text('Morning'),
-                icon: Icon(Icons.wb_sunny_outlined, size: 16),
-              ),
-              ButtonSegment(
-                value: 'pm',
-                label: Text('Afternoon'),
-                icon: Icon(Icons.wb_twilight, size: 16),
-              ),
-            ],
-            selected: {value},
-            onSelectionChanged: (s) => onChanged(s.first),
-            style: ButtonStyle(
-              visualDensity: VisualDensity.compact,
-              textStyle: WidgetStateProperty.all(const TextStyle(fontSize: 12)),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
+  }) => PeriodSegmentedRow(label: label, value: value, onChanged: onChanged);
 
   @override
   Widget build(BuildContext context) {
@@ -1003,7 +1030,6 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
 
   Widget _buildSuccess(BuildContext context) {
     final mq = MediaQuery.of(context);
-    final session = context.read<SessionService>();
     final fmt = DateFormat('dd MMM yyyy');
     // Build a one-line dates blurb that matches the form's math —
     // reuses _dayCountLabel / _hourLabel so the receipt agrees with
@@ -1032,7 +1058,7 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
                 '·  $_dayCountLabel';
     }
     final reason = _reasonController.text.trim();
-    final approver = session.employeeTimeOffApprover;
+    final approver = _submittedApprover;
     return SingleChildScrollView(
       padding: EdgeInsets.only(
         left: 24,
@@ -1071,7 +1097,7 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
           const SizedBox(height: 4),
           Center(
             child: Text(
-              'Waiting for approval',
+              _submittedStatus,
               style: TextStyle(fontSize: 13, color: AppTheme.onSurfaceVariant),
             ),
           ),

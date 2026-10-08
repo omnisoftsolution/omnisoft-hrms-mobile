@@ -3,6 +3,13 @@ import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
 import '../core/theme.dart';
 
+const double _weekdayFontSize = 13;
+
+/// Height of the weekday row: one line of the (scaled) weekday text
+/// plus breathing room, never less than TableCalendar's 16 px default.
+double weekdayRowHeight(TextScaler scaler) =>
+    scaler.scale(_weekdayFontSize) * 1.4 + 6;
+
 class RangePickerDialog extends StatefulWidget {
   final DateTime initialStart;
   final DateTime initialEnd;
@@ -39,6 +46,53 @@ class _RangePickerDialogState extends State<RangePickerDialog> {
   DateTime? _start;
   DateTime? _end;
   late DateTime _focused;
+  // TableCalendar's own page controller, so our month header (with
+  // labelled arrow buttons) can turn the page.
+  PageController? _pageController;
+
+  static DateTime _month(DateTime d) => DateTime(d.year, d.month);
+
+  bool get _canGoBack => _month(_focused).isAfter(_month(widget.firstDate));
+  bool get _canGoForward =>
+      _month(_focused).isBefore(_month(widget.lastDate));
+
+  void _turnPage({required bool forward}) {
+    final c = _pageController;
+    if (c == null) return;
+    const duration = Duration(milliseconds: 300);
+    if (forward) {
+      c.nextPage(duration: duration, curve: Curves.easeOut);
+    } else {
+      c.previousPage(duration: duration, curve: Curves.easeOut);
+    }
+  }
+
+  /// Month title between two arrow buttons. TableCalendar's built-in
+  /// header has unlabelled chevrons; these carry "Previous month" /
+  /// "Next month" tooltips (read by TalkBack / VoiceOver).
+  Widget _monthHeader() {
+    return Row(
+      children: [
+        IconButton(
+          tooltip: 'Previous month',
+          icon: const Icon(Icons.chevron_left),
+          onPressed: _canGoBack ? () => _turnPage(forward: false) : null,
+        ),
+        Expanded(
+          child: Text(
+            DateFormat.yMMMM('en_US').format(_focused),
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          ),
+        ),
+        IconButton(
+          tooltip: 'Next month',
+          icon: const Icon(Icons.chevron_right),
+          onPressed: _canGoForward ? () => _turnPage(forward: true) : null,
+        ),
+      ],
+    );
+  }
 
   @override
   void initState() {
@@ -139,7 +193,16 @@ class _RangePickerDialogState extends State<RangePickerDialog> {
                       fontSize: 16, fontWeight: FontWeight.w700)),
             ),
             const SizedBox(height: 8),
+            _monthHeader(),
             TableCalendar(
+              headerVisible: false,
+              onCalendarCreated: (c) => _pageController = c,
+              onPageChanged: (focused) => setState(() => _focused = focused),
+              // The weekday row ("Sun Mon Tue …") was a fixed 16 px and
+              // clipped its text on the Samsung; size it from the font.
+              daysOfWeekHeight: weekdayRowHeight(
+                MediaQuery.textScalerOf(context),
+              ),
               firstDay: widget.firstDate,
               lastDay: widget.lastDate,
               focusedDay: _focused,
@@ -152,6 +215,28 @@ class _RangePickerDialogState extends State<RangePickerDialog> {
                   widget.holidayName?.call(day) != null,
               onDaySelected: _onDayTapped,
               calendarBuilders: CalendarBuilders(
+                // One line, shrunk rather than wrapped or clipped when a
+                // big system font meets a narrow phone.
+                dowBuilder: (context, day) {
+                  final weekend = day.weekday == DateTime.saturday ||
+                      day.weekday == DateTime.sunday;
+                  return Center(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        DateFormat.E('en_US').format(day),
+                        maxLines: 1,
+                        softWrap: false,
+                        style: TextStyle(
+                          fontSize: _weekdayFontSize,
+                          color: weekend
+                              ? const Color(0xFF6A6A6A)
+                              : const Color(0xFF4F4F4F),
+                        ),
+                      ),
+                    ),
+                  );
+                },
                 defaultBuilder: (context, day, focusedDay) {
                   if (widget.isNonWorkingDay?.call(day) == true &&
                       widget.holidayName?.call(day) == null) {
@@ -250,10 +335,6 @@ class _RangePickerDialogState extends State<RangePickerDialog> {
                 ),
                 todayTextStyle: TextStyle(color: AppTheme.primary),
                 outsideDaysVisible: false,
-              ),
-              headerStyle: const HeaderStyle(
-                formatButtonVisible: false,
-                titleCentered: true,
               ),
               availableGestures: AvailableGestures.horizontalSwipe,
             ),

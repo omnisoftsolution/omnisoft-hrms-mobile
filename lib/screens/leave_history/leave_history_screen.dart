@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
+import 'package:intl/intl.dart' hide TextDirection;
 import 'package:provider/provider.dart';
 import '../../core/theme.dart';
 import '../../core/error_messages.dart';
@@ -13,11 +13,57 @@ import '../../widgets/auto_pickers.dart';
 import '../../widgets/error_state_view.dart';
 import '../../widgets/document_picker_field.dart';
 import '../../widgets/file_viewer.dart';
+import '../../widgets/period_segmented_row.dart';
 import '../../widgets/range_picker_dialog.dart';
 import '../../utils/leave_backdate.dart';
 
+/// Chip colour of a leave state on the History card. `validate1` (HR
+/// still has to approve) is pending, not approved: it shares the
+/// "Pending" colour so nobody reads it as a green light.
+Color leaveStateColor(String state) {
+  switch (state) {
+    case 'validate':
+      return AppTheme.primary;
+    case 'refuse':
+      return AppTheme.error;
+    case 'confirm':
+    case 'validate1':
+      return AppTheme.secondary;
+    default:
+      return AppTheme.outline;
+  }
+}
+
+/// Width of a label column (labels + [gap]): the widest of [labels] in
+/// [style] at [textScaler], plus [gap], but at most [maxWidth] (a very
+/// large font then wraps the label instead of squeezing the value).
+double detailLabelColumnWidth({
+  required List<String> labels,
+  required TextStyle style,
+  required TextScaler textScaler,
+  required double gap,
+  required double maxWidth,
+}) {
+  var widest = 0.0;
+  for (final label in labels) {
+    final painter = TextPainter(
+      text: TextSpan(text: label, style: style),
+      textDirection: TextDirection.ltr,
+      textScaler: textScaler,
+      maxLines: 1,
+    )..layout();
+    if (painter.width > widest) widest = painter.width;
+    painter.dispose();
+  }
+  final width = widest.ceilToDouble() + gap;
+  return width > maxWidth ? maxWidth : width;
+}
+
 class LeaveHistoryScreen extends StatefulWidget {
-  const LeaveHistoryScreen({super.key});
+  const LeaveHistoryScreen({super.key, this.apiBuilder});
+
+  /// Test seam: swaps in a fake API (fake-subclass pattern).
+  final OmniMobileApi Function(SessionService session)? apiBuilder;
 
   @override
   State<LeaveHistoryScreen> createState() => LeaveHistoryScreenState();
@@ -72,9 +118,16 @@ class LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
     // grow when the highlighted one auto-expands; 140 lands close
     // enough on the iPhone-width canvas. Worst case the user scrolls
     // a bit, but the highlight tint guides their eye.
-    final target = (index * 140.0).clamp(
-        0.0, _scrollController.position.maxScrollExtent);
+    //
+    // The reload showed the spinner in place of the list: wait for the
+    // list to be built again before touching the scroll position (it
+    // threw "ScrollController not attached" here, so the card never
+    // scrolled into view and the tint never faded).
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
     if (_scrollController.hasClients) {
+      final target = (index * 140.0).clamp(
+          0.0, _scrollController.position.maxScrollExtent);
       await _scrollController.animateTo(
         target,
         duration: const Duration(milliseconds: 450),
@@ -88,47 +141,86 @@ class LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
     }
   }
 
-  Future<void> refresh() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  /// Reload the list. [quiet] keeps the current cards on screen (no
+  /// spinner) and keeps them on a failure: used when the app, not the
+  /// user, asks for fresh data — a leave notification arrived, or a
+  /// cancel / edit found the request already decided.
+  ///
+  /// Reloads can overlap (tab switch, pull-down, a notification, a
+  /// failed cancel): only the answer to the latest request is used, so a
+  /// slow older answer (still Pending) never replaces a newer one
+  /// (Approved) and brings back stale Edit / Cancel buttons. Every call
+  /// completes only once the newest overlapping request has been
+  /// applied, so a caller that reads the list afterwards (the
+  /// notification-tap highlight) never sees a superseded one.
+  Future<void> refresh({bool quiet = false}) async {
+    final seq = ++_requestSeq;
+    // Shared by every call of an overlapping group; the newest completes
+    // it.
+    final settled = _settled ??= Completer<void>();
+    if (!quiet || _error != null) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
+    List<LeaveRecord>? leaves;
+    Object? error;
     try {
-      final session = context.read<SessionService>();
-      final api = OmniMobileApi(
-        baseUrl: session.clientUrl,
-        db: session.clientDb,
-        token: session.token,
-      );
-      _leaves = await api.getLeaveHistory();
+      leaves = await _api().getLeaveHistory();
     } catch (e) {
-      _error = friendlyError(e);
+      error = e;
+    }
+    if (seq != _requestSeq) {
+      // Superseded: resolve with the newest request instead.
+      await settled.future;
+      return;
+    }
+    _settled = null;
+    try {
+      if (!mounted) return;
+      setState(() {
+        if (leaves != null) {
+          _leaves = leaves;
+        } else if (quiet && !_loading) {
+          debugPrint('leave/history quiet reload failed: $error');
+        } else {
+          _error = friendlyError(error!);
+        }
+        _loading = false;
+      });
     } finally {
-      if (mounted) setState(() => _loading = false);
+      settled.complete(); // releases the superseded calls of this group
     }
   }
 
-  String _fmtDays(double n) =>
-      n == n.roundToDouble() ? n.toInt().toString() : n.toStringAsFixed(1);
+  // Bumped by every refresh(); an answer is applied only while its
+  // number is still the latest.
+  int _requestSeq = 0;
 
-  Color _stateColor(String state) {
-    switch (state) {
-      case 'validate':
-      case 'validate1':
-        return AppTheme.primary;
-      case 'refuse':
-        return AppTheme.error;
-      case 'confirm':
-        return AppTheme.secondary;
-      case 'cancel':
-        return AppTheme.outline;
-      default:
-        return AppTheme.outline;
-    }
+  // Completes when the newest of the overlapping refresh() calls has
+  // been applied; null while no refresh is in flight.
+  Completer<void>? _settled;
+
+  /// The request changed on the server (decided, cancelled, deleted)
+  /// since the list was loaded: say so and reload, so the card's state
+  /// and its Edit / Cancel buttons are right again.
+  Future<void> _showChangedAndReload(Object e) async {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(friendlyError(e)),
+        backgroundColor: AppTheme.error,
+      ),
+    );
+    await refresh(quiet: true);
   }
+
+  Color _stateColor(String state) => leaveStateColor(state);
 
   OmniMobileApi _api() {
     final s = context.read<SessionService>();
+    final custom = widget.apiBuilder;
+    if (custom != null) return custom(s);
     return OmniMobileApi(
       baseUrl: s.clientUrl,
       db: s.clientDb,
@@ -156,14 +248,17 @@ class LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
       );
       await refresh();
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(friendlyError(e)),
-            backgroundColor: AppTheme.error,
-          ),
-        );
+      if (!mounted) return;
+      if (isLeaveChangedError(e)) {
+        await _showChangedAndReload(e);
+        return;
       }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(friendlyError(e)),
+          backgroundColor: AppTheme.error,
+        ),
+      );
     }
   }
 
@@ -180,7 +275,9 @@ class LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
   }
 
   Future<void> _openEditSheet(LeaveRecord r) async {
-    final saved = await showModalBottomSheet<bool>(
+    // true = saved; an error object = the request changed on the server
+    // (the sheet closes itself so the list can show what happened).
+    final outcome = await showModalBottomSheet<Object>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
@@ -193,7 +290,12 @@ class LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
       ),
       builder: (_) => _EditLeaveSheet(record: r, api: _api()),
     );
-    if (saved == true) await refresh();
+    if (!mounted) return;
+    if (outcome == true) {
+      await refresh();
+    } else if (outcome != null) {
+      await _showChangedAndReload(outcome);
+    }
   }
 
   @override
@@ -267,7 +369,7 @@ class LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
                                 fontWeight: FontWeight.w600, fontSize: 15)),
                         const SizedBox(height: 4),
                         Text(
-                          '${r.dateFrom ?? ''} → ${r.dateTo ?? ''}  ·  ${r.daysLabel}',
+                          r.summaryLabel,
                           style: TextStyle(
                               fontSize: 13, color: AppTheme.onSurfaceVariant),
                         ),
@@ -305,19 +407,24 @@ class LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
                 const Divider(height: 24),
                 if (r.reason.isNotEmpty)
                   _detailRow('Reason', r.reason),
+                if (r.state == 'refuse' && r.refusalReason.isNotEmpty)
+                  _detailRow('Refusal reason', r.refusalReason),
                 if (r.requiresAllocation &&
                     r.allocationTotal != null) ...[
                   _detailRow(
                     'Allocation',
-                    '${_fmtDays(r.allocationTotal!)} ${r.allocationUnit} total',
+                    '${unitCount(r.allocationTotal!, r.requestUnit)} total',
                   ),
                   _detailRow(
                     'Used',
-                    '${_fmtDays(r.allocationTotal! - (r.allocationRemaining ?? 0))} ${r.allocationUnit}',
+                    unitCount(
+                      r.allocationTotal! - (r.allocationRemaining ?? 0),
+                      r.requestUnit,
+                    ),
                   ),
                   _detailRow(
                     'Remaining',
-                    '${_fmtDays(r.allocationRemaining ?? 0)} ${r.allocationUnit}',
+                    unitCount(r.allocationRemaining ?? 0, r.requestUnit),
                   ),
                   const SizedBox(height: 8),
                   _balanceBar(r),
@@ -412,24 +519,52 @@ class LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
     );
   }
 
+  static const _detailLabelStyle = TextStyle(
+    fontSize: 13,
+    color: AppTheme.onSurfaceVariant,
+    fontWeight: FontWeight.w500,
+  );
+
+  /// Every label the expanded card can show; the label column is as
+  /// wide as the longest one at the current font, so all values line up.
+  static const _detailLabels = [
+    'Reason',
+    'Refusal reason',
+    'Allocation',
+    'Used',
+    'Remaining',
+  ];
+
+  /// Space between a label and its value, always kept (a fixed 110 px
+  /// column let "Refusal reason" run into its value on the Samsung).
+  static const _detailGap = 12.0;
+
   Widget _detailRow(String label, String value) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 90,
-            child: Text(label,
-                style: TextStyle(
-                    fontSize: 13,
-                    color: AppTheme.onSurfaceVariant,
-                    fontWeight: FontWeight.w500)),
-          ),
-          Expanded(
-            child: Text(value, style: const TextStyle(fontSize: 13)),
-          ),
-        ],
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final width = detailLabelColumnWidth(
+            labels: _detailLabels,
+            style: _detailLabelStyle,
+            textScaler: MediaQuery.textScalerOf(context),
+            gap: _detailGap,
+            maxWidth: constraints.maxWidth * 0.45,
+          );
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: width - _detailGap,
+                child: Text(label, style: _detailLabelStyle),
+              ),
+              const SizedBox(width: _detailGap),
+              Expanded(
+                child: Text(value, style: const TextStyle(fontSize: 13)),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -480,7 +615,7 @@ class _CancelLeaveDialogState extends State<_CancelLeaveDialog> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '${r.leaveType}\n${r.dateFrom ?? ''} → ${r.dateTo ?? ''}',
+            '${r.leaveType}\n${r.summaryLabel}',
             style: TextStyle(color: AppTheme.onSurfaceVariant, fontSize: 13),
           ),
           const SizedBox(height: 16),
@@ -857,7 +992,13 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
         ),
       );
     } catch (e) {
-      if (mounted) setState(() => _error = _humanizeError(e));
+      if (!mounted) return;
+      if (isLeaveChangedError(e)) {
+        // Decided or gone while the sheet was open: editing is over.
+        Navigator.of(context).pop(e);
+        return;
+      }
+      setState(() => _error = _humanizeError(e));
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -886,43 +1027,7 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
     required String label,
     required String value,
     required ValueChanged<String> onChanged,
-  }) {
-    return Row(
-      children: [
-        SizedBox(
-          width: 110,
-          child: Text(label,
-              style: TextStyle(
-                  fontSize: 13,
-                  color: AppTheme.onSurfaceVariant,
-                  fontWeight: FontWeight.w500)),
-        ),
-        Expanded(
-          child: SegmentedButton<String>(
-            segments: const [
-              ButtonSegment(
-                value: 'am',
-                label: Text('Morning'),
-                icon: Icon(Icons.wb_sunny_outlined, size: 16),
-              ),
-              ButtonSegment(
-                value: 'pm',
-                label: Text('Afternoon'),
-                icon: Icon(Icons.wb_twilight, size: 16),
-              ),
-            ],
-            selected: {value},
-            onSelectionChanged: (s) => onChanged(s.first),
-            style: ButtonStyle(
-              visualDensity: VisualDensity.compact,
-              textStyle: WidgetStateProperty.all(
-                  const TextStyle(fontSize: 12)),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
+  }) => PeriodSegmentedRow(label: label, value: value, onChanged: onChanged);
 
   Widget _timeBox({
     required String label,

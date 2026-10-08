@@ -1,6 +1,7 @@
 import 'package:intl/intl.dart';
 
 import '../core/datetime_utils.dart';
+import '../core/leave_dates.dart';
 
 /// One row of the approver's Pending or Recent list
 /// (`/leave/approvals/pending` and `/leave/approvals/recent`,
@@ -136,19 +137,12 @@ class ApprovalItem {
   }
 
   /// 'Tue 6 Oct – Wed 7 Oct', 'Tue 6 Oct', 'Tue 6 Oct, 13:30 – 17:30'.
-  String get datesLabel {
-    final from = dateFrom;
-    if (from == null) return '';
-    final f = DateFormat('EEE d MMM');
-    final to = dateTo;
-    if (to != null && !_sameDay(from, to)) {
-      return '${f.format(from)} – ${f.format(to)}';
-    }
-    if (unitHours && hourTo > hourFrom) {
-      return '${f.format(from)}, ${_hm(hourFrom)} – ${_hm(hourTo)}';
-    }
-    return f.format(from);
-  }
+  String get datesLabel => leaveDatesLabel(
+    dateFrom,
+    dateTo,
+    hourFrom: unitHours ? hourFrom : null,
+    hourTo: unitHours ? hourTo : null,
+  );
 
   /// The duration Odoo computed: '2 days (16h)', '1 day (8h)', '4h'.
   /// Falls back to the connector's short label when it sent no numbers.
@@ -169,19 +163,6 @@ class ApprovalItem {
     final dt = DateTimeUtils.parseOdooUtc(decidedAt);
     if (dt == null) return '';
     return 'Decided ${DateFormat('d MMM').format(dt.toLocal())}';
-  }
-
-  static bool _sameDay(DateTime a, DateTime b) =>
-      a.year == b.year && a.month == b.month && a.day == b.day;
-
-  static String _hm(double h) {
-    var hh = h.floor();
-    var mm = ((h - hh) * 60).round();
-    if (mm == 60) {
-      hh += 1;
-      mm = 0;
-    }
-    return '${hh.toString().padLeft(2, '0')}:${mm.toString().padLeft(2, '0')}';
   }
 
   // ---- JSON helpers shared with approval_detail.dart ----

@@ -7,7 +7,8 @@ void main() {
   // plan gate, read as sentences instead of raw codes.
   test('leave history codes read as sentences', () {
     String text(String code) => friendlyError(ApiException(code));
-    const decided = 'This request was already decided. Pull down to refresh.';
+    // M4: the History screen reloads by itself, so no "Pull down".
+    const decided = 'This request was already decided.';
     expect(text('not_cancellable'), decided);
     expect(text('not_modifiable'), decided);
     expect(
@@ -31,6 +32,21 @@ void main() {
 
   test('a raw exception never shows as "Error: ..."', () {
     expect(friendlyError(Exception('not_cancellable')),
-        'This request was already decided. Pull down to refresh.');
+        'This request was already decided.');
+  });
+
+  test('isLeaveChangedError: decided, deleted or changed requests', () {
+    for (final code in [
+      'not_cancellable',
+      'not_modifiable',
+      'not_found',
+      'state_changed',
+    ]) {
+      expect(isLeaveChangedError(ApiException(code)), isTrue, reason: code);
+    }
+    expect(isLeaveChangedError(Exception('not_cancellable')), isTrue);
+    for (final code in ['network_error', 'busy_retry', 'overlap', 'not_owner']) {
+      expect(isLeaveChangedError(ApiException(code)), isFalse, reason: code);
+    }
   });
 }

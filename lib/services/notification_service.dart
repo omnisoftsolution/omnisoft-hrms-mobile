@@ -23,9 +23,10 @@ class NotificationService extends ChangeNotifier {
   // Tracks the most-recent notification id we've already surfaced via
   // a transient snackbar so we don't re-fire on subsequent polls.
   int _maxAnnouncedId = 0;
-  // Set when polling discovers an arrival the user hasn't seen as a
-  // snackbar yet. HomeShell consumes this in its listener.
-  NotificationRecord? _freshArrival;
+  // Every arrival polling discovered that HomeShell has not consumed
+  // yet, newest first. The newest becomes the snackbar; all of them are
+  // checked for leave decisions / approval requests.
+  List<NotificationRecord> _freshArrivals = const [];
   int _pollsSinceStart = 0;
 
   int get unreadCount => _unreadCount;
@@ -33,13 +34,33 @@ class NotificationService extends ChangeNotifier {
   bool get loading => _busy;
   String? get lastError => _lastError;
 
-  /// Returns and clears any pending fresh-arrival notification. Called
-  /// by the host (HomeShell) inside its listener so each arrival is
-  /// shown as a snackbar at most once.
-  NotificationRecord? consumeFreshArrival() {
-    final f = _freshArrival;
-    _freshArrival = null;
+  /// Returns and clears every notification that arrived since the host
+  /// last asked, newest first (empty when none). Called by HomeShell in
+  /// its listener: the first one is shown as a snackbar, and all of them
+  /// count for side effects — a leave decision that arrived together
+  /// with a newer expense update must still reload the leave list.
+  List<NotificationRecord> consumeFreshArrivals() {
+    final f = _freshArrivals;
+    _freshArrivals = const [];
     return f;
+  }
+
+  /// Queue the new arrivals in [items] (the server's list, newest
+  /// first) after the unread count went up by [increase]: the unread
+  /// items newer than anything already queued, at most [increase] of
+  /// them (older unread items were there before this poll). Notifies
+  /// when something was queued.
+  @visibleForTesting
+  void queueArrivals(List<NotificationRecord> items, {required int increase}) {
+    final fresh = <NotificationRecord>[];
+    for (final n in items) {
+      if (fresh.length >= increase) break;
+      if (!n.read && n.id > _maxAnnouncedId) fresh.add(n);
+    }
+    if (fresh.isEmpty) return;
+    _maxAnnouncedId = fresh.first.id;
+    _freshArrivals = [...fresh, ..._freshArrivals];
+    notifyListeners();
   }
 
   OmniMobileApi? _api() {
@@ -64,7 +85,7 @@ class NotificationService extends ChangeNotifier {
     _unreadCount = 0;
     _lastError = null;
     _maxAnnouncedId = 0;
-    _freshArrival = null;
+    _freshArrivals = const [];
     _pollsSinceStart = 0;
     // Intentionally NOT calling notifyListeners() — this method is
     // only invoked from HomeShell.dispose(), at which point Flutter
@@ -85,6 +106,7 @@ class NotificationService extends ChangeNotifier {
       final c = await api.getUnreadNotificationCount();
       _pollsSinceStart++;
       final increased = c > _unreadCount && _pollsSinceStart > 1;
+      final increase = c - _unreadCount;
       if (c != _unreadCount) {
         _unreadCount = c;
         notifyListeners();
@@ -93,19 +115,8 @@ class NotificationService extends ChangeNotifier {
         // Need the actual record(s) for the snackbar title — just-saw
         // a count bump is not enough.
         await refreshList();
-        // First unread in the list is the newest (server orders DESC).
-        NotificationRecord? newest;
-        for (final n in _items) {
-          if (!n.read) {
-            newest = n;
-            break;
-          }
-        }
-        if (newest != null && newest.id > _maxAnnouncedId) {
-          _maxAnnouncedId = newest.id;
-          _freshArrival = newest;
-          notifyListeners();
-        }
+        // The server orders DESC: the first unread items are the new ones.
+        queueArrivals(_items, increase: increase);
       }
     } catch (_) {
       // ignore — keep old count

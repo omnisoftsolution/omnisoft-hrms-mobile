@@ -1,3 +1,5 @@
+import '../core/leave_dates.dart';
+
 class LeaveRecord {
   final int id;
   final int leaveTypeId;
@@ -7,6 +9,10 @@ class LeaveRecord {
   final double numberOfDays;
   final String state;
   final String reason;
+
+  /// Why the leave was refused (`refusal_reason`, connector 2.57.0+);
+  /// '' unless the state is `refuse`, and '' on older connectors.
+  final String refusalReason;
   final double? allocationTotal;
   final double? allocationTaken;
   final double? allocationRemaining;
@@ -31,6 +37,7 @@ class LeaveRecord {
     required this.numberOfDays,
     required this.state,
     this.reason = '',
+    this.refusalReason = '',
     this.allocationTotal,
     this.allocationTaken,
     this.allocationRemaining,
@@ -57,6 +64,7 @@ class LeaveRecord {
       numberOfDays: (json['number_of_days'] ?? 0).toDouble(),
       state: json['state'] ?? '',
       reason: json['reason'] ?? '',
+      refusalReason: _str(json['refusal_reason']),
       allocationTotal: (json['allocation_total'] as num?)?.toDouble(),
       allocationTaken: (json['allocation_taken'] as num?)?.toDouble(),
       allocationRemaining: (json['allocation_remaining'] as num?)?.toDouble(),
@@ -89,7 +97,32 @@ class LeaveRecord {
         : '${n.toStringAsFixed(1)}d';
   }
 
-  String get allocationUnit => requestUnit == 'hour' ? 'hours' : 'days';
+  /// 'Mon 26 Oct', 'Thu 22 Oct – Fri 23 Oct', 'Tue 3 Nov, 14:00 – 17:00'
+  /// (specific hours: `hour_to` > 0), 'Mon 2 Nov (afternoon)' (a
+  /// half-day type, one day, both halves the same). '' without dates.
+  String get datesLabel {
+    final halfSame = requestUnit == 'half_day' &&
+            dateFromPeriod == dateToPeriod
+        ? dateFromPeriod
+        : null;
+    final custom = (hourTo ?? 0) > 0;
+    return leaveDatesLabel(
+      _parseDate(dateFrom),
+      _parseDate(dateTo),
+      hourFrom: custom ? (hourFrom ?? 0) : null,
+      hourTo: custom ? hourTo : null,
+      halfDayPeriod: halfSame,
+    );
+  }
+
+  /// [datesLabel] and the duration: 'Mon 26 Oct · 1d'.
+  String get summaryLabel {
+    final dates = datesLabel;
+    return dates.isEmpty ? daysLabel : '$dates · $daysLabel';
+  }
+
+  /// Odoo serialises an empty Char as `false`: read it as ''.
+  static String _str(dynamic v) => v is String ? v.trim() : '';
 
   static DateTime? _parseDate(dynamic v) {
     if (v is String && v.isNotEmpty) return DateTime.tryParse(v);
@@ -112,8 +145,9 @@ class LeaveRecord {
         return 'Draft';
       case 'confirm':
         return 'Pending';
+      // First approval done, HR still has to approve: not approved yet.
       case 'validate1':
-        return 'Approved (L1)';
+        return 'Waiting for HR';
       case 'validate':
         return 'Approved';
       case 'refuse':

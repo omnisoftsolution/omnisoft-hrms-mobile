@@ -224,9 +224,10 @@ String friendlyError(Object e) {
   }
 
   // --- Leave ---
-  // HR decided the request while the History screen was open.
+  // HR decided the request while the History screen was open. The
+  // screen reloads itself after these (isLeaveChangedError).
   if (raw.contains('not_cancellable') || raw.contains('not_modifiable')) {
-    return 'This request was already decided. Pull down to refresh.';
+    return 'This request was already decided.';
   }
   if (raw.contains('leave_type_not_found')) {
     return 'This leave type is no longer available. Pull down to refresh.';
@@ -267,6 +268,28 @@ String friendlyError(Object e) {
 }
 
 const _genericMessage = 'Something went wrong. Please try again.';
+
+/// `leave/cancel` and `leave/modify` codes that mean the request is no
+/// longer what the History list shows: decided (`not_cancellable`,
+/// `not_modifiable`, both carrying the new `state`), deleted
+/// (`not_found`), or changed under an approval (`state_changed`). The
+/// History screen reloads its list after one of these.
+const _leaveChangedCodes = {
+  'not_cancellable',
+  'not_modifiable',
+  'not_found',
+  'state_changed',
+};
+
+/// True when [e] says the leave changed on the server since the list
+/// was loaded (see [_leaveChangedCodes]). Not a message: the text still
+/// comes from [friendlyError].
+bool isLeaveChangedError(Object e) {
+  final code = e is ApiException
+      ? e.errorCode
+      : e.toString().replaceFirst(RegExp(r'^Exception: '), '').trim();
+  return _leaveChangedCodes.contains(code);
+}
 
 /// Leave-approval codes from `/leave/approvals/*` (and `not_owner` from
 /// `/leave/attachment/get`). Matched on the exact code, so a longer code

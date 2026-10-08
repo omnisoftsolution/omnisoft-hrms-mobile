@@ -60,4 +60,38 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(SnackBarAction), findsNothing);
   });
+
+  NotificationRecord n(String kind, {int id = 1}) =>
+      NotificationRecord(id: id, kind: kind, title: 't', body: '');
+
+  test('a decision on my leave reloads History while it is on screen (M4)', () {
+    for (final kind in [
+      'leave_approved',
+      'leave_refused',
+      'leave_first_approved',
+    ]) {
+      expect(reloadsLeaveHistory([n(kind)], tabIndex: historyTabIndex),
+          isTrue, reason: kind);
+      // Another tab: History reloads when it is opened anyway.
+      expect(reloadsLeaveHistory([n(kind)], tabIndex: 0), isFalse);
+    }
+    expect(
+      reloadsLeaveHistory([n('leave_approval_requested')],
+          tabIndex: historyTabIndex),
+      isFalse,
+    );
+    expect(reloadsLeaveHistory([], tabIndex: historyTabIndex), isFalse);
+  });
+
+  test('a leave decision under a newer expense arrival still reloads', () {
+    // One poll brought both; the expense one is the newest (snackbar).
+    final batch = [n('expense_approved', id: 12), n('leave_refused', id: 11)];
+    expect(reloadsLeaveHistory(batch, tabIndex: historyTabIndex), isTrue);
+    expect(
+      refreshesApprovals([n('expense_approved', id: 12),
+          n('leave_approval_requested', id: 11)]),
+      isTrue,
+    );
+    expect(refreshesApprovals(batch), isFalse);
+  });
 }
