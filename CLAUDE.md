@@ -18,6 +18,8 @@ Android + iOS employee app for Omni HR (version in pubspec.yaml). Backend = Odoo
 - iOS TestFlight: `cd ios && fastlane beta` (`archive_only` = IPA, no upload). Bump pubspec version FIRST
   (prebuild regenerates Generated.xcconfig; stale = ships v<N-1>). ASC .p8 key lives in ~/Keys/ (outside repo).
   Prebuild runs tools/patch_tflite_pod.sh (pins TFLite 2.17.0 for spoof models; idempotent).
+  Run it with a UTF-8 locale: `LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 fastlane beta` — without it
+  build_app crashes decoding Xcode output (`"Cr" on UTF-16`, FastlanePtyError), seen 2026-10-08.
 - Android Play internal: `cd android && fastlane build_and_internal`; then `promote_to_alpha` / `promote_to_prod`.
   Tester notes: android/fastlane/metadata/android/<lang>/changelogs/default.txt (edit per release).
 - Signing: android/key.properties (gitignored) points at a keystore OUTSIDE the repo; absent → debug-keystore
