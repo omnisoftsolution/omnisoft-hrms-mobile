@@ -110,6 +110,17 @@ String formatHoursToday(double hours) {
   return '${minutes ~/ 60}h ${(minutes % 60).toString().padLeft(2, '0')}m';
 }
 
+/// The Home tab's title (Willy, 2026-10-08): "Hello, Ethan" — the first
+/// word of the employee name, else of the user name, else the login (the
+/// 1.28 greeting's fallback order); just "Hello" with none of them.
+String helloTitle(String employeeName, String userName, String userLogin) {
+  for (final name in [employeeName, userName, userLogin]) {
+    final first = name.trim().split(RegExp(r'\s+')).first;
+    if (first.isNotEmpty) return 'Hello, $first';
+  }
+  return 'Hello';
+}
+
 /// 17 -> "17 min"; 65 -> "1h 05m".
 String minutesLabel(int minutes) {
   if (minutes < 60) return '$minutes min';

@@ -645,8 +645,17 @@ class MyDayScreenState extends State<MyDayScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final session = context.watch<SessionService>();
     return Scaffold(
-      appBar: widget.appBar ?? const OmniAppBar(title: 'My day'),
+      appBar:
+          widget.appBar ??
+          OmniAppBar(
+            title: helloTitle(
+              session.employeeName,
+              session.userName,
+              session.userLogin,
+            ),
+          ),
       body: _body(context),
     );
   }

@@ -244,4 +244,11 @@ void main() {
     expect(minutesLabel(17), '17 min');
     expect(minutesLabel(65), '1h 05m');
   });
+
+  test('helloTitle greets by first name, falling back to the login', () {
+    expect(helloTitle('Ethan Smith', 'Ethan S', 'ethan@x.co'), 'Hello, Ethan');
+    expect(helloTitle('', 'Chai Yeo', 'chai'), 'Hello, Chai');
+    expect(helloTitle('  ', '', 'chai@x.co'), 'Hello, chai@x.co');
+    expect(helloTitle('', '', ''), 'Hello');
+  });
 }
