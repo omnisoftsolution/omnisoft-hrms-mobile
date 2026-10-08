@@ -113,25 +113,42 @@ class LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
   /// spinner) and keeps them on a failure: used when the app, not the
   /// user, asks for fresh data — a leave notification arrived, or a
   /// cancel / edit found the request already decided.
+  ///
+  /// Reloads can overlap (tab switch, pull-down, a notification, a
+  /// failed cancel): only the answer to the latest request is used, so a
+  /// slow older answer (still Pending) never replaces a newer one
+  /// (Approved) and brings back stale Edit / Cancel buttons.
   Future<void> refresh({bool quiet = false}) async {
+    final seq = ++_requestSeq;
     if (!quiet || _error != null) {
       setState(() {
         _loading = true;
         _error = null;
       });
     }
+    List<LeaveRecord>? leaves;
+    Object? error;
     try {
-      _leaves = await _api().getLeaveHistory();
+      leaves = await _api().getLeaveHistory();
     } catch (e) {
-      if (quiet && !_loading) {
-        debugPrint('leave/history quiet reload failed: $e');
-      } else {
-        _error = friendlyError(e);
-      }
-    } finally {
-      if (mounted) setState(() => _loading = false);
+      error = e;
     }
+    if (!mounted || seq != _requestSeq) return; // superseded
+    setState(() {
+      if (leaves != null) {
+        _leaves = leaves;
+      } else if (quiet && !_loading) {
+        debugPrint('leave/history quiet reload failed: $error');
+      } else {
+        _error = friendlyError(error!);
+      }
+      _loading = false;
+    });
   }
+
+  // Bumped by every refresh(); an answer is applied only while its
+  // number is still the latest.
+  int _requestSeq = 0;
 
   /// The request changed on the server (decided, cancelled, deleted)
   /// since the list was loaded: say so and reload, so the card's state

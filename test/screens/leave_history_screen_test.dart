@@ -9,6 +9,7 @@ import 'package:omni_hr/screens/leave_history/leave_history_screen.dart';
 import 'package:omni_hr/services/holiday_service.dart';
 import 'package:omni_hr/services/omni_mobile_api.dart';
 import 'package:omni_hr/services/session_service.dart';
+import 'package:omni_hr/widgets/error_state_view.dart';
 
 LeaveRecord leave(Map<String, dynamic> extra) => LeaveRecord.fromJson({
   'id': 1,
@@ -72,6 +73,19 @@ class FakeApi extends OmniMobileApi {
     if (cancelError != null) throw cancelError!;
     cancelled.add(leaveId);
     return {'success': true};
+  }
+}
+
+/// The second getLeaveHistory call (after its gate) fails.
+class _FailingFirstReload extends FakeApi {
+  _FailingFirstReload(super.pages);
+
+  @override
+  Future<List<LeaveRecord>> getLeaveHistory() async {
+    final call = historyCalls;
+    final page = await super.getLeaveHistory();
+    if (call == 1) throw ApiException('network_error');
+    return page;
   }
 }
 
@@ -246,6 +260,68 @@ void main() {
       gate.complete();
       await tester.pumpAndSettle();
       expect(find.text('Approved'), findsOneWidget);
+    });
+
+    testWidgets('an older reload finishing last does not undo a newer one', (
+      tester,
+    ) async {
+      final key = GlobalKey<LeaveHistoryScreenState>();
+      final api = FakeApi([
+        [pending], // first load
+        [pending], // slow reload A (asked before the decision)
+        [approved], // reload B (after the leave_approved notification)
+      ]);
+      await tester.pumpWidget(host(api, key: key));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Annual Leave'));
+      await tester.pumpAndSettle();
+
+      final gateA = Completer<void>();
+      api.gate = gateA;
+      final a = key.currentState!.refresh(quiet: true);
+      final gateB = Completer<void>();
+      api.gate = gateB;
+      final b = key.currentState!.refresh(quiet: true);
+
+      gateB.complete();
+      await b;
+      await tester.pumpAndSettle();
+      expect(find.text('Approved'), findsOneWidget);
+
+      gateA.complete(); // the stale answer arrives last
+      await a;
+      await tester.pumpAndSettle();
+      expect(find.text('Approved'), findsOneWidget);
+      expect(find.text('Pending'), findsNothing);
+      expect(find.text('Cancel'), findsNothing);
+      expect(find.text('Edit'), findsNothing);
+    });
+
+    testWidgets('an older failure after a newer success shows no error', (
+      tester,
+    ) async {
+      final key = GlobalKey<LeaveHistoryScreenState>();
+      final api = _FailingFirstReload([
+        [pending],
+        [pending],
+        [approved],
+      ]);
+      await tester.pumpWidget(host(api, key: key));
+      await tester.pumpAndSettle();
+
+      final gateA = Completer<void>();
+      api.gate = gateA;
+      final a = key.currentState!.refresh(); // loud: errors would show
+      final gateB = Completer<void>();
+      api.gate = gateB;
+      final b = key.currentState!.refresh();
+      gateB.complete();
+      await b;
+      gateA.complete();
+      await a;
+      await tester.pumpAndSettle();
+      expect(find.text('Approved'), findsOneWidget);
+      expect(find.byType(ErrorStateView), findsNothing);
     });
 
     testWidgets('another error keeps the old message path, no reload', (
