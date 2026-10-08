@@ -22,6 +22,13 @@ void main() {
     expect(text('invalid_period'), 'Pick a valid half of the day.');
   });
 
+  test('a concurrent update asks to try again (V-6)', () {
+    expect(
+      friendlyError(ApiException('busy_retry')),
+      'Someone else is updating this request. Try again.',
+    );
+  });
+
   test('a raw exception never shows as "Error: ..."', () {
     expect(friendlyError(Exception('not_cancellable')),
         'This request was already decided. Pull down to refresh.');

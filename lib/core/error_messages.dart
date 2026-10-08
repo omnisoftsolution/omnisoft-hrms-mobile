@@ -213,6 +213,11 @@ String friendlyError(Object e) {
     return "That file couldn't be attached. Try another file.";
   }
 
+  // --- Two requests changed the same record at once (connector 2.56.3) ---
+  if (raw.contains('busy_retry')) {
+    return 'Someone else is updating this request. Try again.';
+  }
+
   // --- Plan gate ---
   if (raw.contains('feature_unavailable')) {
     return "This feature isn't included in your company's plan. Ask HR.";
