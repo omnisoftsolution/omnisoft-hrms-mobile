@@ -349,3 +349,24 @@ Spec + plan live in the connector repo:
 - Seams: `MyDayScreen.captureFace` (punch without the page, the older tests) and
   `MyDayScreen.signatureCaptureBuilder` / `CheckInOutScreen.captureBuilder` (fake camera).
   Tests: `test/screens/my_day/check_in_out_screen_test.dart` + one My day test.
+
+### 1.31.0 — leave e2e fixes (connector 2.57.0 adds two keys; both optional)
+- `leave/apply` → `approver` ('' = approved on creation): the receipt's Approver row uses it
+  (`receiptApprover` in leave_screen.dart); no key (older connector) = /me's Time Off approver.
+- `leave/history` items → `refusal_reason`: "Refusal reason" row on a refused card.
+- `validate1` reads "Waiting for HR" in the Pending colour (History chip, For-you).
+- Dates everywhere go through `leaveDatesLabel` (lib/core/leave_dates.dart; approvals cards and
+  `LeaveRecord.summaryLabel`); amounts through `unitCount` ("1 day", "3 hours", core/leave_units.dart).
+- History reloads itself: `isLeaveChangedError` (error_messages.dart: not_cancellable /
+  not_modifiable / not_found / state_changed) after cancel/edit; `refresh(quiet: true)` keeps the
+  cards; leave notifications while the History tab shows (`reloadsLeaveHistory`) and the Leave
+  segment switch reload too.
+- `/login` has no `leave_approvals` block: `SessionService.refreshMeIfStale()` (30 s) runs on every
+  Leave tab open, and My day re-pulls /me whenever its approvals card count differs from the session.
+- Half-day Morning/Afternoon: `PeriodSegmentedRow` (lib/widgets/) shared by apply + edit sheets.
+  Range picker draws its own month header ("Previous month" / "Next month" tooltips) and sizes the
+  weekday row from the text scale.
+- Seams: `LeaveScreen(apiBuilder, appBar)`, `LeaveHistoryScreen(apiBuilder)`,
+  `SessionService.clock`. Tests: `test/screens/leave_screen_test.dart`,
+  `test/screens/leave_history_screen_test.dart`, `test/widgets/{period_segmented_row,range_picker_dialog}_test.dart`,
+  `test/core/leave_dates_test.dart`.
