@@ -27,9 +27,13 @@ Future<TimeOfDay?> pickDeclarationTime(
 
 /// Opens the "Forgot something?" sheet on the root navigator: it covers
 /// the bottom bar, like face capture. [day] is the local calendar day the
-/// picked times belong to. Returns the answer, or null on Skip / dismiss.
+/// picked times belong to. [heading] is the small teal line above the
+/// question: "Forgot something?" for the check-in prompts and the
+/// Yesterday card, "Question from HR" for HR's question (APP-4).
+/// Returns the answer, or null on Skip / dismiss.
 Future<DeclarationAnswer?> showDeclarationSheet(
   BuildContext context, {
+  String heading = 'Forgot something?',
   required String title,
   required List<AskOption> options,
   required DateTime day,
@@ -41,6 +45,7 @@ Future<DeclarationAnswer?> showDeclarationSheet(
   isScrollControlled: true,
   showDragHandle: true,
   builder: (_) => DeclarationSheet(
+    heading: heading,
     title: title,
     options: options,
     day: day,
@@ -54,6 +59,7 @@ Future<DeclarationAnswer?> showDeclarationSheet(
 class DeclarationSheet extends StatefulWidget {
   const DeclarationSheet({
     super.key,
+    this.heading = 'Forgot something?',
     required this.title,
     required this.options,
     required this.day,
@@ -61,6 +67,7 @@ class DeclarationSheet extends StatefulWidget {
     this.pickTime,
   });
 
+  final String heading;
   final String title;
   final List<AskOption> options;
   final DateTime day;
@@ -147,7 +154,7 @@ class _DeclarationSheetState extends State<DeclarationSheet> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                'Forgot something?',
+                widget.heading,
                 style: text.labelLarge?.copyWith(
                   color: AppTheme.primary,
                   fontWeight: FontWeight.w700,

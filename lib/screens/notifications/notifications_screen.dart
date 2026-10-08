@@ -112,6 +112,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     final question = n.payload['question'];
     final answer = await showDeclarationSheet(
       context,
+      heading: 'Question from HR',
       title: question is String && question.isNotEmpty ? question : n.title,
       // Connector 2.55.0: a question about the employee's own declaration
       // suggests the declared time for "No, the right time is".

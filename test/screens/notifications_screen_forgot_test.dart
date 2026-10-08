@@ -146,6 +146,15 @@ void main() {
         findsOneWidget,
       );
       expect(svc.marked, isEmpty);
+      // APP-4: HR's question is headed as one, not "Forgot something?".
+      expect(
+        find.descendant(
+          of: find.byType(DeclarationSheet),
+          matching: find.text('Question from HR'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Forgot something?'), findsNothing);
       await tester.tap(find.byKey(const ValueKey('declaration-option-early')));
       await tester.pump();
       await tester.enterText(
