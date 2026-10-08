@@ -225,6 +225,27 @@ void main() {
     expect(find.byType(DeclarationSheet), findsNothing);
     expect(svc.marked, [21]);
     expect(answers, isEmpty);
+    // APP-5: the tap says why nothing opens.
+    expect(find.text('You already answered this question.'), findsOneWidget);
+  });
+
+  testWidgets('an answered question is labelled Answered on its card', (
+    tester,
+  ) async {
+    await tester.pumpWidget(host(_FakeNotifications([_query(answered: true)])));
+    await tester.pumpAndSettle();
+    expect(find.text('Answered'), findsOneWidget);
+  });
+
+  testWidgets('an open question has no Answered label and no snackbar', (
+    tester,
+  ) async {
+    await tester.pumpWidget(host(_FakeNotifications([_query()])));
+    await tester.pumpAndSettle();
+    expect(find.text('Answered'), findsNothing);
+    await tester.tap(find.text('HR has a question about 2026-10-06'));
+    await tester.pumpAndSettle();
+    expect(find.text('You already answered this question.'), findsNothing);
   });
 
   testWidgets('"HR updated your attendance" renders and opens My day', (

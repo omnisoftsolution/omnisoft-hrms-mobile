@@ -74,8 +74,18 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       await _answer(n, svc);
       return;
     }
+    final messenger = ScaffoldMessenger.of(context);
     if (!n.read) await svc.markRead(n.id);
     if (!mounted) return;
+    // APP-5: one answer only — say so instead of a tap that does nothing.
+    if (n.isAttendanceQuery && n.answered) {
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(content: Text('You already answered this question.')),
+        );
+      return;
+    }
     if (n.isDeclarationApplied) {
       widget.onMyDayTap?.call();
       return;
@@ -276,6 +286,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     };
     final created = n.createDate;
     final timeLabel = created != null ? _relativeTime(created) : '';
+    // APP-5: an answered HR question says so next to the time.
+    final answered = n.isAttendanceQuery && n.answered;
+    final meta = GoogleFonts.inter(fontSize: 11, color: AppTheme.outline);
 
     return Material(
       color: Colors.white,
@@ -350,14 +363,27 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                         ),
                       ),
                     ],
-                    if (timeLabel.isNotEmpty) ...[
+                    if (timeLabel.isNotEmpty || answered) ...[
                       const SizedBox(height: 8),
-                      Text(
-                        timeLabel,
-                        style: GoogleFonts.inter(
-                          fontSize: 11,
-                          color: AppTheme.outline,
-                        ),
+                      Row(
+                        children: [
+                          if (timeLabel.isNotEmpty)
+                            Text(timeLabel, style: meta),
+                          if (timeLabel.isNotEmpty && answered)
+                            Text('  ·  ', style: meta),
+                          if (answered) ...[
+                            Icon(
+                              Icons.check_circle_outline,
+                              size: 12,
+                              color: AppTheme.outline,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Answered',
+                              style: meta.copyWith(fontWeight: FontWeight.w600),
+                            ),
+                          ],
+                        ],
                       ),
                     ],
                   ],
