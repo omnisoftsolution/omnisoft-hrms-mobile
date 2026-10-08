@@ -18,6 +18,14 @@ const double kFallbackHoursPerDay = 8.0;
 String _fmt(double n) =>
     n == n.roundToDouble() ? n.toInt().toString() : n.toStringAsFixed(1);
 
+/// An amount in a leave type's unit, pluralised: "1 day", "2 days",
+/// "0.5 days", "1 hour", "3 hours". [requestUnit] 'hour' counts hours,
+/// anything else ('day', 'half_day') counts days.
+String unitCount(double n, String requestUnit) {
+  final noun = requestUnit == 'hour' ? 'hour' : 'day';
+  return '${_fmt(n)} ${_fmt(n) == '1' ? noun : '${noun}s'}';
+}
+
 /// "112h (14d)" / "112 hours (14 days)" for hour-unit types;
 /// "6d" / "6 days" for day-unit types.
 String balanceAmountLabel(
@@ -30,12 +38,11 @@ String balanceAmountLabel(
     final hpd = (hoursPerDay != null && hoursPerDay > 0)
         ? hoursPerDay
         : kFallbackHoursPerDay;
-    final days = _fmt(n / hpd);
     return longForm
-        ? '${_fmt(n)} hours ($days days)'
-        : '${_fmt(n)}h (${days}d)';
+        ? '${unitCount(n, 'hour')} (${unitCount(n / hpd, 'day')})'
+        : '${_fmt(n)}h (${_fmt(n / hpd)}d)';
   }
-  return longForm ? '${_fmt(n)} days' : '${_fmt(n)}d';
+  return longForm ? unitCount(n, 'day') : '${_fmt(n)}d';
 }
 
 /// Compact duration label for a full-day range on an hour-unit type,

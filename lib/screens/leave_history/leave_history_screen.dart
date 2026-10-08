@@ -34,7 +34,10 @@ Color leaveStateColor(String state) {
 }
 
 class LeaveHistoryScreen extends StatefulWidget {
-  const LeaveHistoryScreen({super.key});
+  const LeaveHistoryScreen({super.key, this.apiBuilder});
+
+  /// Test seam: swaps in a fake API (fake-subclass pattern).
+  final OmniMobileApi Function(SessionService session)? apiBuilder;
 
   @override
   State<LeaveHistoryScreen> createState() => LeaveHistoryScreenState();
@@ -111,13 +114,7 @@ class LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
       _error = null;
     });
     try {
-      final session = context.read<SessionService>();
-      final api = OmniMobileApi(
-        baseUrl: session.clientUrl,
-        db: session.clientDb,
-        token: session.token,
-      );
-      _leaves = await api.getLeaveHistory();
+      _leaves = await _api().getLeaveHistory();
     } catch (e) {
       _error = friendlyError(e);
     } finally {
@@ -125,13 +122,12 @@ class LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
     }
   }
 
-  String _fmtDays(double n) =>
-      n == n.roundToDouble() ? n.toInt().toString() : n.toStringAsFixed(1);
-
   Color _stateColor(String state) => leaveStateColor(state);
 
   OmniMobileApi _api() {
     final s = context.read<SessionService>();
+    final custom = widget.apiBuilder;
+    if (custom != null) return custom(s);
     return OmniMobileApi(
       baseUrl: s.clientUrl,
       db: s.clientDb,
@@ -312,15 +308,18 @@ class LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
                     r.allocationTotal != null) ...[
                   _detailRow(
                     'Allocation',
-                    '${_fmtDays(r.allocationTotal!)} ${r.allocationUnit} total',
+                    '${unitCount(r.allocationTotal!, r.requestUnit)} total',
                   ),
                   _detailRow(
                     'Used',
-                    '${_fmtDays(r.allocationTotal! - (r.allocationRemaining ?? 0))} ${r.allocationUnit}',
+                    unitCount(
+                      r.allocationTotal! - (r.allocationRemaining ?? 0),
+                      r.requestUnit,
+                    ),
                   ),
                   _detailRow(
                     'Remaining',
-                    '${_fmtDays(r.allocationRemaining ?? 0)} ${r.allocationUnit}',
+                    unitCount(r.allocationRemaining ?? 0, r.requestUnit),
                   ),
                   const SizedBox(height: 8),
                   _balanceBar(r),

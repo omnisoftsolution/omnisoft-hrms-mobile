@@ -89,8 +89,6 @@ class LeaveRecord {
         : '${n.toStringAsFixed(1)}d';
   }
 
-  String get allocationUnit => requestUnit == 'hour' ? 'hours' : 'days';
-
   static DateTime? _parseDate(dynamic v) {
     if (v is String && v.isNotEmpty) return DateTime.tryParse(v);
     return null;

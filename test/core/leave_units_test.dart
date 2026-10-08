@@ -20,11 +20,31 @@ void main() {
           '112h (14d)');
     });
 
+    test('long form pluralises one day / one hour correctly', () {
+      expect(balanceAmountLabel(1.0, 'day', 8.0, longForm: true), '1 day');
+      expect(balanceAmountLabel(8.0, 'hour', 8.0, longForm: true),
+          '8 hours (1 day)');
+      expect(balanceAmountLabel(1.0, 'hour', 8.0, longForm: true),
+          '1 hour (0.1 days)');
+    });
+
     test('day unit: unchanged, no equivalent', () {
       expect(balanceAmountLabel(6.0, 'day', 8.0, longForm: false), '6d');
       expect(balanceAmountLabel(6.0, 'day', 8.0, longForm: true), '6 days');
       expect(balanceAmountLabel(2.5, 'half_day', 8.0, longForm: false),
           '2.5d');
+    });
+  });
+
+  group('unitCount', () {
+    test('singular only for exactly one', () {
+      expect(unitCount(1, 'day'), '1 day');
+      expect(unitCount(2, 'day'), '2 days');
+      expect(unitCount(0.5, 'half_day'), '0.5 days');
+      expect(unitCount(0, 'day'), '0 days');
+      expect(unitCount(1, 'hour'), '1 hour');
+      expect(unitCount(3, 'hour'), '3 hours');
+      expect(unitCount(2.5, 'hour'), '2.5 hours');
     });
   });
 
