@@ -4,35 +4,41 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 
+import '../../../core/error_messages.dart';
 import '../../../core/theme.dart';
 import '../../../models/face_capture_result.dart';
 import '../../../services/attendance_action_controller.dart';
 import '../../../widgets/big_check_button.dart';
 import '../../../widgets/silent_face_capture.dart';
 
-/// What [CheckInOutScreen] pops: the punch outcome (null = nothing
-/// happened, e.g. a cancelled capture) or the error the run threw.
+/// What [CheckInOutScreen] pops: the punch outcome, or null when nothing
+/// happened (a cancelled capture) or the page already showed why it
+/// failed.
 class CheckInOutResult {
-  const CheckInOutResult({this.outcome, this.error});
+  const CheckInOutResult({this.outcome});
 
   final AttendanceActionOutcome? outcome;
-  final Object? error;
 }
 
-/// The signature check-in / check-out page (1.30.1). My day's tile button
-/// opens it on the root navigator; it starts the punch by itself: the
-/// pulsing circle (`BigCheckButton`) while the location and Wi-Fi gates
-/// run, the circular 3-2-1 camera (`InlineFaceCapture`) for the face, the
-/// scanning circle while the punch is sent, then a short green tick. It
-/// pops a [CheckInOutResult]; My day shows the snackbar, UNDO and any
-/// question afterwards.
+/// The signature check-in / check-out page (1.30.1, layout C chosen on
+/// 2026-10-08). My day's tile button opens it on the root navigator and it
+/// runs by itself: a header (who, shift, time, late note), the pulsing
+/// circle (`BigCheckButton`) while the location and Wi-Fi gates run, the
+/// circular 3-2-1 camera (`InlineFaceCapture`), the scanning circle while
+/// the punch is sent, then a green tick. Below the circle a checklist
+/// ticks each step as [AttendanceActionController.perform] reports it; a
+/// failed step turns red with the reason and a Close button. On success
+/// it pops the outcome so My day shows the snackbar, UNDO and any question.
 class CheckInOutScreen extends StatefulWidget {
   const CheckInOutScreen({
     super.key,
     required this.checkingOut,
     required this.run,
+    this.employeeName = '',
     this.shiftLabel = '',
-    this.placeLabel = '',
+    this.headerNote = '',
+    this.hoursToday = '',
+    this.lastLabel = '',
     this.faceEnabled = true,
     this.geoEnabled = true,
     this.captureBuilder,
@@ -43,18 +49,27 @@ class CheckInOutScreen extends StatefulWidget {
   /// True when the punch is a check-out (labels only).
   final bool checkingOut;
 
-  /// The punch (`AttendanceActionController.perform`); it calls the
-  /// given capture when it needs the face.
+  /// The punch (`AttendanceActionController.perform`): it calls the given
+  /// capture when it needs the face and reports each checklist step.
   final Future<AttendanceActionOutcome?> Function(
     Future<FaceCaptureResult> Function() captureFace,
+    PunchStepCallback onStep,
   )
   run;
+
+  final String employeeName;
 
   /// "08:00 – 17:00", or '' when the day has no shift.
   final String shiftLabel;
 
-  /// The live place line ("At the office · 24 m"), or ''.
-  final String placeLabel;
+  /// Amber note under the clock ("1h 53m late"), or ''.
+  final String headerNote;
+
+  /// "0h 00m"; the footer line is hidden when ''.
+  final String hoursToday;
+
+  /// "Last out 18:25", or ''.
+  final String lastLabel;
   final bool faceEnabled;
   final bool geoEnabled;
 
@@ -73,13 +88,19 @@ class CheckInOutScreen extends StatefulWidget {
   State<CheckInOutScreen> createState() => _CheckInOutScreenState();
 }
 
-enum _Phase { preparing, capturing, checking, done }
+enum _Phase { preparing, capturing, checking, done, failed }
+
+enum _Row { pending, running, done, skipped, failed }
 
 class _CheckInOutScreenState extends State<CheckInOutScreen> {
   _Phase _phase = _Phase.preparing;
   final Stopwatch _shown = Stopwatch()..start();
   Completer<FaceCaptureResult>? _capture;
-  String _doneLabel = '';
+  final Map<PunchStep, _Row> _rows = {
+    for (final s in PunchStep.values) s: _Row.pending,
+  };
+  final Map<PunchStep, String> _details = {};
+  String _doneAt = '';
   bool _closed = false;
 
   @override
@@ -89,28 +110,70 @@ class _CheckInOutScreenState extends State<CheckInOutScreen> {
   }
 
   Future<void> _start() async {
+    final AttendanceActionOutcome? outcome;
     try {
-      final outcome = await widget.run(_captureFace);
-      if (!mounted) return;
-      if (outcome != null && outcome.ok) {
-        setState(() {
-          _phase = _Phase.done;
-          final at = DateFormat('HH:mm').format(DateTime.now());
-          _doneLabel = outcome.checkedIn ? 'Checked in $at' : 'Checked out $at';
-        });
-        await Future<void>.delayed(widget.successHold);
-      }
-      _close(CheckInOutResult(outcome: outcome));
+      outcome = await widget.run(_captureFace, _onStep);
     } catch (e) {
-      _close(CheckInOutResult(error: e));
+      _fail(friendlyError(e));
+      return;
     }
+    if (!mounted) return;
+    final error = outcome?.error;
+    if (error != null) {
+      _fail(error);
+      return;
+    }
+    if (outcome == null || !outcome.ok) {
+      _close(CheckInOutResult(outcome: outcome));
+      return;
+    }
+    setState(() {
+      _phase = _Phase.done;
+      _doneAt = DateFormat('HH:mm').format(DateTime.now());
+      _rows[PunchStep.record] = _Row.done;
+    });
+    await Future<void>.delayed(widget.successHold);
+    _close(CheckInOutResult(outcome: outcome));
+  }
+
+  void _onStep(PunchStep step, PunchStepState state, String detail) {
+    if (!mounted) return;
+    setState(() {
+      _rows[step] = switch (state) {
+        PunchStepState.running => _Row.running,
+        PunchStepState.done => _Row.done,
+        PunchStepState.skipped => _Row.skipped,
+      };
+      _details[step] = detail;
+      if (step == PunchStep.record && state == PunchStepState.running) {
+        _phase = _Phase.checking;
+      }
+    });
+  }
+
+  /// The running step (else the first unfinished one) turns red.
+  void _fail(String message) {
+    if (!mounted) return;
+    final steps = PunchStep.values;
+    final at = steps.firstWhere(
+      (s) => _rows[s] == _Row.running,
+      orElse: () => steps.firstWhere(
+        (s) => _rows[s] == _Row.pending,
+        orElse: () => PunchStep.record,
+      ),
+    );
+    setState(() {
+      _phase = _Phase.failed;
+      _rows[at] = _Row.failed;
+      _details[at] = message;
+    });
   }
 
   Future<FaceCaptureResult> _captureFace() async {
     final left = widget.minPulse - _shown.elapsed;
     if (left > Duration.zero) await Future<void>.delayed(left);
-    final completer = Completer<FaceCaptureResult>();
     if (!mounted) return FaceCaptureResult.cancelled();
+    final completer = Completer<FaceCaptureResult>();
     setState(() {
       _capture = completer;
       _phase = _Phase.capturing;
@@ -141,14 +204,17 @@ class _CheckInOutScreenState extends State<CheckInOutScreen> {
             ? build(_onCaptured)
             : InlineFaceCapture(onResult: _onCaptured);
       case _Phase.done:
-        return _DoneCircle(label: _doneLabel);
+        return _DoneCircle(label: _doneTitle);
       case _Phase.preparing:
       case _Phase.checking:
+      case _Phase.failed:
         return BigCheckButton(
           checkedIn: widget.checkingOut,
-          state: _phase == _Phase.checking
-              ? CheckButtonState.scanning
-              : CheckButtonState.ready,
+          state: switch (_phase) {
+            _Phase.checking => CheckButtonState.scanning,
+            _Phase.failed => CheckButtonState.disabled,
+            _ => CheckButtonState.ready,
+          },
           onPressed: null,
           faceEnabled: widget.faceEnabled,
           geoEnabled: widget.geoEnabled,
@@ -156,56 +222,334 @@ class _CheckInOutScreenState extends State<CheckInOutScreen> {
     }
   }
 
+  String get _doneTitle =>
+      '${widget.checkingOut ? 'Checked out' : 'Checked in'} $_doneAt';
+
+  String _title(PunchStep step) => switch (step) {
+    PunchStep.location => 'Location',
+    PunchStep.wifi => 'Office Wi-Fi',
+    PunchStep.face => 'Face',
+    PunchStep.record =>
+      _rows[step] == _Row.done
+          ? _doneTitle
+          : (widget.checkingOut
+                ? 'Record the check-out'
+                : 'Record the check-in'),
+  };
+
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
-    final muted = TextStyle(fontSize: 14, color: AppTheme.onSurfaceVariant);
-    // The punch is in flight: the camera's ✕ is the only way out.
+    final failed = _phase == _Phase.failed;
+    final muted = TextStyle(fontSize: 13, color: AppTheme.onSurfaceVariant);
+    // While the punch runs the camera's ✕ is the only way out.
     return PopScope(
-      canPop: false,
+      canPop: failed,
       child: Scaffold(
         backgroundColor: AppTheme.surface,
         body: SafeArea(
-          child: Column(
-            children: [
-              const SizedBox(height: 32),
-              Text(DateFormat('EEE d MMM').format(now), style: muted),
-              const SizedBox(height: 4),
-              Text(
-                DateFormat('HH:mm').format(now),
-                style: GoogleFonts.inter(
-                  fontSize: 40,
-                  fontWeight: FontWeight.w700,
-                  color: AppTheme.onSurface,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _Header(
+                  name: widget.employeeName,
+                  subtitle: [
+                    DateFormat('EEE d MMM').format(now),
+                    if (widget.shiftLabel.isNotEmpty)
+                      'Shift ${widget.shiftLabel}',
+                  ].join(' · '),
+                  time: DateFormat('HH:mm').format(now),
+                  note: widget.headerNote,
                 ),
-              ),
-              if (widget.shiftLabel.isNotEmpty) ...[
-                const SizedBox(height: 4),
-                Text('Shift ${widget.shiftLabel}', style: muted),
-              ],
-              const Spacer(),
-              _circle(),
-              const Spacer(),
-              if (widget.placeLabel.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                Expanded(
+                  child: Center(
+                    child: FittedBox(fit: BoxFit.scaleDown, child: _circle()),
+                  ),
+                ),
+                _Card(
+                  child: Column(
                     children: [
-                      Icon(
-                        Icons.location_on_outlined,
-                        size: 18,
-                        color: AppTheme.onSurfaceVariant,
-                      ),
-                      const SizedBox(width: 6),
-                      Flexible(child: Text(widget.placeLabel, style: muted)),
+                      for (final s in PunchStep.values)
+                        _StepRow(
+                          key: ValueKey('step-${s.name}-${_rows[s]!.name}'),
+                          title: _title(s),
+                          detail: _details[s] ?? 'Waiting',
+                          row: _rows[s]!,
+                          last: s == PunchStep.record,
+                        ),
                     ],
                   ),
                 ),
-              const SizedBox(height: 48),
+                if (widget.hoursToday.isNotEmpty ||
+                    widget.lastLabel.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Row(
+                      children: [
+                        if (widget.hoursToday.isNotEmpty)
+                          Text(
+                            'Hours today ${widget.hoursToday}',
+                            style: muted,
+                          ),
+                        const Spacer(),
+                        if (widget.lastLabel.isNotEmpty)
+                          Text(widget.lastLabel, style: muted),
+                      ],
+                    ),
+                  ),
+                ],
+                if (failed) ...[
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    height: 52,
+                    child: FilledButton(
+                      onPressed: () => _close(const CheckInOutResult()),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppTheme.primary,
+                        shape: const StadiumBorder(),
+                      ),
+                      child: const Text(
+                        'Close',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _Card extends StatelessWidget {
+  const _Card({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+    decoration: BoxDecoration(
+      color: AppTheme.surfaceContainerLowest,
+      borderRadius: BorderRadius.circular(24),
+      boxShadow: const [
+        BoxShadow(
+          color: Color(0x0D191C1E),
+          blurRadius: 20,
+          offset: Offset(0, 4),
+        ),
+      ],
+    ),
+    child: child,
+  );
+}
+
+/// Who, which day and shift, the clock and the late note.
+class _Header extends StatelessWidget {
+  const _Header({
+    required this.name,
+    required this.subtitle,
+    required this.time,
+    required this.note,
+  });
+
+  final String name;
+  final String subtitle;
+  final String time;
+  final String note;
+
+  String get _initials {
+    final parts = name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty);
+    return parts.take(2).map((p) => p[0].toUpperCase()).join();
+  }
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+    decoration: BoxDecoration(
+      color: AppTheme.surfaceContainerLowest,
+      borderRadius: BorderRadius.circular(24),
+      boxShadow: const [
+        BoxShadow(
+          color: Color(0x0D191C1E),
+          blurRadius: 20,
+          offset: Offset(0, 4),
+        ),
+      ],
+    ),
+    child: Row(
+      children: [
+        CircleAvatar(
+          radius: 22,
+          backgroundColor: const Color(0xFFDCEFF1),
+          child: Text(
+            _initials,
+            style: const TextStyle(
+              color: Color(0xFF004F55),
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              Text(
+                subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: AppTheme.onSurfaceVariant,
+                ),
+              ),
             ],
           ),
         ),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(
+              time,
+              style: GoogleFonts.inter(
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                color: AppTheme.onSurface,
+              ),
+            ),
+            if (note.isNotEmpty)
+              Text(
+                note,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF8A5A00),
+                ),
+              ),
+          ],
+        ),
+      ],
+    ),
+  );
+}
+
+/// One checklist row: mark, title, detail.
+class _StepRow extends StatelessWidget {
+  const _StepRow({
+    super.key,
+    required this.title,
+    required this.detail,
+    required this.row,
+    required this.last,
+  });
+
+  final String title;
+  final String detail;
+  final _Row row;
+  final bool last;
+
+  @override
+  Widget build(BuildContext context) {
+    final (Color bg, Color fg, Widget? mark) = switch (row) {
+      _Row.done => (
+        const Color(0xFFDCF2E3),
+        const Color(0xFF1B7F3B),
+        const Icon(Icons.check_rounded, size: 18, color: Color(0xFF1B7F3B)),
+      ),
+      _Row.skipped => (
+        AppTheme.surfaceContainer,
+        AppTheme.outline,
+        Icon(Icons.remove_rounded, size: 18, color: AppTheme.outline),
+      ),
+      _Row.running => (
+        const Color(0xFFDCEFF1),
+        AppTheme.primary,
+        const SizedBox(
+          width: 14,
+          height: 14,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: AppTheme.primary,
+          ),
+        ),
+      ),
+      _Row.failed => (
+        const Color(0xFFFFDAD6),
+        AppTheme.error,
+        const Icon(Icons.close_rounded, size: 18, color: AppTheme.error),
+      ),
+      _Row.pending => (AppTheme.surfaceContainer, AppTheme.outline, null),
+    };
+    final titleColor = switch (row) {
+      _Row.running => AppTheme.primary,
+      _Row.failed => AppTheme.error,
+      _Row.pending || _Row.skipped => AppTheme.outline,
+      _Row.done => AppTheme.onSurface,
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      decoration: BoxDecoration(
+        border: last
+            ? null
+            : Border(bottom: BorderSide(color: AppTheme.surfaceContainer)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 28,
+            height: 28,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
+            child: mark,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: titleColor,
+                  ),
+                ),
+                if (detail.isNotEmpty)
+                  Text(
+                    detail,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: row == _Row.failed
+                          ? AppTheme.error
+                          : AppTheme.onSurfaceVariant,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          if (row == _Row.failed)
+            Icon(Icons.error_outline, color: fg, size: 18),
+        ],
       ),
     );
   }

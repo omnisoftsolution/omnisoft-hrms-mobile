@@ -304,6 +304,51 @@ void main() {
     );
   });
 
+  group('punch steps (check-in page checklist)', () {
+    Future<List<String>> run(_Harness h, {bool cancel = false}) async {
+      final steps = <String>[];
+      await h.controller.perform(
+        captureFace: () async => cancel
+            ? FaceCaptureResult.cancelled()
+            : FaceCaptureResult.success('/tmp/face.jpg'),
+        enrol: () async {},
+        onStep: (step, state, detail) =>
+            steps.add('${step.name} ${state.name} $detail'.trim()),
+      );
+      return steps;
+    }
+
+    test('a punch reports each step running, then its result', () async {
+      final h = _Harness();
+      await h.controller.refreshStatus();
+      expect(await run(h), [
+        'location running Locating…',
+        'location done ${h.controller.placeLabel}',
+        'wifi running Checking…',
+        'wifi skipped Not required',
+        'face running Look at the camera',
+        'face done Matched',
+        'record running Sending…',
+        'record done',
+      ]);
+      expect(h.controller.placeLabel, startsWith('Office ('));
+    });
+
+    test('outside the office: the location step never finishes', () async {
+      final h = _Harness(location: _at(1.31, _officeLng));
+      await h.controller.refreshStatus();
+      expect(await run(h), ['location running Locating…']);
+    });
+
+    test('a cancelled capture stops at the face step', () async {
+      final h = _Harness();
+      await h.controller.refreshStatus();
+      final steps = await run(h, cancel: true);
+      expect(steps.last, 'face running Look at the camera');
+      expect(steps.where((s) => s.startsWith('record')), isEmpty);
+    });
+  });
+
   group('forgot something (connector 2.54.0)', () {
     const lateAsk = <String, dynamic>{
       'trigger': 'late_first_in',

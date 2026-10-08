@@ -330,8 +330,17 @@ Spec + plan live in the connector repo:
   Check out pushes it on the root navigator and it starts by itself — pulsing circle while the
   GPS / Wi-Fi gates run (at least `minPulse` 900 ms), the 3-2-1 camera, the scanning circle while
   verify + POST run, a green tick ("Checked in HH:MM", `successHold` 1.1 s), then it pops a
-  `CheckInOutResult` (outcome or error). My day then shows the snackbar, UNDO and any question.
-  `PopScope(canPop: false)`: the camera's ✕ is the way out. Face setup (enrol state) skips the page.
+  `CheckInOutResult(outcome)`. My day then shows the snackbar, UNDO and any question.
+  `PopScope(canPop: false)` while running: the camera's ✕ is the way out. Face setup (enrol
+  state) skips the page.
+- **Layout C (Willy, 2026-10-08; canvas row "Check-in page — 3 options", boards K-*)**: header
+  card (initials, name, date · shift, clock, amber late note on the day's first check-in), the
+  circle (centred, `FittedBox` scales it down on short screens), a 4-row checklist (Location,
+  Office Wi-Fi, Face, Record the check-in → "Checked in HH:MM") and "Hours today · Last out".
+  Rows follow `perform(onStep:)` (`PunchStep` running/done/skipped, "Not required" when the
+  tenant doesn't need it). A failure keeps the page open: the running step turns red with the
+  friendly reason, the circle reads NOT READY, Close pops `outcome: null` (My day shows nothing).
+  The 1.30.1 (93) first cut had the circle off-centre (a shrink-wrapped Column) and no context.
 - `FaceCaptureScreen` is now only used by face enrolment.
 - Seams: `MyDayScreen.captureFace` (punch without the page, the older tests) and
   `MyDayScreen.signatureCaptureBuilder` / `CheckInOutScreen.captureBuilder` (fake camera).

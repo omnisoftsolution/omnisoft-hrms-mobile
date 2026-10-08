@@ -44,175 +44,223 @@ class _Host {
   );
 }
 
+/// The steps a successful perform() reports, around the capture.
+Future<AttendanceActionOutcome?> _happyRun(
+  Future<FaceCaptureResult> Function() capture,
+  PunchStepCallback onStep, {
+  bool checkedIn = true,
+}) async {
+  onStep(PunchStep.location, PunchStepState.running, 'Locating…');
+  onStep(PunchStep.location, PunchStepState.done, 'Office (24 m)');
+  onStep(PunchStep.wifi, PunchStepState.running, 'Checking…');
+  onStep(PunchStep.wifi, PunchStepState.skipped, 'Not required');
+  onStep(PunchStep.face, PunchStepState.running, 'Look at the camera');
+  final r = await capture();
+  if (!r.success) return null;
+  onStep(PunchStep.face, PunchStepState.done, 'Matched');
+  onStep(PunchStep.record, PunchStepState.running, 'Sending…');
+  onStep(PunchStep.record, PunchStepState.done, '');
+  return AttendanceActionOutcome.success(checkedIn: checkedIn);
+}
+
+CheckInOutScreen _page({
+  bool checkingOut = false,
+  required Future<AttendanceActionOutcome?> Function(
+    Future<FaceCaptureResult> Function() capture,
+    PunchStepCallback onStep,
+  )
+  run,
+  Widget Function(ValueChanged<FaceCaptureResult>)? capture,
+}) => CheckInOutScreen(
+  checkingOut: checkingOut,
+  employeeName: 'Ethan Smith',
+  shiftLabel: '08:00 – 17:00',
+  headerNote: '1h 53m late',
+  hoursToday: '0h 00m',
+  lastLabel: 'Last out 18:25',
+  captureBuilder: capture ?? _fakeCapture,
+  run: run,
+);
+
+Future<void> _open(
+  WidgetTester tester,
+  _Host host,
+  CheckInOutScreen page,
+) async {
+  await tester.pumpWidget(host.build(page));
+  await tester.tap(find.text('OPEN'));
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 300));
+}
+
 void main() {
-  testWidgets('opens on the pulsing CHECK IN circle, then the capture', (
+  testWidgets('header, circle and checklist; the camera starts by itself', (
     tester,
   ) async {
     final host = _Host();
-    final captured = <FaceCaptureResult>[];
-    await tester.pumpWidget(
-      host.build(
-        CheckInOutScreen(
-          checkingOut: false,
-          shiftLabel: '08:00 – 17:00',
-          placeLabel: 'At the office · 24 m',
-          captureBuilder: _fakeCapture,
-          run: (capture) async {
-            captured.add(await capture());
-            return const AttendanceActionOutcome.success(checkedIn: true);
-          },
-        ),
-      ),
-    );
-    await tester.tap(find.text('OPEN'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-    expect(find.byType(BigCheckButton), findsOneWidget);
+    await _open(tester, host, _page(run: _happyRun));
+    expect(find.text('Ethan Smith'), findsOneWidget);
+    expect(find.textContaining('Shift 08:00 – 17:00'), findsOneWidget);
+    expect(find.text('1h 53m late'), findsOneWidget);
+    expect(find.text('Hours today 0h 00m'), findsOneWidget);
+    expect(find.text('Last out 18:25'), findsOneWidget);
     expect(find.text('CHECK IN'), findsOneWidget);
-    expect(find.text('Shift 08:00 – 17:00'), findsOneWidget);
-    expect(find.text('At the office · 24 m'), findsOneWidget);
+    for (final t in [
+      'Location',
+      'Office Wi-Fi',
+      'Face',
+      'Record the check-in',
+    ]) {
+      expect(find.text(t), findsOneWidget, reason: t);
+    }
+    // The gates already ran: their rows carry the result.
+    expect(find.text('Office (24 m)'), findsOneWidget);
+    expect(find.text('Not required'), findsOneWidget);
+    expect(find.text('Look at the camera'), findsOneWidget);
     expect(find.byKey(const ValueKey('fake-capture')), findsNothing);
 
-    // The countdown starts by itself after the short pulse.
     await tester.pump(const Duration(seconds: 1));
     expect(find.byKey(const ValueKey('fake-capture')), findsOneWidget);
     expect(find.byType(BigCheckButton), findsNothing);
 
     await tester.tap(find.byKey(const ValueKey('fake-capture')));
     await tester.pump();
-    expect(captured.single.success, isTrue);
+    expect(find.text('Matched'), findsOneWidget);
     expect(find.byKey(const ValueKey('check-done')), findsOneWidget);
-    expect(find.textContaining('Checked in '), findsOneWidget);
+    expect(find.textContaining('Checked in '), findsNWidgets(2)); // tick + row
     expect(host.done, isFalse);
 
     await tester.pumpAndSettle(const Duration(seconds: 2));
     expect(host.done, isTrue);
     expect(host.popped?.outcome?.checkedIn, isTrue);
-    expect(host.popped?.error, isNull);
   });
 
-  testWidgets('check-out reads CHECK OUT and the tick says Checked out', (
-    tester,
-  ) async {
+  testWidgets('rows tick live as perform() reports them', (tester) async {
     final host = _Host();
-    await tester.pumpWidget(
-      host.build(
-        CheckInOutScreen(
-          checkingOut: true,
-          captureBuilder: _fakeCapture,
-          run: (capture) async {
-            await capture();
-            return const AttendanceActionOutcome.success(checkedIn: false);
-          },
-        ),
+    final gps = Completer<void>();
+    await _open(
+      tester,
+      host,
+      _page(
+        run: (capture, onStep) async {
+          onStep(PunchStep.location, PunchStepState.running, 'Locating…');
+          await gps.future;
+          onStep(PunchStep.location, PunchStepState.done, 'Office (24 m)');
+          return null;
+        },
       ),
     );
-    await tester.tap(find.text('OPEN'));
+    expect(find.text('Locating…'), findsOneWidget);
+    expect(find.byKey(const ValueKey('step-location-done')), findsNothing);
+    gps.complete();
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byKey(const ValueKey('step-location-done')), findsOneWidget);
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('check-out reads CHECK OUT and Checked out', (tester) async {
+    final host = _Host();
+    await _open(
+      tester,
+      host,
+      _page(
+        checkingOut: true,
+        run: (c, s) => _happyRun(c, s, checkedIn: false),
+      ),
+    );
     expect(find.text('CHECK OUT'), findsOneWidget);
+    expect(find.text('Record the check-out'), findsOneWidget);
     await tester.pump(const Duration(seconds: 1));
     await tester.tap(find.byKey(const ValueKey('fake-capture')));
     await tester.pump();
-    expect(find.textContaining('Checked out '), findsOneWidget);
+    expect(find.textContaining('Checked out '), findsNWidgets(2));
     await tester.pumpAndSettle(const Duration(seconds: 2));
     expect(host.popped?.outcome?.checkedIn, isFalse);
   });
 
-  testWidgets('shows the scanning circle while the punch is sent', (
+  testWidgets('the scanning circle shows while the punch is sent', (
     tester,
   ) async {
     final host = _Host();
     final sent = Completer<void>();
-    await tester.pumpWidget(
-      host.build(
-        CheckInOutScreen(
-          checkingOut: false,
-          captureBuilder: _fakeCapture,
-          run: (capture) async {
-            await capture();
-            await sent.future; // verify + POST still running
-            return const AttendanceActionOutcome.success(checkedIn: true);
-          },
-        ),
+    await _open(
+      tester,
+      host,
+      _page(
+        run: (capture, onStep) async {
+          await capture();
+          onStep(PunchStep.record, PunchStepState.running, 'Sending…');
+          await sent.future;
+          return const AttendanceActionOutcome.success(checkedIn: true);
+        },
       ),
     );
-    await tester.tap(find.text('OPEN'));
-    await tester.pump();
-    await tester.pump(const Duration(seconds: 1, milliseconds: 300));
+    await tester.pump(const Duration(seconds: 1));
     await tester.tap(find.byKey(const ValueKey('fake-capture')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
     expect(find.text('SCANNING…'), findsOneWidget);
+    expect(find.text('Sending…'), findsOneWidget);
     sent.complete();
     await tester.pumpAndSettle(const Duration(seconds: 2));
     expect(host.popped?.outcome?.ok, isTrue);
   });
 
-  testWidgets('an error outcome pops at once, without the tick', (
+  testWidgets('a failed step stays on the page with the reason and Close', (
     tester,
   ) async {
     final host = _Host();
-    await tester.pumpWidget(
-      host.build(
-        CheckInOutScreen(
-          checkingOut: false,
-          captureBuilder: _fakeCapture,
-          run: (capture) async =>
-              const AttendanceActionOutcome.failure('Outside the office'),
-        ),
+    await _open(
+      tester,
+      host,
+      _page(
+        run: (capture, onStep) async {
+          onStep(PunchStep.location, PunchStepState.running, 'Locating…');
+          return const AttendanceActionOutcome.failure(
+            'You are outside the office area.',
+          );
+        },
       ),
     );
-    await tester.tap(find.text('OPEN'));
-    await tester.pump();
-    await tester.pump();
-    expect(find.byKey(const ValueKey('check-done')), findsNothing);
+    expect(find.byKey(const ValueKey('step-location-failed')), findsOneWidget);
+    expect(find.text('You are outside the office area.'), findsOneWidget);
+    expect(find.text('NOT READY'), findsOneWidget);
+    expect(host.done, isFalse);
+    await tester.tap(find.text('Close'));
     await tester.pumpAndSettle();
     expect(host.done, isTrue);
-    expect(host.popped?.outcome?.error, 'Outside the office');
+    expect(host.popped?.outcome, isNull); // the page already said why
   });
 
-  testWidgets('a cancelled capture pops with no outcome', (tester) async {
+  testWidgets('a run that throws shows the friendly reason', (tester) async {
     final host = _Host();
-    await tester.pumpWidget(
-      host.build(
-        CheckInOutScreen(
-          checkingOut: false,
-          captureBuilder: (onResult) =>
-              _fakeCapture(onResult, result: FaceCaptureResult.cancelled()),
-          run: (capture) async {
-            final r = await capture();
-            return r.success
-                ? const AttendanceActionOutcome.success(checkedIn: true)
-                : null;
-          },
-        ),
+    await _open(
+      tester,
+      host,
+      _page(run: (capture, onStep) async => throw StateError('boom')),
+    );
+    expect(find.text('Close'), findsOneWidget);
+    expect(find.byKey(const ValueKey('step-location-failed')), findsOneWidget);
+    await tester.tap(find.text('Close'));
+    await tester.pumpAndSettle();
+    expect(host.popped?.outcome, isNull);
+  });
+
+  testWidgets('a cancelled capture closes the page at once', (tester) async {
+    final host = _Host();
+    await _open(
+      tester,
+      host,
+      _page(
+        run: _happyRun,
+        capture: (onResult) =>
+            _fakeCapture(onResult, result: FaceCaptureResult.cancelled()),
       ),
     );
-    await tester.tap(find.text('OPEN'));
-    await tester.pump();
-    await tester.pump(const Duration(seconds: 1, milliseconds: 300));
+    await tester.pump(const Duration(seconds: 1));
     await tester.tap(find.byKey(const ValueKey('fake-capture')));
     await tester.pumpAndSettle();
     expect(host.done, isTrue);
     expect(host.popped?.outcome, isNull);
-    expect(host.popped?.error, isNull);
-  });
-
-  testWidgets('a run that throws pops the error', (tester) async {
-    final host = _Host();
-    await tester.pumpWidget(
-      host.build(
-        CheckInOutScreen(
-          checkingOut: false,
-          captureBuilder: _fakeCapture,
-          run: (capture) async => throw StateError('no device id'),
-        ),
-      ),
-    );
-    await tester.tap(find.text('OPEN'));
-    await tester.pumpAndSettle();
-    expect(host.done, isTrue);
-    expect(host.popped?.error, isA<StateError>());
   });
 }

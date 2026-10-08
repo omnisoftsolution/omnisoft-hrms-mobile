@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../../core/datetime_utils.dart';
 import '../../../core/error_messages.dart';
 import '../../../core/theme.dart';
 import '../../../models/attendance_ask.dart';
@@ -324,9 +325,10 @@ class MyDayScreenState extends State<MyDayScreen> {
     return 'Check in now';
   }
 
-  /// The punch. Normally on the signature page (1.30.1: pulsing circle,
-  /// 3-2-1 camera, tick); face setup and the [MyDayScreen.captureFace]
-  /// seam run without it. A run that threw on the page is rethrown here.
+  /// The punch. Normally on the signature page (1.30.1: header, pulsing
+  /// circle, 3-2-1 camera, live checklist, tick); face setup and the
+  /// [MyDayScreen.captureFace] seam run without it. The page shows its own
+  /// failures, so it returns null for them.
   Future<AttendanceActionOutcome?> _perform(
     AttendanceActionController c,
   ) async {
@@ -339,24 +341,50 @@ class MyDayScreenState extends State<MyDayScreen> {
     }
     if (c.acting) return null;
     final session = context.read<SessionService>();
+    final day = _day;
+    final checkingOut = c.status?.checkedIn == true;
     // Root navigator: the page covers the bottom bar.
     final page = await Navigator.of(context, rootNavigator: true)
         .push<CheckInOutResult>(
           MaterialPageRoute(
             builder: (_) => CheckInOutScreen(
-              checkingOut: c.status?.checkedIn == true,
-              shiftLabel: _day?.shift?.label ?? '',
-              placeLabel: c.placeLabel,
+              checkingOut: checkingOut,
+              employeeName: session.employeeName,
+              shiftLabel: day?.shift?.label ?? '',
+              headerNote: checkingOut ? '' : _lateNote(day),
+              hoursToday: day == null ? '' : formatHoursToday(day.hoursToday),
+              lastLabel: _lastPunchLabel(day),
               faceEnabled: session.featureFaceVerification,
               geoEnabled: session.featureGeolocation,
               captureBuilder: widget.signatureCaptureBuilder,
-              run: (capture) => c.perform(captureFace: capture, enrol: _enrol),
+              run: (capture, onStep) => c.perform(
+                captureFace: capture,
+                enrol: _enrol,
+                onStep: onStep,
+              ),
             ),
           ),
         );
-    final error = page?.error;
-    if (error != null) throw error;
     return page?.outcome;
+  }
+
+  /// "1h 53m late" for the day's first check-in after the shift start.
+  static String _lateNote(MyDay? day) {
+    if (day == null || day.punches.isNotEmpty) return '';
+    final start = DateTimeUtils.parseOdooUtc(day.shift?.start);
+    if (start == null) return '';
+    final late = DateTime.now().toUtc().difference(start).inMinutes;
+    return late > 0 ? '${minutesLabel(late)} late' : '';
+  }
+
+  /// "Last out 12:05" / "In since 07:59" from today's punches, else ''.
+  static String _lastPunchLabel(MyDay? day) {
+    if (day == null || day.punches.isEmpty) return '';
+    final last = day.punches.last;
+    final at = DateTimeUtils.formatLocalTime(last.at);
+    return last.kind == 'check_in' || last.kind == 'break_end'
+        ? 'In since $at'
+        : 'Last out $at';
   }
 
   Future<void> _enrol() async {
