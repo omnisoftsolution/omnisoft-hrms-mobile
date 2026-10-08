@@ -181,12 +181,14 @@ class MyDayScreenState extends State<MyDayScreen> {
         unawaited(_refreshSession());
       }
       // The For-you card and the Leave tab badge must show one number.
-      // Only once the session knows this user approves: before that the
-      // next /me (resume, Leave tab) fills it in.
+      // A card for a session that does not know yet that this user
+      // approves (fresh login: /login has no leave_approvals block, or
+      // just made an approver) also re-pulls /me, or the LEAVE badge
+      // stays empty until the app is backgrounded.
       final cardCount = day.forYou
           .where((item) => item.kind == 'leave_approvals')
           .fold<int>(0, (n, item) => n + item.count);
-      if (session.leaveApprovalsEnabled &&
+      if ((session.leaveApprovalsEnabled || cardCount > 0) &&
           cardCount != session.leaveApprovalsPendingCount) {
         unawaited(_refreshSession());
       }

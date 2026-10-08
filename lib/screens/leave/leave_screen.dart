@@ -132,20 +132,39 @@ class LeaveScreenState extends State<LeaveScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => refresh());
   }
 
-  Future<void> refresh() async {
+  /// Reload the leave types, and the approvals block of /me so a user
+  /// who just became an approver gets the "Leave approvals" row (and
+  /// the LEAVE badge) on opening the tab. /me is re-pulled at most once
+  /// per 30 s ([SessionService.refreshMeIfStale]); a pull-down
+  /// ([force]) always asks.
+  Future<void> refresh({bool force = false}) async {
     setState(() {
       _loading = true;
       _error = null;
     });
+    final session = context.read<SessionService>();
+    unawaited(_refreshApprovals(session, force: force));
     try {
-      final session = context.read<SessionService>();
       _types = await _api(session).getLeaveTypes();
     } catch (e) {
       _error = friendlyError(e);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
-    unawaited(_refreshApprovalsBreakdown());
+  }
+
+  Future<void> _pullToRefresh() => refresh(force: true);
+
+  Future<void> _refreshApprovals(
+    SessionService session, {
+    required bool force,
+  }) async {
+    if (force) {
+      await session.refreshMe();
+    } else {
+      await session.refreshMeIfStale();
+    }
+    if (mounted) await _refreshApprovalsBreakdown();
   }
 
   /// Per-type line for the approvals row; best-effort, approvers with
@@ -231,13 +250,13 @@ class LeaveScreenState extends State<LeaveScreen> {
           ? const Center(child: CircularProgressIndicator())
           : _error != null
           ? RefreshIndicator(
-              onRefresh: refresh,
+              onRefresh: _pullToRefresh,
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(20, 80, 20, 24),
                 children: [ErrorStateView(message: _error!, onRetry: refresh)],
               ),
             )
-          : RefreshIndicator(onRefresh: refresh, child: _buildList()),
+          : RefreshIndicator(onRefresh: _pullToRefresh, child: _buildList()),
     );
   }
 

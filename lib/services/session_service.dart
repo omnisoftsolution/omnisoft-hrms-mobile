@@ -140,6 +140,14 @@ class SessionService extends ChangeNotifier {
   bool _leaveApprovalsEnabled = false;
   int _leaveApprovalsPendingCount = 0;
 
+  // When /me was last asked for (successfully or still in flight), for
+  // [refreshMeIfStale]. Reset by a new login and by clearSession().
+  DateTime? _lastMeRefresh;
+
+  /// Clock for [refreshMeIfStale]; tests replace it.
+  @visibleForTesting
+  DateTime Function() clock = DateTime.now;
+
   // SaaS routing
   String get saasUrl => _saasUrl;
   String get companyCode => _companyCode;
@@ -441,6 +449,9 @@ class SessionService extends ChangeNotifier {
   /// from [res] and forwards them to [saveSession]. Shared by the login
   /// screen and the Security & Privacy card's password re-verification.
   Future<void> saveLoginResponse(Map<String, dynamic> res) async {
+    // /login carries no leave_approvals block: the next
+    // refreshMeIfStale must reach the server.
+    _lastMeRefresh = null;
     final user = res['user'] as Map<String, dynamic>? ?? {};
     final employee = res['employee'] as Map<String, dynamic>? ?? {};
     final expiresAtStr = res['expires_at']?.toString() ?? '';
@@ -724,6 +735,7 @@ class SessionService extends ChangeNotifier {
     _attendanceKioskOnly = false;
     _leaveApprovalsEnabled = false;
     _leaveApprovalsPendingCount = 0;
+    _lastMeRefresh = null;
     final prefs = await SharedPreferences.getInstance();
     try {
       await _secure.delete(key: _keyAccessToken);
@@ -846,6 +858,25 @@ class SessionService extends ChangeNotifier {
   Future<bool> refreshMe() => refreshMeWith(
       OmniMobileApi(baseUrl: _clientUrl, db: _clientDb, token: _accessToken));
 
+  /// [refreshMe], unless /me was asked for less than [maxAge] ago (by
+  /// any path: app start / resume, a decision, an earlier call here).
+  /// Cheap enough to call whenever a screen that shows /me data opens —
+  /// the Leave tab uses it so a user who just became an approver sees
+  /// the "Leave approvals" row without backgrounding the app. Returns
+  /// false when skipped or failed; a failure does not start the wait.
+  Future<bool> refreshMeIfStale({
+    Duration maxAge = const Duration(seconds: 30),
+  }) async {
+    final now = clock();
+    final last = _lastMeRefresh;
+    if (last != null && now.difference(last) < maxAge) return false;
+    // Claim the slot before the call, so overlapping callers skip.
+    _lastMeRefresh = now;
+    final ok = await refreshMe();
+    if (!ok && _lastMeRefresh == now) _lastMeRefresh = null;
+    return ok;
+  }
+
   /// Seed the user login (e.g. from the Face ID credential after a
   /// sign-out wiped it) so screens that need it work even if /me fails.
   /// Goes through [updateEmployeeFromMe] — the one persistence path.
@@ -854,6 +885,7 @@ class SessionService extends ChangeNotifier {
 
   @visibleForTesting
   Future<bool> refreshMeWith(OmniMobileApi api) async {
+    _lastMeRefresh = clock();
     try {
       final res = await api.me();
       final user = res['user'] as Map<String, dynamic>? ?? {};
@@ -885,6 +917,8 @@ class SessionService extends ChangeNotifier {
       await updateFromMe(res);
       return true;
     } catch (_) {
+      // A failed /me must not hold off the next refreshMeIfStale.
+      _lastMeRefresh = null;
       return false;
     }
   }

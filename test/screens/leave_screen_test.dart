@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:omni_hr/models/approval_item.dart';
 import 'package:omni_hr/models/leave_type.dart';
 import 'package:omni_hr/screens/leave/leave_screen.dart';
 import 'package:omni_hr/services/holiday_service.dart';
@@ -13,6 +15,9 @@ class FakeApi extends OmniMobileApi {
 
   Map<String, dynamic> applyResponse;
   int applies = 0;
+
+  @override
+  Future<List<ApprovalItem>> getPendingApprovals() async => const [];
 
   @override
   Future<List<LeaveType>> getLeaveTypes() async => [
@@ -51,6 +56,20 @@ class FakeSession extends SessionService {
   @override
   Future<bool> refreshMe() async {
     meRefreshes++;
+    return true;
+  }
+}
+
+/// Became an approver since the last /me: the next /me says so.
+class NewApproverSession extends SessionService {
+  int meCalls = 0;
+
+  @override
+  Future<bool> refreshMe() async {
+    meCalls++;
+    await updateLeaveApprovalsFromMe({
+      'leave_approvals': {'enabled': true, 'pending_count': 1},
+    });
     return true;
   }
 }
@@ -151,5 +170,53 @@ void main() {
     expect(find.text('Approver'), findsOneWidget);
     expect(find.text('Manager Mia'), findsOneWidget);
     expect(find.text('Waiting for approval'), findsOneWidget);
+  });
+
+  group('the Leave tab re-reads the approvals block (M8)', () {
+    setUp(() => SharedPreferences.setMockInitialValues({}));
+
+    testWidgets('opening it shows the Leave approvals row', (tester) async {
+      final session = NewApproverSession();
+      expect(session.leaveApprovalsEnabled, isFalse);
+      await tester.pumpWidget(host(FakeApi(), session: session));
+      await tester.pumpAndSettle();
+      expect(session.meCalls, 1);
+      expect(find.byKey(const ValueKey('leave-approvals-row')), findsOneWidget);
+    });
+
+    testWidgets('tab re-opens within 30 s do not re-ask; a pull-down does', (
+      tester,
+    ) async {
+      final session = NewApproverSession();
+      final key = GlobalKey<LeaveScreenState>();
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<SessionService>.value(value: session),
+            ChangeNotifierProvider<HolidayService>(
+              create: (_) => HolidayService(),
+            ),
+          ],
+          child: MaterialApp(
+            home: LeaveScreen(
+              key: key,
+              apiBuilder: (_) => FakeApi(),
+              appBar: AppBar(title: const Text('TEST BAR')),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(session.meCalls, 1);
+
+      // HomeShell calls refresh() on every switch to the Leave tab.
+      await key.currentState!.refresh();
+      await tester.pumpAndSettle();
+      expect(session.meCalls, 1);
+
+      await key.currentState!.refresh(force: true); // pull-down
+      await tester.pumpAndSettle();
+      expect(session.meCalls, 2);
+    });
   });
 }
