@@ -159,7 +159,7 @@ class LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: $e'),
+            content: Text(friendlyError(e)),
             backgroundColor: AppTheme.error,
           ),
         );
@@ -603,7 +603,7 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Error: $e'),
+          content: Text(friendlyError(e)),
           backgroundColor: AppTheme.error,
         ));
       }

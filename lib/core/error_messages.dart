@@ -188,7 +188,25 @@ String friendlyError(Object e) {
     return 'That answer is no longer available. Pull down to refresh.';
   }
 
+  // --- Plan gate ---
+  if (raw.contains('feature_unavailable')) {
+    return "This feature isn't included in your company's plan. Ask HR.";
+  }
+
   // --- Leave ---
+  // HR decided the request while the History screen was open.
+  if (raw.contains('not_cancellable') || raw.contains('not_modifiable')) {
+    return 'This request was already decided. Pull down to refresh.';
+  }
+  if (raw.contains('leave_type_not_allowed')) {
+    return "This leave type can't be requested from the app. Ask HR.";
+  }
+  if (raw.contains('invalid_hours')) {
+    return 'Pick a start time before the end time.';
+  }
+  if (raw.contains('invalid_period')) {
+    return 'Pick a valid half of the day.';
+  }
   if (raw.contains('overlap')) {
     return 'You already have a leave request on these dates.';
   }
