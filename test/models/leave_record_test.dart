@@ -103,6 +103,16 @@ void main() {
     });
   });
 
+  test('refusal_reason: parsed, false or missing reads as empty', () {
+    LeaveRecord rec(Map<String, dynamic> j) => LeaveRecord.fromJson({
+      'id': 5, 'leave_type': 'X', 'number_of_days': 1, 'state': 'refuse', ...j,
+    });
+    expect(rec({'refusal_reason': ' Team is short that week '}).refusalReason,
+        'Team is short that week');
+    expect(rec({'refusal_reason': false}).refusalReason, '');
+    expect(rec({}).refusalReason, '');
+  });
+
   group('state labels', () {
     LeaveRecord withState(String s) => LeaveRecord.fromJson({
       'id': 3, 'leave_type': 'X', 'number_of_days': 1, 'state': s,

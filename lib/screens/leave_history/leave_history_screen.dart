@@ -304,6 +304,8 @@ class LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
                 const Divider(height: 24),
                 if (r.reason.isNotEmpty)
                   _detailRow('Reason', r.reason),
+                if (r.state == 'refuse' && r.refusalReason.isNotEmpty)
+                  _detailRow('Refusal reason', r.refusalReason),
                 if (r.requiresAllocation &&
                     r.allocationTotal != null) ...[
                   _detailRow(
@@ -421,7 +423,8 @@ class LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 90,
+            // Fits "Refusal reason" on one line.
+            width: 110,
             child: Text(label,
                 style: TextStyle(
                     fontSize: 13,

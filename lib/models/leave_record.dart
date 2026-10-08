@@ -9,6 +9,10 @@ class LeaveRecord {
   final double numberOfDays;
   final String state;
   final String reason;
+
+  /// Why the leave was refused (`refusal_reason`, connector 2.57.0+);
+  /// '' unless the state is `refuse`, and '' on older connectors.
+  final String refusalReason;
   final double? allocationTotal;
   final double? allocationTaken;
   final double? allocationRemaining;
@@ -33,6 +37,7 @@ class LeaveRecord {
     required this.numberOfDays,
     required this.state,
     this.reason = '',
+    this.refusalReason = '',
     this.allocationTotal,
     this.allocationTaken,
     this.allocationRemaining,
@@ -59,6 +64,7 @@ class LeaveRecord {
       numberOfDays: (json['number_of_days'] ?? 0).toDouble(),
       state: json['state'] ?? '',
       reason: json['reason'] ?? '',
+      refusalReason: _str(json['refusal_reason']),
       allocationTotal: (json['allocation_total'] as num?)?.toDouble(),
       allocationTaken: (json['allocation_taken'] as num?)?.toDouble(),
       allocationRemaining: (json['allocation_remaining'] as num?)?.toDouble(),
@@ -114,6 +120,9 @@ class LeaveRecord {
     final dates = datesLabel;
     return dates.isEmpty ? daysLabel : '$dates · $daysLabel';
   }
+
+  /// Odoo serialises an empty Char as `false`: read it as ''.
+  static String _str(dynamic v) => v is String ? v.trim() : '';
 
   static DateTime? _parseDate(dynamic v) {
     if (v is String && v.isNotEmpty) return DateTime.tryParse(v);

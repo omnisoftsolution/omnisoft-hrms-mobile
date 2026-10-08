@@ -82,6 +82,43 @@ void main() {
     expect(find.textContaining('1 days'), findsNothing);
   });
 
+  testWidgets('a refused leave shows its refusal reason after the reason', (
+    tester,
+  ) async {
+    final api = FakeApi([
+      [
+        leave({
+          'id': 7,
+          'state': 'refuse',
+          'reason': 'Family trip',
+          'refusal_reason': 'Team is short that week',
+        }),
+        leave({
+          'id': 8,
+          'leave_type': 'Sick Leave',
+          'state': 'refuse',
+          'refusal_reason': false,
+        }),
+      ],
+    ]);
+    await tester.pumpWidget(host(api));
+    await tester.pumpAndSettle();
+    expect(find.text('Refusal reason'), findsNothing); // collapsed
+
+    await tester.tap(find.text('Annual Leave'));
+    await tester.pumpAndSettle();
+    expect(find.text('Refusal reason'), findsOneWidget);
+    expect(find.text('Team is short that week'), findsOneWidget);
+    final reasonY = tester.getTopLeft(find.text('Reason')).dy;
+    final refusalY = tester.getTopLeft(find.text('Refusal reason')).dy;
+    expect(refusalY, greaterThan(reasonY));
+
+    // No reason from the server (older connector or HR left it empty).
+    await tester.tap(find.text('Sick Leave'));
+    await tester.pumpAndSettle();
+    expect(find.text('Refusal reason'), findsNothing);
+  });
+
   testWidgets('the card and the cancel dialog show formatted dates', (
     tester,
   ) async {
