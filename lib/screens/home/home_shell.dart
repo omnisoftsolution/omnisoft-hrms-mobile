@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'home_screen.dart';
-import 'home_tab_root.dart';
+import 'leave_tab_icon.dart';
 import 'my_day/my_day_screen.dart';
 import '../approvals/approval_detail_screen.dart';
 import '../expenses/expenses_screen.dart';
@@ -26,7 +25,6 @@ class HomeShellState extends State<HomeShell> {
 
   // Per-tab screen state keys (for tab-switch refresh + notification
   // deep-linking into HistoryShell / ExpensesScreen).
-  final _homeKey = GlobalKey<HomeScreenState>();
   final _myDayKey = GlobalKey<MyDayScreenState>();
   final _leaveKey = GlobalKey<LeaveScreenState>();
   final _historyKey = GlobalKey<HistoryShellState>();
@@ -49,9 +47,7 @@ class HomeShellState extends State<HomeShell> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final session = context.read<SessionService>();
       context.read<HolidayService>().loadFromSession(session);
-      context
-          .read<FaceRecognitionService>()
-          .refreshEnrolledStatus(session);
+      context.read<FaceRecognitionService>().refreshEnrolledStatus(session);
       // Begin polling notifications now that we know we're signed in.
       _notifSvc = context.read<NotificationService>();
       _notifSvc!.start(session);
@@ -110,8 +106,11 @@ class HomeShellState extends State<HomeShell> {
           ),
           content: Row(
             children: [
-              const Icon(Icons.notifications_active_rounded,
-                  color: Colors.white, size: 20),
+              const Icon(
+                Icons.notifications_active_rounded,
+                color: Colors.white,
+                size: 20,
+              ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -181,17 +180,13 @@ class HomeShellState extends State<HomeShell> {
         nav.popUntil((r) => r.isFirst);
       }
       // My day reloads on a Home re-tap (a kiosk punch shows on the next
-      // refresh). No-op on the classic home: the key is not mounted.
+      // refresh).
       if (i == 0) _myDayKey.currentState?.refresh();
       return;
     }
     setState(() => _index = i);
-    // Refresh data when switching to these tabs. Only one of the two Home
-    // keys is mounted at a time.
-    if (i == 0) {
-      _homeKey.currentState?.refresh();
-      _myDayKey.currentState?.refresh();
-    }
+    // Refresh data when switching to these tabs.
+    if (i == 0) _myDayKey.currentState?.refresh();
     if (i == 1) _leaveKey.currentState?.refresh();
     if (i == 2) _historyKey.currentState?.refresh();
     // For feature-gated tabs (Leave, Expenses) also re-pull the
@@ -243,10 +238,9 @@ class HomeShellState extends State<HomeShell> {
     await WidgetsBinding.instance.endOfFrame;
     final nav = _homeNavKey.currentState;
     if (nav == null) return;
-    await nav.push(MaterialPageRoute(
-      builder: (_) => ApprovalDetailScreen(leaveId: leaveId),
-    ));
-    _homeKey.currentState?.refresh();
+    await nav.push(
+      MaterialPageRoute(builder: (_) => ApprovalDetailScreen(leaveId: leaveId)),
+    );
     _myDayKey.currentState?.refresh();
   }
 
@@ -259,15 +253,14 @@ class HomeShellState extends State<HomeShell> {
   }) {
     return Navigator(
       key: navKey,
-      onGenerateRoute: (settings) => MaterialPageRoute(
-        builder: (_) => root,
-        settings: settings,
-      ),
+      onGenerateRoute: (settings) =>
+          MaterialPageRoute(builder: (_) => root, settings: settings),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final pending = context.watch<SessionService>().leaveApprovalsPendingCount;
     return ScaffoldMessenger(
       key: _scaffoldMessengerKey,
       // PopScope intercepts the Android system back button so it pops
@@ -290,13 +283,10 @@ class HomeShellState extends State<HomeShell> {
             children: [
               _buildTabNavigator(
                 navKey: _homeNavKey,
-                root: HomeTabRoot(
-                  classicHome: HomeScreen(key: _homeKey),
-                  myDay: MyDayScreen(
-                    key: _myDayKey,
-                    onOpenLeave: navigateToLeave,
-                    onOpenExpense: navigateToExpense,
-                  ),
+                root: MyDayScreen(
+                  key: _myDayKey,
+                  onOpenLeave: navigateToLeave,
+                  onOpenExpense: navigateToExpense,
                 ),
               ),
               _buildTabNavigator(
@@ -321,8 +311,7 @@ class HomeShellState extends State<HomeShell> {
               backgroundColor: Colors.white,
               elevation: 8,
               height: 72,
-              indicatorColor:
-                  AppTheme.primaryContainer.withValues(alpha: 0.18),
+              indicatorColor: AppTheme.primaryContainer.withValues(alpha: 0.18),
               labelTextStyle: WidgetStateProperty.resolveWith((states) {
                 if (states.contains(WidgetState.selected)) {
                   return TextStyle(
@@ -348,22 +337,30 @@ class HomeShellState extends State<HomeShell> {
             child: NavigationBar(
               selectedIndex: _index,
               onDestinationSelected: _onTabTap,
-              destinations: const [
-                NavigationDestination(
+              destinations: [
+                const NavigationDestination(
                   icon: Icon(Icons.home_outlined),
                   selectedIcon: Icon(Icons.home_rounded),
                   label: 'HOME',
                 ),
                 NavigationDestination(
-                  icon: Icon(Icons.event_note_outlined),
-                  selectedIcon: Icon(Icons.event_note_rounded),
+                  icon: LeaveTabIcon(
+                    count: pending,
+                    selected: _index == 1,
+                    icon: const Icon(Icons.event_note_outlined),
+                  ),
+                  selectedIcon: LeaveTabIcon(
+                    count: pending,
+                    selected: _index == 1,
+                    icon: const Icon(Icons.event_note_rounded),
+                  ),
                   label: 'LEAVE',
                 ),
-                NavigationDestination(
+                const NavigationDestination(
                   icon: Icon(Icons.history_rounded),
                   label: 'HISTORY',
                 ),
-                NavigationDestination(
+                const NavigationDestination(
                   icon: Icon(Icons.receipt_long_outlined),
                   selectedIcon: Icon(Icons.receipt_long_rounded),
                   label: 'EXPENSES',

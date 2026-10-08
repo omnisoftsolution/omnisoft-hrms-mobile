@@ -503,4 +503,42 @@ void main() {
     );
     expect(find.text(DayTimeline.emptyText), findsOneWidget);
   });
+
+  group('phone check-in copy', () {
+    test('an empty phone day says check in from your phone', () {
+      final day = sampleMyDay(state: 'not_in', punches: [], kioskOnly: false);
+      final events = buildTimeline(day, now: DateTime.utc(2026, 10, 5, 0, 30));
+      expect(events.first.title, 'Shift starts');
+      expect(events.first.sub, 'Check in from your phone');
+      expect(events.last.title, 'Shift ends');
+      expect(events.last.sub, 'Check out from your phone');
+    });
+
+    test('a missing phone day carries the hint on the Now row', () {
+      final day = sampleMyDay(
+        state: 'not_in',
+        missing: true,
+        punches: [],
+        kioskOnly: false,
+      );
+      final events = buildTimeline(
+        day,
+        now: DateTime.utc(2026, 10, 5, 2, 0),
+        phoneHint: 'At the office · check in now',
+      );
+      expect(events[0].sub, 'No check-in yet');
+      expect(events[1].title, 'Now');
+      expect(events[1].sub, 'At the office · check in now');
+      final plain = buildTimeline(day, now: DateTime.utc(2026, 10, 5, 2, 0));
+      expect(plain[1].sub, 'Check in from your phone');
+    });
+
+    test('a kiosk day keeps the kiosk wording', () {
+      final day = sampleMyDay(state: 'not_in', missing: true, punches: []);
+      final events = buildTimeline(day, now: DateTime.utc(2026, 10, 5, 2, 0));
+      expect(events[0].sub, 'No kiosk check-in yet');
+      expect(events[1].sub, 'If you are at work, check in at the kiosk');
+      expect(events.last.sub, 'Check out at the kiosk');
+    });
+  });
 }

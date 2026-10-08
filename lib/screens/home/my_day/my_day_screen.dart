@@ -5,24 +5,33 @@ import 'package:provider/provider.dart';
 
 import '../../../core/error_messages.dart';
 import '../../../core/theme.dart';
+import '../../../models/auto_close_previous.dart';
 import '../../../models/expense_record.dart';
+import '../../../models/face_capture_result.dart';
 import '../../../models/my_day.dart';
+import '../../../services/attendance_action_controller.dart';
+import '../../../services/face_recognition_service.dart';
 import '../../../services/omni_mobile_api.dart';
 import '../../../services/session_service.dart';
 import '../../../widgets/error_state_view.dart';
+import '../../../widgets/feature_locked_pane.dart';
 import '../../../widgets/omni_app_bar.dart';
 import '../../approvals/approvals_screen.dart';
 import '../../expenses/expense_detail_screen.dart';
+import '../../face_scan/face_capture_screen.dart';
+import '../../face_scan/face_enrollment_screen.dart';
 import '../../payroll/payslips_screen.dart';
+import 'auto_closed_banner.dart';
 import 'day_timeline.dart';
 import 'for_you_list.dart';
 import 'my_day_display.dart';
 import 'status_tile.dart';
 import 'week_strip.dart';
 
-/// The Home tab for employees whose attendance is kiosk-only (spec
-/// 2026-10-05 §5.3): the status tile, the week strip, the day's timeline (or
-/// an off card) and a short 'For you' list, all from one endpoint.
+/// The Home tab for every employee (spec 2026-10-07): the status tile
+/// (with the check-in button for phone check-in employees), the week
+/// strip, the day's timeline (or an off card) and a short 'For you' list,
+/// all from one endpoint plus the attendance status.
 class MyDayScreen extends StatefulWidget {
   const MyDayScreen({
     super.key,
@@ -32,6 +41,9 @@ class MyDayScreen extends StatefulWidget {
     this.appBar,
     this.destinationBuilder,
     this.refreshSession,
+    this.controllerBuilder,
+    this.captureFace,
+    this.enrol,
   });
 
   /// Opens leave history on one request (HomeShell.navigateToLeave, the
@@ -60,6 +72,20 @@ class MyDayScreen extends StatefulWidget {
   @visibleForTesting
   final Future<void> Function()? refreshSession;
 
+  /// Test seam: builds the check-in controller (defaults to the real
+  /// services and the FaceRecognitionService from the tree).
+  @visibleForTesting
+  final AttendanceActionController Function(SessionService session)?
+  controllerBuilder;
+
+  /// Test seam: replaces the full-screen face capture.
+  @visibleForTesting
+  final Future<FaceCaptureResult> Function()? captureFace;
+
+  /// Test seam: replaces the full-screen face enrolment.
+  @visibleForTesting
+  final Future<void> Function()? enrol;
+
   @override
   State<MyDayScreen> createState() => MyDayScreenState();
 }
@@ -78,6 +104,11 @@ class MyDayScreenState extends State<MyDayScreen> {
 
   late final AppLifecycleListener _lifecycle;
 
+  /// Phone check-in only; null while the day is kiosk-only.
+  AttendanceActionController? _controller;
+  Timer? _gpsTimer;
+  AutoClosePrevious? _autoClosed;
+
   @override
   void initState() {
     super.initState();
@@ -92,7 +123,14 @@ class MyDayScreenState extends State<MyDayScreen> {
   @override
   void dispose() {
     _lifecycle.dispose();
+    _gpsTimer?.cancel();
+    _controller?.removeListener(_onControllerChange);
+    _controller?.dispose();
     super.dispose();
+  }
+
+  void _onControllerChange() {
+    if (mounted) setState(() {});
   }
 
   OmniMobileApi _api() {
@@ -122,12 +160,23 @@ class MyDayScreenState extends State<MyDayScreen> {
         _firstLoadError = null;
         _refreshFailed = false;
       });
-      // HR cleared the flag: re-pull /me so the Home tab flips back to the
-      // classic home (the session listener swaps it).
-      if (!day.kioskOnly &&
-          context.read<SessionService>().attendanceKioskOnly) {
+      final session = context.read<SessionService>();
+      // HR cleared the flag: re-pull /me so the session agrees with the
+      // day (the server already refuses phone punches the other way).
+      if (!day.kioskOnly && session.attendanceKioskOnly) {
         unawaited(_refreshSession());
       }
+      // The For-you card and the Leave tab badge must show one number.
+      // Only once the session knows this user approves: before that the
+      // next /me (resume, Leave tab) fills it in.
+      final cardCount = day.forYou
+          .where((item) => item.kind == 'leave_approvals')
+          .fold<int>(0, (n, item) => n + item.count);
+      if (session.leaveApprovalsEnabled &&
+          cardCount != session.leaveApprovalsPendingCount) {
+        unawaited(_refreshSession());
+      }
+      await _syncController(day);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -138,6 +187,39 @@ class MyDayScreenState extends State<MyDayScreen> {
         }
       });
     }
+  }
+
+  /// Phone check-in days own a controller (status + GPS); kiosk-only days
+  /// and tenants without Attendance drop it. Called after every successful
+  /// day load.
+  Future<void> _syncController(MyDay day) async {
+    if (day.kioskOnly || !context.read<SessionService>().featureAttendance) {
+      _gpsTimer?.cancel();
+      _gpsTimer = null;
+      _controller?.removeListener(_onControllerChange);
+      _controller?.dispose();
+      _controller = null;
+      // _load's setState ran while the controller was still set.
+      if (mounted) setState(() {});
+      return;
+    }
+    var controller = _controller;
+    if (controller == null) {
+      final session = context.read<SessionService>();
+      controller =
+          widget.controllerBuilder?.call(session) ??
+          AttendanceActionController(
+            session: session,
+            faceService: context.read<FaceRecognitionService>(),
+          );
+      controller.addListener(_onControllerChange);
+      _controller = controller;
+      _gpsTimer = Timer.periodic(
+        const Duration(seconds: 60),
+        (_) => _controller?.sampleLocation(),
+      );
+    }
+    await controller.refreshStatus();
   }
 
   Future<void> _retry() {
@@ -173,6 +255,130 @@ class MyDayScreenState extends State<MyDayScreen> {
     } else {
       await session.refreshMe();
     }
+  }
+
+  /// The tile's button for the current day and controller state (spec
+  /// 2026-10-07 §4.2). Kiosk-only days have no controller, so no button.
+  TileAction? _tileAction(MyDay day) {
+    final c = _controller;
+    if (c == null) return null;
+    final state = c.buttonState;
+    if (state == AttendanceButtonState.enroll) {
+      return TileAction(
+        label: 'Set up your face · 10 seconds',
+        icon: TileActionIcon.faceSetup,
+        onPressed: _act,
+      );
+    }
+    // The same truth perform() punches on: `on_break` is a closed
+    // attendance, so it offers Check in again, never Check out.
+    final checkedIn = c.status?.checkedIn ?? (day.state == 'checked_in');
+    if (checkedIn) {
+      return TileAction(
+        label: 'Check out',
+        enabled: state != AttendanceButtonState.acting,
+        onPressed: _act,
+      );
+    }
+    // Leave, public holiday or no shift: nothing is expected, but phone
+    // users may still work (outlined, so it does not read as a must).
+    final offDay = switch (displayOf(day)) {
+      MyDayDisplay.holiday ||
+      MyDayDisplay.leave ||
+      MyDayDisplay.noShift => true,
+      _ => false,
+    };
+    final again = day.punches.isNotEmpty;
+    return TileAction(
+      label: again ? 'Check in again' : 'Check in',
+      style: again || offDay
+          ? TileActionStyle.outlined
+          : TileActionStyle.filled,
+      enabled: state == AttendanceButtonState.ready,
+      onPressed: _act,
+    );
+  }
+
+  /// The missing day's Now row for phone check-in.
+  String? _phoneHint() {
+    final c = _controller;
+    if (c == null) return null;
+    if (c.buttonState == AttendanceButtonState.enroll) {
+      return 'Set up your face once, then check in';
+    }
+    if (c.isOutside) return 'Outside the office · move closer to check in';
+    if (c.hasPlace) return 'At the office · check in now';
+    return 'Check in now';
+  }
+
+  Future<FaceCaptureResult> _captureFace() async {
+    final custom = widget.captureFace;
+    if (custom != null) return custom();
+    // Root navigator: the camera covers the bottom bar.
+    final result = await Navigator.of(context, rootNavigator: true)
+        .push<FaceCaptureResult>(
+          MaterialPageRoute(builder: (_) => const FaceCaptureScreen()),
+        );
+    return result ?? FaceCaptureResult.cancelled();
+  }
+
+  Future<void> _enrol() async {
+    final custom = widget.enrol;
+    if (custom != null) return custom();
+    await Navigator.of(
+      context,
+      rootNavigator: true,
+    ).push(MaterialPageRoute(builder: (_) => const FaceEnrollmentScreen()));
+  }
+
+  Future<void> _act() async {
+    final c = _controller;
+    if (c == null) return;
+    final AttendanceActionOutcome? result;
+    try {
+      result = await c.perform(captureFace: _captureFace, enrol: _enrol);
+    } catch (e) {
+      // A device lookup or a UI step threw outside perform()'s own catch.
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(friendlyError(e)),
+          backgroundColor: AppTheme.error,
+        ),
+      );
+      return;
+    }
+    final outcome = result;
+    if (!mounted || outcome == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    if (outcome.error != null) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(outcome.error!),
+          backgroundColor: AppTheme.error,
+        ),
+      );
+      return;
+    }
+    if (outcome.enrolled) {
+      setState(() {});
+      return;
+    }
+    setState(() {
+      if (!outcome.checkedIn) _autoClosed = null;
+      if (outcome.autoClosed != null) _autoClosed = outcome.autoClosed;
+    });
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          outcome.checkedIn
+              ? 'Checked in successfully!'
+              : 'Checked out successfully!',
+        ),
+        backgroundColor: AppTheme.primary,
+      ),
+    );
+    await refresh();
   }
 
   Future<void> _onTap(ForYouItem item) async {
@@ -245,6 +451,9 @@ class MyDayScreenState extends State<MyDayScreen> {
       color: AppTheme.onSurfaceVariant,
       fontWeight: FontWeight.w700,
     );
+    // Attendance off in the subscription: no tile, no timeline, no punch
+    // (no controller either); the week and For you still apply.
+    final attendanceOn = context.watch<SessionService>().featureAttendance;
     return Column(
       children: [
         if (_refreshFailed)
@@ -257,10 +466,18 @@ class MyDayScreenState extends State<MyDayScreen> {
               style: text.bodySmall?.copyWith(color: AppTheme.error),
             ),
           ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-          child: StatusTile(day: day),
-        ),
+        if (attendanceOn)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            child: StatusTile(
+              day: day,
+              action: _tileAction(day),
+              place: _controller?.placeLabel ?? '',
+              pinOn: _controller == null
+                  ? null
+                  : (_controller!.hasPlace && !_controller!.isOutside),
+            ),
+          ),
         Expanded(
           child: RefreshIndicator(
             onRefresh: refresh,
@@ -273,14 +490,33 @@ class MyDayScreenState extends State<MyDayScreen> {
                 16 + MediaQuery.of(context).viewPadding.bottom,
               ),
               children: [
+                if (!attendanceOn) ...[
+                  const FeatureLockedPane(
+                    featureName: 'Attendance',
+                    subtitle:
+                        'Your subscription does not include '
+                        'attendance tracking. Contact your administrator '
+                        'to upgrade.',
+                  ),
+                  const SizedBox(height: 16),
+                ],
+                if (_autoClosed != null) ...[
+                  AutoClosedBanner(
+                    acp: _autoClosed!,
+                    onDismiss: () => setState(() => _autoClosed = null),
+                  ),
+                  const SizedBox(height: 16),
+                ],
                 if (day.week.isNotEmpty) ...[
                   WeekStrip(day: day),
                   const SizedBox(height: 20),
                 ],
-                if (day.off == null || day.punches.isNotEmpty) ...[
+                if (!attendanceOn)
+                  const SizedBox.shrink()
+                else if (day.off == null || day.punches.isNotEmpty) ...[
                   Text('Timeline', style: sectionStyle),
                   const SizedBox(height: 8),
-                  DayTimeline(day: day),
+                  DayTimeline(day: day, phoneHint: _phoneHint()),
                   const SizedBox(height: 16),
                 ] else ...[
                   _offCard(context, day),
@@ -291,7 +527,7 @@ class MyDayScreenState extends State<MyDayScreen> {
                 ForYouList(
                   items: day.forYou,
                   onTap: _onTap,
-                  missing: day.missing,
+                  missing: attendanceOn && day.missing && day.kioskOnly,
                   onMissingTap: () => showKioskSheet(context),
                 ),
               ],
@@ -312,7 +548,9 @@ class MyDayScreenState extends State<MyDayScreen> {
     switch (off.kind) {
       case 'public_holiday':
         title = off.name.isEmpty ? 'Public holiday' : off.name;
-        line1 = 'Nothing is expected at the kiosk today';
+        line1 = day.kioskOnly
+            ? 'Nothing is expected at the kiosk today'
+            : 'Nothing is expected today';
       case 'leave':
         title = off.name.isEmpty ? 'On leave' : off.name;
         line1 = off.dateFrom.isEmpty
@@ -320,7 +558,9 @@ class MyDayScreenState extends State<MyDayScreen> {
             : 'From ${shortDate(off.dateFrom)} to ${shortDate(off.dateTo)}';
       default:
         title = 'Enjoy your day';
-        line1 = 'Nothing is expected at the kiosk today';
+        line1 = day.kioskOnly
+            ? 'Nothing is expected at the kiosk today'
+            : 'Nothing is expected today';
     }
     final line2 = next == null
         ? 'No shift in the next two weeks'

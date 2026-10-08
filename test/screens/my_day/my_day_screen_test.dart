@@ -5,9 +5,16 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:omni_hr/core/error_messages.dart';
+import 'package:omni_hr/models/attendance_status.dart';
 import 'package:omni_hr/models/expense_record.dart';
+import 'package:omni_hr/models/face_capture_result.dart';
+import 'package:omni_hr/models/location_result.dart';
+import 'package:omni_hr/models/wifi_info_result.dart';
 import 'package:omni_hr/models/my_day.dart';
 import 'package:omni_hr/screens/home/my_day/my_day_screen.dart';
+import 'package:omni_hr/services/attendance_action_controller.dart';
+import 'package:omni_hr/services/face_recognition_service.dart';
 import 'package:omni_hr/services/omni_mobile_api.dart';
 import 'package:omni_hr/services/session_service.dart';
 
@@ -28,6 +35,69 @@ class _FakeApi extends OmniMobileApi {
   /// When set, fetchMyDay / getExpenseList wait for it before answering.
   Completer<void>? fetchGate;
   Completer<void>? expenseGate;
+
+  AttendanceStatus attendance = AttendanceStatus.fromJson({
+    'checked_in': false,
+    'hours_today': 0,
+    'employee_id': 1,
+    'auth_type': 'app',
+    'office_latitude': 1.3,
+    'office_longitude': 103.8,
+    'office_radius_meters': 200,
+    'flexible_location': false,
+  });
+  final checkIns = <bool>[];
+  Map<String, dynamic> checkInResponse = const {};
+  Object? checkInError;
+
+  @override
+  Future<AttendanceStatus> getAttendanceStatus() async => attendance;
+
+  @override
+  Future<Map<String, dynamic>> checkIn({
+    double? latitude,
+    double? longitude,
+    bool faceVerified = true,
+    String? deviceId,
+    bool devLocation = false,
+    bool isMocked = false,
+    double? accuracy,
+    String? wifiSsid,
+    String? wifiBssid,
+  }) async {
+    final error = checkInError;
+    if (error != null) throw error;
+    checkIns.add(faceVerified);
+    attendance = AttendanceStatus.fromJson({
+      'checked_in': true,
+      'hours_today': 0,
+      'employee_id': 1,
+      'auth_type': 'app',
+      'office_latitude': 1.3,
+      'office_longitude': 103.8,
+      'office_radius_meters': 200,
+      'flexible_location': false,
+    });
+    return checkInResponse;
+  }
+
+  int checkOuts = 0;
+
+  @override
+  Future<Map<String, dynamic>> checkOut({
+    double? latitude,
+    double? longitude,
+    bool faceVerified = true,
+    String? deviceId,
+    bool devLocation = false,
+    bool isMocked = false,
+    double? accuracy,
+    String? wifiSsid,
+    String? wifiBssid,
+  }) async {
+    checkOuts++;
+    return const {};
+  }
 
   @override
   Future<MyDay> fetchMyDay() async {
@@ -53,6 +123,28 @@ class _Calls {
   final leave = <int>[];
   final expense = <int>[];
   int sessionRefreshes = 0;
+  int captures = 0;
+  int enrolments = 0;
+  int controllers = 0;
+}
+
+/// A tenant whose subscription has Attendance switched off.
+class _NoAttendanceSession extends SessionService {
+  @override
+  bool get featureAttendance => false;
+}
+
+/// A session that already knows the user approves leave.
+class _ApproverSession extends SessionService {
+  _ApproverSession({required this.count});
+
+  final int count;
+
+  @override
+  bool get leaveApprovalsEnabled => true;
+
+  @override
+  int get leaveApprovalsPendingCount => count;
 }
 
 Widget _host(
@@ -60,6 +152,10 @@ Widget _host(
   Key? key,
   _Calls? calls,
   SessionService? session,
+  double latitude = 1.3,
+  bool enrolled = true,
+  _Calls? enrolCalls,
+  Future<LocationResult> Function()? getLocation,
 }) => ChangeNotifierProvider<SessionService>(
   create: (_) => session ?? SessionService(),
   child: MaterialApp(
@@ -70,6 +166,33 @@ Widget _host(
       onOpenLeave: (id) => calls?.leave.add(id),
       onOpenExpense: (id) => calls?.expense.add(id),
       refreshSession: () async => calls?.sessionRefreshes++,
+      controllerBuilder: (session) => _counted(
+        calls,
+        AttendanceActionController(
+          session: session,
+          apiBuilder: (_) => api,
+          getLocation:
+              getLocation ??
+              () async => LocationResult(
+                status: LocationStatus.ready,
+                latitude: latitude,
+                longitude: 103.8,
+                accuracy: 5,
+              ),
+          getWifi: () async => const WifiInfoResult.ready(ssid: 'office'),
+          getDeviceId: () async => 'device-1',
+          isEnrolled: () => enrolled,
+          verifyFace: (_) async => FaceVerifyResult(ok: true),
+          refreshEnrolled: () async {},
+          devLocation: false,
+          simulateFace: false,
+        ),
+      ),
+      captureFace: () async {
+        calls?.captures++;
+        return FaceCaptureResult.success('/tmp/face.jpg');
+      },
+      enrol: () async => enrolCalls?.enrolments++,
       destinationBuilder: (item, expense) => Scaffold(
         appBar: AppBar(),
         body: Text('DEST ${item.kind} ${expense?.id ?? '-'}'),
@@ -77,6 +200,14 @@ Widget _host(
     ),
   ),
 );
+
+AttendanceActionController _counted(
+  _Calls? calls,
+  AttendanceActionController controller,
+) {
+  calls?.controllers++;
+  return controller;
+}
 
 /// Tall enough that every row of the screen is built.
 void _tallScreen(WidgetTester tester) {
@@ -542,5 +673,329 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('DEST my_expense 88'), findsOneWidget);
     expect(api.expenseCalls, 2);
+  });
+
+  testWidgets('phone day: the tile carries Check in and the live place', (
+    tester,
+  ) async {
+    _tallScreen(tester);
+    final day = sampleMyDay(state: 'not_in', punches: [], kioskOnly: false);
+    await tester.pumpWidget(_host(_FakeApi([day])));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('status-action')), findsOneWidget);
+    expect(find.text('Check in'), findsOneWidget);
+    expect(find.byKey(const ValueKey('status-kiosk-button')), findsNothing);
+    expect(find.byKey(const ValueKey('status-pin-on')), findsOneWidget);
+    expect(find.textContaining('Office (0 m)'), findsOneWidget);
+  });
+
+  testWidgets('tapping Check in captures, posts and reloads the day', (
+    tester,
+  ) async {
+    _tallScreen(tester);
+    final before = sampleMyDay(state: 'not_in', punches: [], kioskOnly: false);
+    final after = sampleMyDay(kioskOnly: false);
+    final api = _FakeApi([before, after]);
+    final calls = _Calls();
+    await tester.pumpWidget(_host(api, calls: calls));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('status-action')));
+    await tester.pumpAndSettle();
+    expect(calls.captures, 1);
+    expect(api.checkIns, [true]);
+    expect(find.text('Checked in successfully!'), findsOneWidget);
+    expect(api.calls, 2);
+    expect(find.text('Check out'), findsOneWidget);
+  });
+
+  testWidgets('a missing phone day has no red For-you row', (tester) async {
+    _tallScreen(tester);
+    final day = sampleMyDay(
+      state: 'not_in',
+      missing: true,
+      punches: [],
+      kioskOnly: false,
+    );
+    await tester.pumpWidget(_host(_FakeApi([day])));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('for-you-missing')), findsNothing);
+    expect(find.text('No check-in'), findsOneWidget);
+  });
+
+  testWidgets('kiosk-only day: no action button', (tester) async {
+    _tallScreen(tester);
+    await tester.pumpWidget(_host(_FakeApi([sampleMyDay()])));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('status-action')), findsNothing);
+    expect(find.byKey(const ValueKey('status-kiosk-button')), findsOneWidget);
+  });
+
+  testWidgets(
+    'a For-you approvals count that differs from the session re-pulls /me',
+    (tester) async {
+      _tallScreen(tester);
+      final day = sampleMyDay(
+        forYou: [
+          {
+            'kind': 'leave_approvals',
+            'count': 2,
+            'oldest_at': '2026-10-05 01:00:00',
+          },
+        ],
+      );
+      final calls = _Calls();
+      await tester.pumpWidget(
+        _host(
+          _FakeApi([day]),
+          calls: calls,
+          session: _ApproverSession(count: 1),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(calls.sessionRefreshes, 1);
+
+      // The numbers agree: nothing to re-pull. A session that does not yet
+      // know the user approves (the default SessionService) is left alone.
+      final agreed = _Calls();
+      await tester.pumpWidget(
+        _host(
+          _FakeApi([day]),
+          calls: agreed,
+          session: _ApproverSession(count: 2),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(agreed.sessionRefreshes, 0);
+    },
+  );
+
+  testWidgets('not enrolled: the tile offers face setup, no punch', (
+    tester,
+  ) async {
+    _tallScreen(tester);
+    final day = sampleMyDay(state: 'not_in', punches: [], kioskOnly: false);
+    final api = _FakeApi([day]);
+    final calls = _Calls();
+    await tester.pumpWidget(_host(api, enrolled: false, enrolCalls: calls));
+    await tester.pumpAndSettle();
+    expect(find.text('Set up your face · 10 seconds'), findsOneWidget);
+    expect(find.byIcon(Icons.face_retouching_natural), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('status-action')));
+    await tester.pumpAndSettle();
+    expect(calls.enrolments, 1);
+    expect(api.checkIns, isEmpty);
+  });
+
+  testWidgets('a failed punch shows the error and does not reload the day', (
+    tester,
+  ) async {
+    _tallScreen(tester);
+    final day = sampleMyDay(state: 'not_in', punches: [], kioskOnly: false);
+    final api = _FakeApi([day])..checkInError = ApiException('network_error');
+    await tester.pumpWidget(_host(api));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('status-action')));
+    await tester.pumpAndSettle();
+    expect(find.byType(SnackBar), findsOneWidget);
+    expect(
+      find.text('No internet connection. Check your network and try again.'),
+      findsOneWidget,
+    );
+    expect(find.text('Checked in successfully!'), findsNothing);
+    expect(api.calls, 1);
+  });
+
+  testWidgets('an auto-closed check-in shows the banner; dismiss hides it', (
+    tester,
+  ) async {
+    _tallScreen(tester);
+    final before = sampleMyDay(state: 'not_in', punches: [], kioskOnly: false);
+    final api = _FakeApi([before, sampleMyDay(kioskOnly: false)])
+      ..checkInResponse = {
+        'auto_closed_previous': {
+          'attendance_id': 7,
+          'original_check_in': '2026-10-03 00:00:00',
+          'inferred_check_out': '2026-10-03 09:00:00',
+          'hours_assumed': 9,
+          'hours_open_when_closed': 30,
+        },
+      };
+    await tester.pumpWidget(_host(api));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('status-action')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('auto-closed-banner')), findsOneWidget);
+    await tester.tap(find.byTooltip('Dismiss'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('auto-closed-banner')), findsNothing);
+  });
+
+  testWidgets('outside the office: a dead Check in and the off pin', (
+    tester,
+  ) async {
+    _tallScreen(tester);
+    final day = sampleMyDay(state: 'not_in', punches: [], kioskOnly: false);
+    final api = _FakeApi([day]);
+    await tester.pumpWidget(_host(api, latitude: 1.31));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('status-pin-off')), findsOneWidget);
+    final button = tester.widget<FilledButton>(
+      find.byKey(const ValueKey('status-action')),
+    );
+    expect(button.onPressed, isNull);
+    await tester.tap(find.byKey(const ValueKey('status-action')));
+    await tester.pumpAndSettle();
+    expect(api.checkIns, isEmpty);
+  });
+
+  testWidgets('a closed punch row and not_in: outlined Check in again', (
+    tester,
+  ) async {
+    _tallScreen(tester);
+    final day = sampleMyDay(state: 'not_in', kioskOnly: false);
+    await tester.pumpWidget(_host(_FakeApi([day])));
+    await tester.pumpAndSettle();
+    expect(find.text('Check in again'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (w) => w is OutlinedButton && w.key == const ValueKey('status-action'),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets(
+    'the day turning kiosk-only swaps the action for the kiosk hint',
+    (tester) async {
+      _tallScreen(tester);
+      final key = GlobalKey<MyDayScreenState>();
+      final api = _FakeApi([
+        sampleMyDay(state: 'not_in', punches: [], kioskOnly: false),
+        sampleMyDay(state: 'not_in', punches: []),
+      ]);
+      await tester.pumpWidget(_host(api, key: key));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('status-action')), findsOneWidget);
+
+      await key.currentState!.refresh();
+      await tester.pump();
+      expect(find.byKey(const ValueKey('status-action')), findsNothing);
+      expect(find.byKey(const ValueKey('status-kiosk-button')), findsOneWidget);
+      await tester.pumpAndSettle();
+    },
+  );
+
+  testWidgets(
+    'on break (checked out): outlined Check in again posts a check-in',
+    (tester) async {
+      _tallScreen(tester);
+      final day = sampleMyDay(state: 'on_break', kioskOnly: false);
+      final api = _FakeApi([day]); // /attendance/status: not checked in
+      final calls = _Calls();
+      await tester.pumpWidget(_host(api, calls: calls));
+      await tester.pumpAndSettle();
+      expect(find.text('On break'), findsOneWidget);
+      expect(find.text('Check out'), findsNothing);
+      expect(find.text('Check in again'), findsOneWidget);
+      expect(
+        find.byWidgetPredicate(
+          (w) =>
+              w is OutlinedButton && w.key == const ValueKey('status-action'),
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('status-action')));
+      await tester.pumpAndSettle();
+      expect(api.checkIns, [true]);
+      expect(api.checkOuts, 0);
+      expect(find.text('Checked in successfully!'), findsOneWidget);
+    },
+  );
+
+  for (final off in <Map<String, dynamic>>[
+    {'kind': 'leave', 'name': 'Annual leave'},
+    {'kind': 'public_holiday', 'name': 'Deepavali'},
+    {'kind': 'not_scheduled'},
+  ]) {
+    testWidgets('${off['kind']} phone day: outlined Check in that punches', (
+      tester,
+    ) async {
+      _tallScreen(tester);
+      final day = sampleMyDay(
+        state: 'not_in',
+        withShift: false,
+        punches: [],
+        off: off,
+        kioskOnly: false,
+      );
+      final api = _FakeApi([day]);
+      await tester.pumpWidget(_host(api));
+      await tester.pumpAndSettle();
+      expect(find.text('Check in'), findsOneWidget);
+      final button = tester.widget<OutlinedButton>(
+        find.byKey(const ValueKey('status-action')),
+      );
+      expect(button.onPressed, isNotNull);
+      await tester.tap(find.byKey(const ValueKey('status-action')));
+      await tester.pumpAndSettle();
+      expect(api.checkIns, [true]);
+    });
+  }
+
+  testWidgets('Attendance off: locked pane, no tile, no controller', (
+    tester,
+  ) async {
+    _tallScreen(tester);
+    final calls = _Calls();
+    final day = sampleMyDay(state: 'not_in', punches: [], kioskOnly: false);
+    await tester.pumpWidget(
+      _host(_FakeApi([day]), calls: calls, session: _NoAttendanceSession()),
+    );
+    await tester.pumpAndSettle();
+    expect(calls.controllers, 0);
+    expect(find.text('Attendance not active'), findsOneWidget);
+    expect(find.byKey(const ValueKey('status-tile')), findsNothing);
+    expect(find.byKey(const ValueKey('status-action')), findsNothing);
+    expect(find.text('Timeline'), findsNothing);
+    expect(find.text('This week'), findsOneWidget);
+    expect(find.text('For you'), findsOneWidget);
+    expect(find.text('3 leave requests to approve'), findsOneWidget);
+  });
+
+  testWidgets('a punch that throws shows the friendly error', (tester) async {
+    _tallScreen(tester);
+    final day = sampleMyDay(state: 'not_in', punches: [], kioskOnly: false);
+    final api = _FakeApi([day]);
+    var fixes = 0;
+    final boom = StateError('gps boom');
+    await tester.pumpWidget(
+      _host(
+        api,
+        getLocation: () async {
+          // The first fix (screen load) works; the punch's fresh fix throws.
+          if (fixes++ == 0) {
+            return LocationResult(
+              status: LocationStatus.ready,
+              latitude: 1.3,
+              longitude: 103.8,
+              accuracy: 5,
+            );
+          }
+          throw boom;
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('status-action')));
+    await tester.pumpAndSettle();
+    expect(find.byType(SnackBar), findsOneWidget);
+    expect(find.text(friendlyError(boom)), findsOneWidget);
+    expect(api.checkIns, isEmpty);
+    expect(api.calls, 1);
+    // `acting` was reset: the button is live again.
+    final button = tester.widget<FilledButton>(
+      find.byKey(const ValueKey('status-action')),
+    );
+    expect(button.onPressed, isNotNull);
   });
 }

@@ -115,4 +115,94 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Phone check-in is off'), findsNothing);
   });
+
+  testWidgets('phone day: action button, place and pin', (tester) async {
+    var taps = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatusTile(
+            day: sampleMyDay(state: 'not_in', punches: [], kioskOnly: false),
+            now: _now,
+            place: 'Office (40 m)',
+            pinOn: true,
+            action: TileAction(label: 'Check in', onPressed: () => taps++),
+          ),
+        ),
+      ),
+    );
+    expect(find.byKey(const ValueKey('status-kiosk-button')), findsNothing);
+    expect(find.byKey(const ValueKey('status-pin-on')), findsOneWidget);
+    expect(find.textContaining('· Office (40 m)'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('status-action')));
+    expect(taps, 1);
+    expect(find.text('Check in'), findsOneWidget);
+  });
+
+  testWidgets('a disabled action does not fire; pin off when outside', (
+    tester,
+  ) async {
+    var taps = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatusTile(
+            day: sampleMyDay(state: 'not_in', punches: [], kioskOnly: false),
+            now: _now,
+            place: 'Outside the office (1.2 km)',
+            pinOn: false,
+            action: TileAction(
+              label: 'Check in',
+              enabled: false,
+              onPressed: () => taps++,
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(find.byKey(const ValueKey('status-pin-off')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('status-action')));
+    expect(taps, 0);
+  });
+
+  testWidgets('outlined style and the setup icon render', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatusTile(
+            day: sampleMyDay(state: 'checked_out', kioskOnly: false),
+            now: _now,
+            pinOn: true,
+            action: TileAction(
+              label: 'Check in again',
+              style: TileActionStyle.outlined,
+              icon: TileActionIcon.faceSetup,
+              onPressed: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(find.byType(OutlinedButton), findsOneWidget);
+    expect(find.byIcon(Icons.face_retouching_natural), findsOneWidget);
+    expect(find.text('Check in again'), findsOneWidget);
+  });
+
+  testWidgets('kiosk-only day: no action even if one is passed', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatusTile(
+            day: sampleMyDay(),
+            now: _now,
+            action: TileAction(label: 'Check in', onPressed: () {}),
+          ),
+        ),
+      ),
+    );
+    expect(find.byKey(const ValueKey('status-kiosk-button')), findsOneWidget);
+    expect(find.byKey(const ValueKey('status-action')), findsNothing);
+  });
 }
