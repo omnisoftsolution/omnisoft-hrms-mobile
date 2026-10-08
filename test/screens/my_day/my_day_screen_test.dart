@@ -855,7 +855,7 @@ void main() {
     final calls = _Calls();
     await tester.pumpWidget(_host(api, enrolled: false, enrolCalls: calls));
     await tester.pumpAndSettle();
-    expect(find.text('Set up your face · 10 seconds'), findsOneWidget);
+    expect(find.text('Set up your face'), findsOneWidget);
     expect(find.byIcon(Icons.face_retouching_natural), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('status-action')));
     await tester.pumpAndSettle();

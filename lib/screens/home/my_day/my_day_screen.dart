@@ -279,7 +279,7 @@ class MyDayScreenState extends State<MyDayScreen> {
     final state = c.buttonState;
     if (state == AttendanceButtonState.enroll) {
       return TileAction(
-        label: 'Set up your face · 10 seconds',
+        label: 'Set up your face',
         icon: TileActionIcon.faceSetup,
         onPressed: _act,
       );
@@ -318,7 +318,7 @@ class MyDayScreenState extends State<MyDayScreen> {
     final c = _controller;
     if (c == null) return null;
     if (c.buttonState == AttendanceButtonState.enroll) {
-      return 'Set up your face once, then check in';
+      return 'Takes about 10 seconds, once';
     }
     if (c.isOutside) return 'Outside the office · move closer to check in';
     if (c.hasPlace) return 'At the office · check in now';
