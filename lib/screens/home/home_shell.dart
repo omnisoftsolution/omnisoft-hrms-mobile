@@ -80,19 +80,21 @@ class HomeShellState extends State<HomeShell> {
     }
   }
 
-  /// Pops a transient snackbar when a freshly-arrived notification
-  /// is queued by NotificationService. Each arrival fires at most
-  /// one snackbar (consume-and-clear semantics on the service).
+  /// Pops a transient snackbar for the newest notification queued by
+  /// NotificationService (consume-and-clear semantics on the service),
+  /// and runs the side effects of every arrival in the batch — one poll
+  /// can bring a leave decision and a newer expense update together.
   void _onNotificationChange() {
-    final fresh = _notifSvc?.consumeFreshArrival();
-    if (fresh == null || !mounted) return;
-    if (fresh.isApprovalRequestKind) {
+    final arrivals = _notifSvc?.consumeFreshArrivals() ?? const [];
+    if (arrivals.isEmpty || !mounted) return;
+    final fresh = arrivals.first;
+    if (refreshesApprovals(arrivals)) {
       // A new request waits for this user: re-pull /me so the approvals
       // count in SessionService (Home card) is current.
       // ignore: discarded_futures — fire-and-forget
       context.read<SessionService>().refreshMe();
     }
-    if (reloadsLeaveHistory(fresh, tabIndex: _index)) {
+    if (reloadsLeaveHistory(arrivals, tabIndex: _index)) {
       // ignore: discarded_futures — fire-and-forget
       _historyKey.currentState?.reloadLeaveQuietly();
     }
@@ -343,12 +345,19 @@ class HomeShellState extends State<HomeShell> {
 /// History tab index in [HomeShell]'s bottom bar.
 const historyTabIndex = 2;
 
-/// Whether a freshly arrived notification should reload the leave list:
-/// a decision on the user's own leave (approved / refused / first
-/// approval) while the History tab is on screen. Off screen the list
-/// reloads anyway when the tab is opened.
-bool reloadsLeaveHistory(NotificationRecord fresh, {required int tabIndex}) =>
-    fresh.isLeaveKind && tabIndex == historyTabIndex;
+/// Whether freshly arrived notifications should reload the leave list:
+/// any decision on the user's own leave (approved / refused / first
+/// approval) among [arrivals] while the History tab is on screen. Off
+/// screen the list reloads anyway when the tab is opened.
+bool reloadsLeaveHistory(
+  Iterable<NotificationRecord> arrivals, {
+  required int tabIndex,
+}) => tabIndex == historyTabIndex && arrivals.any((n) => n.isLeaveKind);
+
+/// Whether freshly arrived notifications should re-pull /me: a new
+/// leave request waits for this user among [arrivals].
+bool refreshesApprovals(Iterable<NotificationRecord> arrivals) =>
+    arrivals.any((n) => n.isApprovalRequestKind);
 
 /// The snackbar shown when a notification arrives while the app is open.
 /// [onAction] runs for its VIEW / Review action, when the kind has one.
