@@ -297,6 +297,84 @@ void main() {
       expect(find.text('Edit'), findsNothing);
     });
 
+    testWidgets('a highlight waits for an overlapping newer reload', (
+      tester,
+    ) async {
+      final key = GlobalKey<LeaveHistoryScreenState>();
+      final fresh = leave({'id': 99, 'leave_type': 'Sick Leave'});
+      final old = leave({'id': 1});
+      final api = FakeApi([
+        [old], // first load
+        [old], // the notification tap's reload: slow, from before #99
+        [fresh, old], // an overlapping reload that already has #99
+      ]);
+      await tester.pumpWidget(host(api, key: key));
+      await tester.pumpAndSettle();
+
+      final gateTap = Completer<void>();
+      api.gate = gateTap;
+      var highlightDone = false;
+      unawaited(
+        key.currentState!
+            .scrollToAndHighlight(99)
+            .then((_) => highlightDone = true),
+      );
+      final gateNewer = Completer<void>();
+      api.gate = gateNewer;
+      final newer = key.currentState!.refresh(quiet: true);
+
+      // The superseded (older) answer lands first: the highlight must not
+      // judge the list by it.
+      gateTap.complete();
+      await tester.pump();
+      expect(highlightDone, isFalse);
+      expect(find.textContaining('older than the most recent 50'),
+          findsNothing);
+
+      gateNewer.complete();
+      await newer;
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500)); // scroll
+      expect(find.textContaining('older than the most recent 50'),
+          findsNothing);
+      expect(find.text('Sick Leave'), findsOneWidget);
+      // #99 auto-expanded by the highlight.
+      expect(find.text('Cancel'), findsOneWidget);
+      await tester.pump(const Duration(seconds: 3)); // highlight fades
+      await tester.pumpAndSettle();
+      expect(highlightDone, isTrue);
+    });
+
+    testWidgets('every overlapping refresh resolves with the newest', (
+      tester,
+    ) async {
+      final key = GlobalKey<LeaveHistoryScreenState>();
+      final api = FakeApi([
+        [pending],
+        [pending],
+        [approved],
+      ]);
+      await tester.pumpWidget(host(api, key: key));
+      await tester.pumpAndSettle();
+      final gateA = Completer<void>();
+      api.gate = gateA;
+      var aDone = false;
+      unawaited(
+        key.currentState!.refresh(quiet: true).then((_) => aDone = true),
+      );
+      final gateB = Completer<void>();
+      api.gate = gateB;
+      final b = key.currentState!.refresh(quiet: true);
+      gateA.complete();
+      await tester.pump();
+      expect(aDone, isFalse); // superseded: waits for B
+      gateB.complete();
+      await b;
+      await tester.pump();
+      expect(aDone, isTrue);
+      expect(find.text('Approved'), findsOneWidget);
+    });
+
     testWidgets('an older failure after a newer success shows no error', (
       tester,
     ) async {

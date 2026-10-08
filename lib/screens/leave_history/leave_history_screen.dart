@@ -93,9 +93,16 @@ class LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
     // grow when the highlighted one auto-expands; 140 lands close
     // enough on the iPhone-width canvas. Worst case the user scrolls
     // a bit, but the highlight tint guides their eye.
-    final target = (index * 140.0).clamp(
-        0.0, _scrollController.position.maxScrollExtent);
+    //
+    // The reload showed the spinner in place of the list: wait for the
+    // list to be built again before touching the scroll position (it
+    // threw "ScrollController not attached" here, so the card never
+    // scrolled into view and the tint never faded).
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
     if (_scrollController.hasClients) {
+      final target = (index * 140.0).clamp(
+          0.0, _scrollController.position.maxScrollExtent);
       await _scrollController.animateTo(
         target,
         duration: const Duration(milliseconds: 450),
@@ -117,9 +124,15 @@ class LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
   /// Reloads can overlap (tab switch, pull-down, a notification, a
   /// failed cancel): only the answer to the latest request is used, so a
   /// slow older answer (still Pending) never replaces a newer one
-  /// (Approved) and brings back stale Edit / Cancel buttons.
+  /// (Approved) and brings back stale Edit / Cancel buttons. Every call
+  /// completes only once the newest overlapping request has been
+  /// applied, so a caller that reads the list afterwards (the
+  /// notification-tap highlight) never sees a superseded one.
   Future<void> refresh({bool quiet = false}) async {
     final seq = ++_requestSeq;
+    // Shared by every call of an overlapping group; the newest completes
+    // it.
+    final settled = _settled ??= Completer<void>();
     if (!quiet || _error != null) {
       setState(() {
         _loading = true;
@@ -133,22 +146,36 @@ class LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
     } catch (e) {
       error = e;
     }
-    if (!mounted || seq != _requestSeq) return; // superseded
-    setState(() {
-      if (leaves != null) {
-        _leaves = leaves;
-      } else if (quiet && !_loading) {
-        debugPrint('leave/history quiet reload failed: $error');
-      } else {
-        _error = friendlyError(error!);
-      }
-      _loading = false;
-    });
+    if (seq != _requestSeq) {
+      // Superseded: resolve with the newest request instead.
+      await settled.future;
+      return;
+    }
+    _settled = null;
+    try {
+      if (!mounted) return;
+      setState(() {
+        if (leaves != null) {
+          _leaves = leaves;
+        } else if (quiet && !_loading) {
+          debugPrint('leave/history quiet reload failed: $error');
+        } else {
+          _error = friendlyError(error!);
+        }
+        _loading = false;
+      });
+    } finally {
+      settled.complete(); // releases the superseded calls of this group
+    }
   }
 
   // Bumped by every refresh(); an answer is applied only while its
   // number is still the latest.
   int _requestSeq = 0;
+
+  // Completes when the newest of the overlapping refresh() calls has
+  // been applied; null while no refresh is in flight.
+  Completer<void>? _settled;
 
   /// The request changed on the server (decided, cancelled, deleted)
   /// since the list was loaded: say so and reload, so the card's state
