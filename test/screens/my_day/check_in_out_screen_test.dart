@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omni_hr/models/face_capture_result.dart';
 import 'package:omni_hr/screens/home/my_day/check_in_out_screen.dart';
@@ -25,7 +26,13 @@ class _Host {
   CheckInOutResult? popped;
   bool done = false;
 
-  Widget build(CheckInOutScreen page) => MaterialApp(
+  Widget build(CheckInOutScreen page, {double textScale = 1}) => MaterialApp(
+    builder: (context, child) => MediaQuery(
+      data: MediaQuery.of(
+        context,
+      ).copyWith(textScaler: TextScaler.linear(textScale)),
+      child: child!,
+    ),
     home: Builder(
       builder: (context) => Scaffold(
         body: Center(
@@ -71,13 +78,15 @@ CheckInOutScreen _page({
   )
   run,
   Widget Function(ValueChanged<FaceCaptureResult>)? capture,
+  String hoursToday = '0h 00m',
+  String lastLabel = 'Last out 18:25',
 }) => CheckInOutScreen(
   checkingOut: checkingOut,
   employeeName: 'Ethan Smith',
   shiftLabel: '08:00 – 17:00',
   headerNote: '1h 53m late',
-  hoursToday: '0h 00m',
-  lastLabel: 'Last out 18:25',
+  hoursToday: hoursToday,
+  lastLabel: lastLabel,
   captureBuilder: capture ?? _fakeCapture,
   run: run,
 );
@@ -85,9 +94,10 @@ CheckInOutScreen _page({
 Future<void> _open(
   WidgetTester tester,
   _Host host,
-  CheckInOutScreen page,
-) async {
-  await tester.pumpWidget(host.build(page));
+  CheckInOutScreen page, {
+  double textScale = 1,
+}) async {
+  await tester.pumpWidget(host.build(page, textScale: textScale));
   await tester.tap(find.text('OPEN'));
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 300));
@@ -152,6 +162,58 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('fake-capture')));
     await tester.pump();
     expect(tester.getSize(find.byKey(const ValueKey('check-done'))).width, 308);
+    await tester.pumpAndSettle(const Duration(seconds: 2));
+  });
+
+  testWidgets('the footer shows both texts in full on a 360 dp phone', (
+    tester,
+  ) async {
+    // Samsung A07: 720 px wide at 2x = 360 dp. The test font's square
+    // glyphs are about twice as wide as Inter's, so scale the text to
+    // 0.55 to get phone-like widths (~7 dp per character at 13 sp).
+    tester.view.physicalSize = const Size(720, 1600);
+    tester.view.devicePixelRatio = 2.0;
+    addTearDown(tester.view.reset);
+    final host = _Host();
+    await _open(
+      tester,
+      host,
+      _page(run: _happyRun, hoursToday: '6h 07m', lastLabel: 'Last out 14:17'),
+      textScale: 0.55,
+    );
+    expect(tester.takeException(), isNull);
+    for (final t in ['Hours today 6h 07m', 'Last out 14:17']) {
+      final paragraph = tester.renderObject<RenderParagraph>(find.text(t));
+      expect(paragraph.didExceedMaxLines, isFalse, reason: t);
+    }
+    await tester.pump(const Duration(seconds: 1));
+    await tester.tap(find.byKey(const ValueKey('fake-capture')));
+    await tester.pumpAndSettle(const Duration(seconds: 2));
+  });
+
+  testWidgets('a footer too long for the row still ellipsizes', (tester) async {
+    tester.view.physicalSize = const Size(720, 1600);
+    tester.view.devicePixelRatio = 2.0;
+    addTearDown(tester.view.reset);
+    final host = _Host();
+    await _open(
+      tester,
+      host,
+      _page(
+        run: _happyRun,
+        hoursToday: '6h 07m and a great deal more text than fits',
+        lastLabel: 'Last out 14:17 with a very long tail as well',
+      ),
+    );
+    expect(tester.takeException(), isNull);
+    expect(
+      tester
+          .renderObject<RenderParagraph>(find.textContaining('Hours today'))
+          .didExceedMaxLines,
+      isTrue,
+    );
+    await tester.pump(const Duration(seconds: 1));
+    await tester.tap(find.byKey(const ValueKey('fake-capture')));
     await tester.pumpAndSettle(const Duration(seconds: 2));
   });
 

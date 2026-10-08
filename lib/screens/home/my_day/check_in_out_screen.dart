@@ -290,31 +290,42 @@ class _CheckInOutScreenState extends State<CheckInOutScreen> {
                 if (widget.hoursToday.isNotEmpty ||
                     widget.lastLabel.isNotEmpty) ...[
                   const SizedBox(height: 12),
+                  // "Hours today" takes all the room the last-punch label
+                  // leaves; that label is sized to its text, capped at half
+                  // the row. Both ellipsize only when they really do not
+                  // fit (equal flex thirds cut "Hours today …" on 360 dp).
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: Row(
-                      children: [
-                        if (widget.hoursToday.isNotEmpty)
-                          Flexible(
+                    child: LayoutBuilder(
+                      builder: (context, constraints) => Row(
+                        children: [
+                          Expanded(
                             child: Text(
-                              'Hours today ${widget.hoursToday}',
+                              widget.hoursToday.isEmpty
+                                  ? ''
+                                  : 'Hours today ${widget.hoursToday}',
                               style: muted,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                        const Spacer(),
-                        if (widget.lastLabel.isNotEmpty)
-                          Flexible(
-                            child: Text(
-                              widget.lastLabel,
-                              style: muted,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              textAlign: TextAlign.end,
+                          if (widget.lastLabel.isNotEmpty) ...[
+                            const SizedBox(width: 12),
+                            ConstrainedBox(
+                              constraints: BoxConstraints(
+                                maxWidth: constraints.maxWidth / 2,
+                              ),
+                              child: Text(
+                                widget.lastLabel,
+                                style: muted,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                textAlign: TextAlign.end,
+                              ),
                             ),
-                          ),
-                      ],
+                          ],
+                        ],
+                      ),
                     ),
                   ),
                 ],
