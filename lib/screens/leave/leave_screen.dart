@@ -215,6 +215,7 @@ class LeaveScreenState extends State<LeaveScreen> {
     // messenger (no descendant Scaffolds → showSnackBar asserts) and
     // findAncestorStateOfType<HomeShellState>() returns null. This
     // screen's context IS inside HomeShell, so both resolve cleanly.
+    var submitted = false;
     final leaveId = await showModalBottomSheet<int>(
       context: context,
       isScrollControlled: true,
@@ -223,8 +224,17 @@ class LeaveScreenState extends State<LeaveScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (_) => _ApplyLeaveSheet(leaveType: type, apiFor: _api),
+      builder: (_) => _ApplyLeaveSheet(
+        leaveType: type,
+        apiFor: _api,
+        onSubmitted: () => submitted = true,
+      ),
     );
+    // A new request uses up balance: reload the tiles however the sheet
+    // was closed (DONE, VIEW IN HISTORY, or dragged down from the
+    // receipt). Cancel / edit from History reload them on the next
+    // switch to this tab (HomeShell._onTabTap).
+    if (submitted && mounted) unawaited(refresh());
     // DONE pops with null → stay on Leave tab. VIEW IN HISTORY pops
     // with a positive leave id → navigate. No snackbar — the in-sheet
     // receipt is the user's confirmation; doubling it with a banner
@@ -373,7 +383,14 @@ class LeaveScreenState extends State<LeaveScreen> {
 class _ApplyLeaveSheet extends StatefulWidget {
   final LeaveType leaveType;
   final OmniMobileApi Function(SessionService session) apiFor;
-  const _ApplyLeaveSheet({required this.leaveType, required this.apiFor});
+
+  /// Called once the server has created the leave.
+  final VoidCallback onSubmitted;
+  const _ApplyLeaveSheet({
+    required this.leaveType,
+    required this.apiFor,
+    required this.onSubmitted,
+  });
 
   @override
   State<_ApplyLeaveSheet> createState() => _ApplyLeaveSheetState();
@@ -651,6 +668,7 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
       // / Reason / Approver / Reference) and then chooses where to go
       // via the DONE or VIEW IN HISTORY buttons in `_buildSuccess`.
       final leaveId = (response['leave_id'] as num?)?.toInt() ?? 0;
+      widget.onSubmitted();
       setState(() {
         _submittedLeaveId = leaveId;
         _submittedApprover = receiptApprover(

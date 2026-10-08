@@ -15,19 +15,29 @@ class FakeApi extends OmniMobileApi {
 
   Map<String, dynamic> applyResponse;
   int applies = 0;
+  int typeCalls = 0;
+
+  /// Days left on Annual Leave, per getLeaveTypes call (last repeats).
+  List<double>? balances;
 
   @override
   Future<List<ApprovalItem>> getPendingApprovals() async => const [];
 
   @override
-  Future<List<LeaveType>> getLeaveTypes() async => [
-    LeaveType.fromJson({
-      'id': 74,
-      'name': 'Annual Leave',
-      'request_unit': 'day',
-      'requires_allocation': false,
-    }),
-  ];
+  Future<List<LeaveType>> getLeaveTypes() async {
+    final b = balances;
+    final left = b?[typeCalls.clamp(0, b.length - 1)];
+    typeCalls++;
+    return [
+      LeaveType.fromJson({
+        'id': 74,
+        'name': 'Annual Leave',
+        'request_unit': 'day',
+        'requires_allocation': left != null,
+        'virtual_remaining_leaves': ?left,
+      }),
+    ];
+  }
 
   @override
   Future<Map<String, dynamic>> applyLeave({
@@ -218,5 +228,35 @@ void main() {
       await tester.pumpAndSettle();
       expect(session.meCalls, 2);
     });
+  });
+
+  testWidgets('balances reload after a submitted leave (N1)', (tester) async {
+    final api = FakeApi(
+      applyResponse: {'success': true, 'leave_id': 45, 'state': 'confirm'},
+    )..balances = [5, 4];
+    await tester.pumpWidget(host(api));
+    await tester.pumpAndSettle();
+    expect(find.text('5d left'), findsOneWidget);
+
+    await submitAnnualLeave(tester);
+    await tester.tap(find.text('DONE'));
+    await tester.pumpAndSettle();
+    expect(api.typeCalls, 2);
+    expect(find.text('4d left'), findsOneWidget);
+    expect(find.text('5d left'), findsNothing);
+  });
+
+  testWidgets('closing the sheet without submitting does not reload', (
+    tester,
+  ) async {
+    final api = FakeApi()..balances = [5, 4];
+    await tester.pumpWidget(host(api));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Annual Leave'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Close'));
+    await tester.pumpAndSettle();
+    expect(api.typeCalls, 1);
+    expect(find.text('5d left'), findsOneWidget);
   });
 }
