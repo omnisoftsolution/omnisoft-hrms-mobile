@@ -161,27 +161,31 @@ class OmniBellButton extends StatelessWidget {
           ),
           onPressed: onPressed,
         ),
+        // The badge is decoration only: IgnorePointer lets a tap on it
+        // reach the IconButton underneath (APP-3 — it used to swallow it).
         if (hasUnread)
           Positioned(
             top: 8,
             right: 8,
-            child: Container(
-              constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-              decoration: BoxDecoration(
-                color: AppTheme.error,
-                shape: BoxShape.rectangle,
-                borderRadius: BorderRadius.circular(100),
-                border: Border.all(color: Colors.white, width: 1.5),
-              ),
-              child: Text(
-                unreadCount > 9 ? '9+' : '$unreadCount',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w800,
+            child: IgnorePointer(
+              child: Container(
+                constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                decoration: BoxDecoration(
+                  color: AppTheme.error,
+                  shape: BoxShape.rectangle,
+                  borderRadius: BorderRadius.circular(100),
+                  border: Border.all(color: Colors.white, width: 1.5),
                 ),
-                textAlign: TextAlign.center,
+                child: Text(
+                  unreadCount > 9 ? '9+' : '$unreadCount',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
               ),
             ),
           ),
