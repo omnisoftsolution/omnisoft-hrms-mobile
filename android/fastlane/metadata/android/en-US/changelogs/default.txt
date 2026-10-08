@@ -1,1 +1,1 @@
-Approvers can now approve or refuse leave requests in the app. Staff who record attendance at the kiosk get a new "My day" home: today's status and kiosk punches, plus what needs your attention.
+New "My day" home for everyone: your status, today's timeline, your week and what needs your attention. A new check-in page shows each step as it happens. Forgot to check in or out, or took a long break? The app now asks one short question and passes your answer to HR. Answer HR's questions from Notifications. Plus fixes for leave requests and notifications.
