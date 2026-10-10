@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:omni_hr/models/approval_detail.dart';
@@ -14,9 +15,10 @@ ApprovalItem pendingItem(
   bool mine = true,
   String step = 'manager_approval',
   WaitingFor? waitingFor,
+  String? name,
 }) => ApprovalItem(
   id: id,
-  employeeName: 'Emp $id',
+  employeeName: name ?? 'Emp $id',
   leaveTypeName: 'Annual Leave',
   state: 'confirm',
   dateFrom: DateTime(2026, 10, 6),
@@ -374,4 +376,84 @@ void main() {
     expect(find.byType(ErrorStateView), findsNothing);
     expect(find.text('Emp 1'), findsOneWidget);
   });
+
+  testWidgets('a short chip stays on the name line where it fits', (
+    tester,
+  ) async {
+    final api = FakeApi(pending: [pendingItem(1, name: 'Budi Santoso')]);
+    await tester.pumpWidget(host(api));
+    await tester.pumpAndSettle();
+
+    final name = tester.getRect(find.text('Budi Santoso'));
+    final chip = tester.getRect(find.text('Your approval'));
+    expect(chip.center.dy, closeTo(name.center.dy, 4));
+    expect(chip.left, greaterThan(name.right));
+  });
+
+  testWidgets(
+    'narrow phone, large text (360 dp, 1.3x): long waiting_for chips never '
+    'squeeze the employee name or overflow',
+    (tester) async {
+      tester.view.physicalSize = const Size(360, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      final api = FakeApi(
+        pending: [
+          pendingItem(
+            1,
+            name: 'Budi Santoso',
+            waitingFor: const WaitingFor(
+              role: 'manager',
+              names: ['Herianto Ramli'],
+              you: true,
+            ),
+          ),
+          pendingItem(
+            2,
+            mine: false,
+            name: 'Siti Rahayu',
+            waitingFor: const WaitingFor(
+              role: 'manager',
+              names: ['Kelvin Tan'],
+            ),
+          ),
+          pendingItem(
+            3,
+            mine: false,
+            name: 'Agus Salim',
+            waitingFor: const WaitingFor(
+              role: 'manager',
+              names: ['Christopher Lee', 'Ann Lim'],
+            ),
+          ),
+        ],
+      );
+      await tester.pumpWidget(
+        ChangeNotifierProvider<SessionService>.value(
+          value: FakeSession(),
+          child: MaterialApp(
+            builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(
+                context,
+              ).copyWith(textScaler: const TextScaler.linear(1.3)),
+              child: child!,
+            ),
+            home: ApprovalsScreen(apiBuilder: (_) => api),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // A RenderFlex overflow would be reported here.
+      expect(tester.takeException(), isNull);
+      for (final name in ['Budi Santoso', 'Siti Rahayu', 'Agus Salim']) {
+        final p = tester.renderObject<RenderParagraph>(find.text(name));
+        expect(p.didExceedMaxLines, isFalse, reason: '$name is cut');
+        expect(tester.getSize(find.text(name)).width, greaterThan(100));
+      }
+      expect(find.text('Your approval'), findsOneWidget);
+      expect(find.text('Waiting for Kelvin (manager)'), findsOneWidget);
+      expect(find.text('Waiting for Christopher +1 (manager)'), findsOneWidget);
+    },
+  );
 }

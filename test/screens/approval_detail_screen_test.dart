@@ -213,6 +213,39 @@ void main() {
     expect(find.text('HR approval'), findsOneWidget);
   });
 
+  testWidgets(
+      'narrow phone, large text (360 dp, 1.3x): a long current-step title '
+      'does not overflow and the candidates keep real width', (tester) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    api = FakeApi(detailJson(waitingFor: {
+      'role': 'manager',
+      'names': ['Christopher Lee', 'Ann Lim'],
+      'you': false,
+    }));
+    await tester.pumpWidget(ChangeNotifierProvider<SessionService>.value(
+      value: session,
+      child: MaterialApp(
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context)
+              .copyWith(textScaler: const TextScaler.linear(1.3)),
+          child: child!,
+        ),
+        home: ApprovalDetailScreen(leaveId: 148, apiBuilder: (_) => api),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    final title = find.text('Waiting for Christopher +1 (manager)');
+    await tester.ensureVisible(title);
+    await tester.pumpAndSettle();
+
+    // A RenderFlex overflow would be reported here.
+    expect(tester.takeException(), isNull);
+    expect(title, findsOneWidget);
+    expect(tester.getSize(find.text('Christine Ng')).width, greaterThan(100));
+  });
+
   testWidgets('Approve sends the state seen, toasts, pops and refreshes /me',
       (tester) async {
     await tester.pumpWidget(host(api, session, popped));

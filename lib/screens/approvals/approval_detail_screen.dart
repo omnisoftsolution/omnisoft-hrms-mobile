@@ -408,24 +408,30 @@ class _ApprovalDetailScreenState extends State<ApprovalDetailScreen> {
             ),
           ),
           const SizedBox(width: 10),
-          Text(
-            s.title,
-            style: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: AppTheme.onSurface,
+          // Title, then who: on one line when both fit, else the subtitle
+          // moves under the title. A long current-step title ("Waiting for
+          // Christopher +1 (manager)") wraps instead of overflowing.
+          Expanded(
+            child: Wrap(
+              spacing: 8,
+              children: [
+                Text(
+                  s.title,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.onSurface,
+                  ),
+                ),
+                if (s.subtitle.isNotEmpty)
+                  Text(
+                    s.subtitle,
+                    style: const TextStyle(
+                        fontSize: 13, color: AppTheme.onSurfaceVariant),
+                  ),
+              ],
             ),
           ),
-          if (s.subtitle.isNotEmpty) ...[
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                s.subtitle,
-                style: const TextStyle(
-                    fontSize: 13, color: AppTheme.onSurfaceVariant),
-              ),
-            ),
-          ],
         ],
       ),
     );

@@ -281,6 +281,87 @@ class _Segments extends StatelessWidget {
   }
 }
 
+/// The row's first line: the employee name with the step / outcome chip at
+/// the end. A chip that would take more than [_maxChipShare] of the line
+/// (a long "Waiting for Christopher +1 (manager)", a narrow phone, large
+/// text) moves under the name instead, so the name keeps its width and
+/// the chip its words.
+class _NameAndChip extends StatelessWidget {
+  const _NameAndChip({
+    required this.name,
+    required this.chip,
+    required this.color,
+  });
+
+  final String name;
+  final String chip;
+  final Color color;
+
+  static const _maxChipShare = 0.45;
+  static const _gap = 8.0;
+  static const _chipPadding = EdgeInsets.symmetric(horizontal: 10, vertical: 3);
+  static const _nameStyle = TextStyle(
+    fontSize: 14,
+    fontWeight: FontWeight.w700,
+    color: AppTheme.onSurface,
+  );
+
+  TextStyle get _chipStyle =>
+      TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: color);
+
+  @override
+  Widget build(BuildContext context) {
+    final nameText = Text(
+      name,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: _nameStyle,
+    );
+    if (chip.isEmpty) return nameText;
+    final chipBox = Container(
+      padding: _chipPadding,
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        chip,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: _chipStyle,
+      ),
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final painter = TextPainter(
+          text: TextSpan(
+            text: chip,
+            style: DefaultTextStyle.of(context).style.merge(_chipStyle),
+          ),
+          textDirection: Directionality.of(context),
+          textScaler: MediaQuery.textScalerOf(context),
+          maxLines: 1,
+        )..layout();
+        final chipWidth = painter.width + _chipPadding.horizontal;
+        painter.dispose();
+        if (chipWidth + _gap <= constraints.maxWidth * _maxChipShare) {
+          return Row(
+            children: [
+              Expanded(child: nameText),
+              const SizedBox(width: _gap),
+              chipBox,
+            ],
+          );
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [nameText, const SizedBox(height: 4), chipBox],
+        );
+      },
+    );
+  }
+}
+
 class _ApprovalRow extends StatelessWidget {
   const _ApprovalRow({
     required this.item,
@@ -338,42 +419,10 @@ class _ApprovalRow extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          item.employeeName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                            color: AppTheme.onSurface,
-                          ),
-                        ),
-                      ),
-                      if (chip.isNotEmpty) ...[
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 3,
-                          ),
-                          decoration: BoxDecoration(
-                            color: _chipColor.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: Text(
-                            chip,
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: _chipColor,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
+                  _NameAndChip(
+                    name: item.employeeName,
+                    chip: chip,
+                    color: _chipColor,
                   ),
                   const SizedBox(height: 3),
                   Text(
