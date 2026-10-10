@@ -258,6 +258,30 @@ class OmniMobileApi {
     ),
   );
 
+  /// Adds this phone to an active App access account (connector 2.62.0):
+  /// HR's add-phone token or code plus the employee's app password. The
+  /// success body is the `/login` payload; other phones stay signed in.
+  Future<Map<String, dynamic>> addDevice({
+    required String login,
+    String? token,
+    String? code,
+    required String password,
+    required String deviceId,
+    String? deviceLabel,
+    String? appVersion,
+  }) => _post(
+    '/auth/add_device',
+    buildAddDeviceBody(
+      login: login,
+      token: token,
+      code: code,
+      password: password,
+      deviceId: deviceId,
+      deviceLabel: deviceLabel,
+      appVersion: appVersion,
+    ),
+  );
+
   Future<Map<String, dynamic>> refresh({
     required String refreshToken,
     required String deviceId,

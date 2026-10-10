@@ -33,6 +33,12 @@ const _identityCodes = {
   'login_taken',
   'device_verification_unavailable',
   'email_send_failed',
+  // Add this phone (connector 2.62.0, auth/add_device).
+  'invalid_code',
+  'invalid_credentials',
+  'not_active',
+  'seat_limit_exceeded',
+  'rate_limit_exceeded',
 };
 
 /// Human message for an App Identity error code. [retryAfter] (seconds)
@@ -68,6 +74,19 @@ String friendlyErrorCode(String code, {int? retryAfter}) {
     case 'email_send_failed':
       return "We couldn't send the email right now. Try again in a few "
           'minutes, or ask HR for a new QR code.';
+    case 'invalid_code':
+      return 'That add-phone code is not right or has expired. '
+          'Ask HR for a new one.';
+    case 'invalid_credentials':
+      return 'Invalid login or password.';
+    case 'not_active':
+      return 'Your Omni HR account is not active yet. Activate it with the '
+          'invite from HR first.';
+    case 'seat_limit_exceeded':
+      return 'Your organization has reached its mobile seat limit. Contact '
+          'your administrator to request access.';
+    case 'rate_limit_exceeded':
+      return 'Too many attempts. Try again in a few minutes.';
     default:
       return 'Something went wrong ($code). Please try again.';
   }

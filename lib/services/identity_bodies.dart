@@ -43,6 +43,32 @@ Map<String, dynamic> buildActivateBody({
       'app_version': ?appVersion,
     };
 
+/// Body for `auth/add_device` (connector 2.62.0): HR's add-phone token
+/// (link / QR) or 6-digit code, the employee's existing app password, and
+/// this phone. The login is trimmed and lowercased like activation (it
+/// identifies the credential, which the connector normalizes).
+Map<String, dynamic> buildAddDeviceBody({
+  required String login,
+  String? token,
+  String? code,
+  required String password,
+  required String deviceId,
+  String? deviceLabel,
+  String? appVersion,
+}) =>
+    {
+      'login': login.trim().toLowerCase(),
+      if (token != null && token.isNotEmpty)
+        'token': token
+      else
+        'code': ?code,
+      'password': password,
+      'device_id': deviceId,
+      if (deviceLabel != null && deviceLabel.isNotEmpty)
+        'device_label': deviceLabel,
+      'app_version': ?appVersion,
+    };
+
 Map<String, dynamic> buildRefreshBody({
   required String refreshToken,
   required String deviceId,
