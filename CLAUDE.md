@@ -210,7 +210,10 @@ Spec: connector repo `docs/superpowers/specs/2026-10-10-app-access-scope-design.
   `saveLoginResponse`, Face ID adopts the refresh token). Errors go through
   `friendlyError(e, context: ErrorContext.addPhone…)` only (error_messages.dart: add-phone words
   for `mobile_not_enabled`, a lost answer after the post, `invalid_code` after a lost answer
-  ("may already be added", `ErrorContext.addPhoneAfterLostAnswer`), an older connector; before
+  ("may already be added", `ErrorContext.addPhoneAfterLostAnswer`; only for an unchanged retry:
+  `_lostAnswerKey` = company + login + token/code, cleared when any changes; `network_error`
+  counts like `timeout` because the transport cannot tell "never sent" apart; while switching
+  company the words name it via `addPhoneCompany`), an older connector; before
   the post `addPhoneLookup` keeps the usual network words; the rest as usual: `invalid_code`,
   `invalid_credentials`, `not_active`, `account_locked`, `seat_limit_exceeded`,
   `rate_limit_exceeded`). A static "New to Omni HR? Use Activate with an invite." opens

@@ -73,24 +73,40 @@ class _AddPhoneScreenState extends State<AddPhoneScreen> {
   /// and must not post again, even when a later local step fails.
   bool _added = false;
 
-  /// An earlier attempt's answer was lost after it was sent: the server
-  /// may have added the phone and spent the pair.
-  bool _answerLost = false;
+  /// The request (company, login, token or code; see [_requestKey]) whose
+  /// answer timed out after it was sent: the server may have added the
+  /// phone and spent the pair. Null when there is none, or once any of
+  /// those fields changes; an unchanged retry keeps it.
+  String? _lostAnswerKey;
   String? _error;
 
   static const _addedSignInMessage =
       'This phone is added. Sign in with your app login and password.';
 
+  /// 'Nova Works (NOVAWORKS)', or the code alone.
+  static String _companyLabel(CompanyInfo c) {
+    final name = c.name.trim();
+    return name.isEmpty || name.toUpperCase() == c.companyCode
+        ? c.companyCode
+        : '$name (${c.companyCode})';
+  }
+
   /// The phone was added to another company but switching the saved
   /// company failed: name it, or the old company's sign-in would reject
   /// the login.
-  static String _addedToCompanyMessage(CompanyInfo c) {
-    final name = c.name.trim();
-    final label = name.isEmpty || name.toUpperCase() == c.companyCode
-        ? c.companyCode
-        : '$name (${c.companyCode})';
-    return 'This phone is added to $label. Choose that company and sign in.';
-  }
+  static String _addedToCompanyMessage(CompanyInfo c) =>
+      'This phone is added to ${_companyLabel(c)}. Choose that company and '
+      'sign in.';
+
+  /// Who and what the form would send now: the company, the login and the
+  /// add-phone token or code (the password is not part of it).
+  String _requestKey() => [
+        (_hasCompany ? widget.companyCode! : _companyController.text)
+            .trim()
+            .toUpperCase(),
+        normalizeAppLogin(_loginController.text.trim()),
+        _hasToken ? 't:${widget.token}' : 'c:${_codeController.text.trim()}',
+      ].join('\u0000');
 
   bool get _hasToken => widget.token != null && widget.token!.isNotEmpty;
   bool get _hasCompany =>
@@ -112,7 +128,13 @@ class _AddPhoneScreenState extends State<AddPhoneScreen> {
     }
   }
 
-  void _onChanged() => setState(() {});
+  void _onChanged() => setState(() {
+        // A changed company, login or code is another request: an earlier
+        // lost answer says nothing about it (also while one is pending).
+        if (_lostAnswerKey != null && _lostAnswerKey != _requestKey()) {
+          _lostAnswerKey = null;
+        }
+      });
 
   @override
   void dispose() {
@@ -139,6 +161,9 @@ class _AddPhoneScreenState extends State<AddPhoneScreen> {
     final companyCode =
         (_hasCompany ? widget.companyCode! : _companyController.text).trim();
     final login = _loginController.text.trim();
+    // Taken now: the fields may change while the request runs.
+    final requestKey = _requestKey();
+    final afterLostAnswer = _lostAnswerKey == requestKey;
     setState(() {
       _submitting = true;
       _error = null;
@@ -146,10 +171,11 @@ class _AddPhoneScreenState extends State<AddPhoneScreen> {
     // True once auth/add_device was posted: from then on a lost answer may
     // hide a phone the server already added.
     var requestSent = false;
+    // Another company being switched to (staged until success).
+    CompanyInfo? staged;
     try {
       final sameCompany = session.hasCompany &&
           companyCode.toUpperCase() == session.companyCode.toUpperCase();
-      CompanyInfo? staged;
       String stagedSaasUrl = '';
       var baseUrl = session.clientUrl;
       var db = session.clientDb;
@@ -259,12 +285,19 @@ class _AddPhoneScreenState extends State<AddPhoneScreen> {
       // mobile_not_enabled and the rest: the shared humanizer only.
       final where = !requestSent
           ? ErrorContext.addPhoneLookup
-          : _answerLost
+          : afterLostAnswer
               ? ErrorContext.addPhoneAfterLostAnswer
               : ErrorContext.addPhone;
-      if (requestSent && isLostAnswerError(e)) _answerLost = true;
+      // Remembered for an unchanged retry only, and only when the fields
+      // still match what was sent.
+      if (requestSent && isLostAnswerError(e) && _requestKey() == requestKey) {
+        _lostAnswerKey = requestKey;
+      }
+      // While switching company, the words name the company to sign in to.
+      final company = staged == null ? null : _companyLabel(staged);
       if (mounted) {
-        setState(() => _error = friendlyError(e, context: where));
+        setState(() => _error =
+            friendlyError(e, context: where, addPhoneCompany: company));
       }
     } finally {
       if (mounted) setState(() => _submitting = false);

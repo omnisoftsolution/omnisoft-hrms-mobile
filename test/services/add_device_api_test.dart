@@ -176,6 +176,20 @@ void main() {
           'That add-phone code is not right or has expired. Ask HR for a new one.');
     });
 
+    test('switching company: lost-answer words name the company', () {
+      String named(String code, ErrorContext c) => friendlyError(
+          ApiException(code), context: c, addPhoneCompany: 'Nova (NOVA)');
+      expect(named('timeout', ErrorContext.addPhone),
+          'If this phone was added, choose Nova (NOVA) and sign in. '
+          'If not, try again.');
+      expect(named('invalid_code', ErrorContext.addPhoneAfterLostAnswer),
+          'This phone may already be added to Nova (NOVA). Choose that '
+          'company and sign in.');
+      // Ignored outside the add-phone words.
+      expect(named('invalid_code', ErrorContext.addPhone),
+          'That add-phone code is not right or has expired. Ask HR for a new one.');
+    });
+
     test('other codes keep the usual words', () {
       for (final c in ErrorContext.values) {
         expect(add(ApiException('not_active'), c),

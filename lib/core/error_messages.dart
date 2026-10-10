@@ -116,13 +116,15 @@ String friendlyErrorCode(String code, {int? retryAfter}) {
 ///
 /// [context] gives the few codes whose meaning depends on the call their
 /// own words (see [ErrorContext]); the default keeps every other caller's
-/// text unchanged.
+/// text unchanged. [addPhoneCompany] (add-phone contexts only) names the
+/// company being switched to, so sign-in guidance points at it.
 String friendlyError(
   Object e, {
   ErrorContext context = ErrorContext.general,
+  String? addPhoneCompany,
 }) {
   if (e is ApiException && context != ErrorContext.general) {
-    final text = _addPhoneMessage(e, context);
+    final text = _addPhoneMessage(e, context, addPhoneCompany);
     if (text != null) return text;
   }
   if (e is ApiException && _identityCodes.contains(e.errorCode)) {
@@ -318,7 +320,8 @@ const _genericMessage = 'Something went wrong. Please try again.';
 
 /// Add this phone (`auth/add_device`) words: only the codes whose meaning
 /// differs on this call; null = the usual [friendlyError] text.
-String? _addPhoneMessage(ApiException e, ErrorContext context) {
+String? _addPhoneMessage(
+    ApiException e, ErrorContext context, String? company) {
   final sent = context != ErrorContext.addPhoneLookup;
   switch (e.errorCode) {
     case 'unknown_route':
@@ -333,15 +336,23 @@ String? _addPhoneMessage(ApiException e, ErrorContext context) {
     case 'network_error':
       // The server may have added the phone (and spent the pair) before
       // the answer was lost. If it did not, the same code still works.
+      // While switching company, the phone (if added) belongs to the new
+      // one, which is not saved on this phone yet.
       if (sent) {
-        return 'If this phone was added, sign in with your app login and '
-            'password. If not, try again.';
+        return company == null
+            ? 'If this phone was added, sign in with your app login and '
+                'password. If not, try again.'
+            : 'If this phone was added, choose $company and sign in. '
+                'If not, try again.';
       }
     case 'invalid_code':
       // The lost answer was probably a success that spent the pair.
       if (context == ErrorContext.addPhoneAfterLostAnswer) {
-        return 'This phone may already be added. Sign in with your app '
-            'login and password.';
+        return company == null
+            ? 'This phone may already be added. Sign in with your app '
+                'login and password.'
+            : 'This phone may already be added to $company. Choose that '
+                'company and sign in.';
       }
   }
   return null;
@@ -353,6 +364,10 @@ const _addPhoneUnavailable =
 /// True when the answer to a request was lost (`timeout`,
 /// `network_error`): after a sent `auth/add_device`, the server may have
 /// acted. Not a message: the text still comes from [friendlyError].
+/// `network_error` stays in: `OmniMobileApi._post` collapses every
+/// transport failure into it, and the http package reports a refused
+/// connect and a reset after the body was sent as the same
+/// SocketException, so "never sent" cannot be told apart reliably.
 bool isLostAnswerError(Object e) =>
     e is ApiException &&
     (e.errorCode == 'timeout' || e.errorCode == 'network_error');

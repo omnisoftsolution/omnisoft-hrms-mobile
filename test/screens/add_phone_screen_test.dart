@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -591,6 +593,115 @@ void main() {
               'login and password.'),
           findsOneWidget);
       expect(find.textContaining('Ask HR'), findsNothing);
+    });
+
+    group('the lost answer belongs to the request that was sent', () {
+      const mayBeAdded = 'This phone may already be added. Sign in with your '
+          'app login and password.';
+      const askHr = 'That add-phone code is not right or has expired. '
+          'Ask HR for a new one.';
+
+      /// Answers each attempt with the next error.
+      Future<Map<String, dynamic>> Function() answers(List<String> codes) {
+        var i = 0;
+        return () async => throw ApiException(codes[i++]);
+      }
+
+      testWidgets('an unchanged retry keeps it', (tester) async {
+        await saveNova();
+        await pumpScreen(tester,
+            onAddDevice: answers(['timeout', 'invalid_code']));
+        await fillAndSubmit(tester,
+            company: 'NOVAWORKS', login: 'budi.s', code: '123456');
+        await fillAndSubmit(tester,
+            company: 'NOVAWORKS', login: 'budi.s', code: '123456');
+        expect(find.text(mayBeAdded), findsOneWidget);
+      });
+
+      for (final (field, changed) in [
+        ('login', (login: 'siti.r', company: 'NOVAWORKS', code: '123456')),
+        ('company', (login: 'budi.s', company: 'NOVA2', code: '123456')),
+        ('code', (login: 'budi.s', company: 'NOVAWORKS', code: '654321')),
+      ]) {
+        testWidgets(
+            'a changed $field is another request: invalid_code says ask HR',
+            (tester) async {
+          await saveNova();
+          await pumpScreen(tester,
+              onAddDevice: answers(['timeout', 'invalid_code']));
+          await fillAndSubmit(tester,
+              company: 'NOVAWORKS', login: 'budi.s', code: '123456');
+          expect(find.textContaining('If not, try again.'), findsOneWidget);
+          await fillAndSubmit(tester,
+              company: changed.company,
+              login: changed.login,
+              code: changed.code);
+          expect(find.text(askHr), findsOneWidget);
+          expect(find.textContaining('may already be added'), findsNothing);
+        });
+      }
+
+      testWidgets('a field changed while the request runs counts too',
+          (tester) async {
+        await saveNova();
+        final pending = Completer<Map<String, dynamic>>();
+        var attempt = 0;
+        await pumpScreen(tester,
+            companyCode: 'NOVAWORKS',
+            token: 'T',
+            login: 'budi.s',
+            onAddDevice: () =>
+                ++attempt == 1 ? pending.future : throw ApiException('invalid_code'));
+        await fillAndSubmit(tester, settle: false);
+        // Edited while the first request is still out.
+        await tester.enterText(
+            find.byKey(const Key('add_phone_login')), 'siti.r');
+        pending.completeError(ApiException('timeout'));
+        await tester.pumpAndSettle();
+        expect(find.textContaining('If not, try again.'), findsOneWidget);
+        await fillAndSubmit(tester);
+        expect(attempt, 2);
+        expect(find.text(askHr), findsOneWidget);
+      });
+
+      testWidgets(
+          'network_error after the post is treated like a timeout (the '
+          'transport cannot tell "never sent" apart)', (tester) async {
+        await saveNova();
+        await pumpScreen(tester,
+            companyCode: 'NOVAWORKS',
+            token: 'T',
+            login: 'budi.s',
+            onAddDevice: answers(['network_error', 'invalid_code']));
+        await fillAndSubmit(tester);
+        await fillAndSubmit(tester);
+        expect(find.text(mayBeAdded), findsOneWidget);
+      });
+
+      testWidgets(
+          'switching to another company: the lost-answer words name it',
+          (tester) async {
+        await session.saveCompany(
+            saasUrl: 'https://saas',
+            companyCode: 'OLD',
+            clientUrl: 'https://old.example',
+            clientDb: 'old_db');
+        await pumpScreen(tester,
+            onAddDevice: answers(['timeout', 'invalid_code']));
+        await fillAndSubmit(tester,
+            company: 'novaworks', login: 'budi.s', code: '123456');
+        expect(
+            find.text('If this phone was added, choose Nova Works (NOVAWORKS) '
+                'and sign in. If not, try again.'),
+            findsOneWidget);
+        await fillAndSubmit(tester,
+            company: 'novaworks', login: 'budi.s', code: '123456');
+        expect(
+            find.text('This phone may already be added to Nova Works '
+                '(NOVAWORKS). Choose that company and sign in.'),
+            findsOneWidget);
+        expect(session.companyCode, 'OLD'); // nothing switched
+      });
     });
 
     group('another company: the switch fails after clearing the session', () {
