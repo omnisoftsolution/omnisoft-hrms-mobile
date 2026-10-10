@@ -14,6 +14,7 @@ import '../../widgets/biometric_optin_sheet.dart';
 import '../../widgets/labeled_field.dart';
 import '../home/home_shell.dart';
 import 'invite_scan_screen.dart';
+import 'link_route.dart';
 
 /// First sign-in from an HR invite: the employee sets their own app
 /// password. Opened by an `omnihr://activate` link or QR (company code
@@ -102,13 +103,15 @@ class _ActivationScreenState extends State<ActivationScreen> {
     if (!mounted || outcome is! ScannedInvite) return;
     final a = outcome.args;
     Navigator.of(context).pushReplacement(MaterialPageRoute(
-      builder: (_) => ActivationScreen(
-        companyCode: a.companyCode,
-        token: a.token,
-        login: a.login,
-        apiBuilder: widget.apiBuilder,
-        homeBuilder: widget.homeBuilder,
-      ),
+      builder: (_) => a.isAddPhone
+          ? screenForActivationLink(a)
+          : ActivationScreen(
+              companyCode: a.companyCode,
+              token: a.token,
+              login: a.login,
+              apiBuilder: widget.apiBuilder,
+              homeBuilder: widget.homeBuilder,
+            ),
     ));
   }
 

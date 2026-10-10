@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:omni_hr/screens/activation/activation_screen.dart';
+import 'package:omni_hr/screens/activation/add_phone_screen.dart';
 import 'package:omni_hr/screens/activation/invite_scan_screen.dart';
 import 'package:omni_hr/screens/login/login_screen.dart';
 import 'package:omni_hr/services/biometric_auth_service.dart';
@@ -14,6 +15,8 @@ import '../services/fake_gate.dart';
 
 const _invite = ScannedInvite(
     ActivationArgs('NOVAWORKS', 'T', login: 'budi.s'));
+const _addPhone = ScannedInvite(ActivationArgs('NOVAWORKS', 'T',
+    login: 'budi.s', kind: ActivationKind.addPhone));
 
 Future<bool> _yes() async => true;
 Future<bool> _no() async => false;
@@ -47,6 +50,20 @@ void main() {
               companyCode: 'NOVAWORKS', token: 'T', hasCamera: _yes)));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('activation_scan')), findsNothing);
+    });
+
+    testWidgets('a scanned add-phone QR replaces the screen with Add this phone',
+        (tester) async {
+      await tester.pumpWidget(MaterialApp(
+          home: ActivationScreen(
+              hasCamera: _yes, scanInvite: (_) async => _addPhone)));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('activation_scan')));
+      await tester.pumpAndSettle();
+      expect(find.byType(AddPhoneScreen), findsOneWidget);
+      expect(find.byType(ActivationScreen), findsNothing);
+      expect(find.text('budi.s'), findsOneWidget);
+      expect(find.byKey(const Key('add_phone_code')), findsNothing);
     });
 
     testWidgets('a scanned invite replaces the screen with the prefilled one',
@@ -102,6 +119,28 @@ void main() {
       expect(find.text('Activate Omni HR'), findsOneWidget);
       expect(find.text('NOVAWORKS'), findsOneWidget);
       expect(find.byKey(const Key('activation_code')), findsNothing);
+    });
+
+    testWidgets('scanned add-phone QR opens Add this phone', (tester) async {
+      await pumpLogin(tester, hasCamera: _yes, scan: (_) async => _addPhone);
+      await tester.tap(find.byKey(const Key('login_scan')));
+      await tester.pumpAndSettle();
+      expect(find.text('Add this phone to Omni HR'), findsOneWidget);
+      expect(find.text('NOVAWORKS'), findsOneWidget);
+      expect(find.byKey(const Key('add_phone_code')), findsNothing);
+    });
+
+    testWidgets('Add this phone opens the manual add-phone screen',
+        (tester) async {
+      await pumpLogin(tester, hasCamera: _no);
+      expect(find.text('Add this phone'), findsOneWidget);
+      await tester.ensureVisible(find.byKey(const Key('login_add_phone')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('login_add_phone')));
+      await tester.pumpAndSettle();
+      expect(find.text('Add this phone to Omni HR'), findsOneWidget);
+      expect(find.byKey(const Key('add_phone_company')), findsOneWidget);
+      expect(find.byKey(const Key('add_phone_code')), findsOneWidget);
     });
 
     testWidgets('Enter code instead opens the manual activation screen',

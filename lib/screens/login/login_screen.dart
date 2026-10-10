@@ -16,6 +16,8 @@ import '../../widgets/brand_logo.dart';
 import '../../widgets/labeled_field.dart';
 import '../../widgets/primary_button.dart';
 import '../activation/activation_screen.dart';
+import '../activation/add_phone_screen.dart';
+import '../activation/link_route.dart';
 import '../activation/invite_scan_screen.dart';
 import '../home/home_shell.dart';
 import 'company_settings_screen.dart';
@@ -84,10 +86,7 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!mounted || outcome == null) return;
     Navigator.of(context).push(MaterialPageRoute(
       builder: (_) => switch (outcome) {
-        ScannedInvite(:final args) => ActivationScreen(
-            companyCode: args.companyCode,
-            token: args.token,
-            login: args.login),
+        ScannedInvite(:final args) => screenForActivationLink(args),
         EnterCodeInstead() => const ActivationScreen(),
       },
     ));
@@ -518,6 +517,21 @@ class _LoginScreenState extends State<LoginScreen> {
                                       ),
                                     ),
                             child: const Text('Activate with an invite'),
+                          ),
+                          // Always shown: a phone being added has never
+                          // talked to this connector, so identityCapable
+                          // cannot gate it.
+                          TextButton(
+                            key: const Key('login_add_phone'),
+                            onPressed: _submitting
+                                ? null
+                                : () => Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (_) => AddPhoneScreen(
+                                            companyCode: session.companyCode),
+                                      ),
+                                    ),
+                            child: const Text('Add this phone'),
                           ),
                         ],
                       ),

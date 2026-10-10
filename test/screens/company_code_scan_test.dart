@@ -58,6 +58,18 @@ void main() {
     expect(find.byKey(const Key('activation_code')), findsNothing);
   });
 
+  testWidgets('scanned add-phone QR opens Add this phone', (tester) async {
+    await pump(tester,
+        hasCamera: _yes,
+        scan: (_) async => const ScannedInvite(ActivationArgs('NOVAWORKS', 'T',
+            login: 'budi.s', kind: ActivationKind.addPhone)));
+    await tester.ensureVisible(find.byKey(const Key('company_scan')));
+    await tester.tap(find.byKey(const Key('company_scan')));
+    await tester.pumpAndSettle();
+    expect(find.text('Add this phone to Omni HR'), findsOneWidget);
+    expect(find.text('NOVAWORKS'), findsOneWidget);
+  });
+
   testWidgets('Enter code instead opens the manual activation screen',
       (tester) async {
     await pump(tester,
