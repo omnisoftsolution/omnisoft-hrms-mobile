@@ -14,6 +14,7 @@ Map<String, dynamic> detailJson({
   bool canApprove = true,
   bool canRefuse = true,
   List<Map<String, dynamic>> attachments = const [],
+  Map<String, dynamic>? waitingFor,
 }) =>
     {
       'id': 148,
@@ -41,6 +42,7 @@ Map<String, dynamic> detailJson({
       'create_date': '2026-10-01 02:00:00',
       'can_approve': canApprove,
       'can_refuse': canRefuse,
+      'waiting_for': ?waitingFor,
       'name': 'Family trip',
       'attachments': attachments,
       'balance_after': {'unit': 'day', 'total': 14.0, 'remaining': 10.0},
@@ -194,6 +196,21 @@ void main() {
     expect(approveButton, findsOneWidget);
     expect(refuseButton, findsOneWidget);
     expect(api.calls, ['get:148']);
+  });
+
+  testWidgets('the current step says who the request is waiting for',
+      (tester) async {
+    api = FakeApi(detailJson(waitingFor: {
+      'role': 'manager',
+      'names': ['Christine Ng'],
+      'you': false,
+    }));
+    await tester.pumpWidget(host(api, session, popped));
+    await open(tester);
+
+    expect(find.text('Waiting for Christine (manager)'), findsOneWidget);
+    expect(find.text('Manager approval'), findsNothing);
+    expect(find.text('HR approval'), findsOneWidget);
   });
 
   testWidgets('Approve sends the state seen, toasts, pops and refreshes /me',
