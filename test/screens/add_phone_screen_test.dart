@@ -341,13 +341,13 @@ void main() {
       // The request may have reached the server: the pair could be spent.
       (
         ApiException('timeout'),
-        'If this phone was added, sign in with your app login and password; '
-            'otherwise ask HR for a new code.'
+        'If this phone was added, sign in with your app login and password. '
+            'If not, try again.'
       ),
       (
         ApiException('network_error'),
-        'If this phone was added, sign in with your app login and password; '
-            'otherwise ask HR for a new code.'
+        'If this phone was added, sign in with your app login and password. '
+            'If not, try again.'
       ),
     ]) {
       testWidgets('${error.errorCode}: shown in words, nothing saved',

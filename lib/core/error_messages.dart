@@ -308,10 +308,10 @@ String friendlyAddPhoneError(Object e, {bool requestSent = true}) {
       case 'timeout':
       case 'network_error':
         // The server may have added the phone (and spent the pair) before
-        // the answer was lost.
+        // the answer was lost. If it did not, the same code still works.
         if (requestSent) {
           return 'If this phone was added, sign in with your app login and '
-              'password; otherwise ask HR for a new code.';
+              'password. If not, try again.';
         }
     }
   }

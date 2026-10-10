@@ -148,7 +148,7 @@ void main() {
 
     test('a lost answer after the post may hide an added phone', () {
       const text = 'If this phone was added, sign in with your app login '
-          'and password; otherwise ask HR for a new code.';
+          'and password. If not, try again.';
       expect(friendlyAddPhoneError(ApiException('timeout')), text);
       expect(friendlyAddPhoneError(ApiException('network_error')), text);
     });
