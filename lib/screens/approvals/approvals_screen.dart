@@ -12,8 +12,9 @@ import 'approval_detail_screen.dart';
 
 /// Leave approvals for Time Off Approvers and Officers.
 ///
-/// Pending = the requests Odoo lets this user act on now ("my step"
-/// first). Recent = this user's own decisions of the last 30 days. Both
+/// Pending = the requests Odoo lets this user act on now, in two
+/// sections: "Waiting for you" (`assigned_to_me`) and "You can also
+/// approve". Recent = this user's own decisions of the last 30 days. Both
 /// come from the connector; this screen decides nothing itself.
 class ApprovalsScreen extends StatefulWidget {
   const ApprovalsScreen({super.key, this.apiBuilder, this.initialSegment = 0});
@@ -98,6 +99,11 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
     final recent = _segment == 1;
     final items = recent ? _recent : _pending;
     final ready = !_loading && _error == null;
+    // Pending in two sections, server order kept inside each: what waits
+    // for this user now (assigned_to_me), then what Odoo also lets them
+    // decide.
+    final mine = _pending.where((i) => i.assignedToMe).toList();
+    final others = _pending.where((i) => !i.assignedToMe).toList();
     return Scaffold(
       backgroundColor: AppTheme.surface,
       appBar: AppBar(title: const Text('Leave approvals')),
@@ -152,36 +158,72 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
                   ],
                 ),
               )
-            else
-              Container(
-                decoration: BoxDecoration(
-                  color: AppTheme.surfaceContainerLowest,
-                  borderRadius: BorderRadius.circular(24),
-                  boxShadow: AppTheme.glassShadow,
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: Material(
-                  type: MaterialType.transparency,
-                  child: Column(
-                    children: [
-                      for (var i = 0; i < items.length; i++) ...[
-                        if (i > 0)
-                          const Divider(height: 1, indent: 64, endIndent: 16),
-                        _ApprovalRow(
-                          item: items[i],
-                          recent: recent,
-                          onTap: () => _open(items[i]),
-                        ),
-                      ],
-                    ],
+            else if (recent)
+              _card(items, recent: true)
+            else ...[
+              _sectionTitle('Waiting for you'),
+              if (mine.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(4, 0, 4, 4),
+                  child: Text(
+                    'Nothing waiting for you.',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: AppTheme.onSurfaceVariant,
+                    ),
                   ),
-                ),
-              ),
+                )
+              else
+                _card(mine, recent: false),
+              if (others.isNotEmpty) ...[
+                const SizedBox(height: 20),
+                _sectionTitle('You can also approve'),
+                _card(others, recent: false),
+              ],
+            ],
           ],
         ),
       ),
     );
   }
+
+  /// The white rounded card holding a list of rows.
+  Widget _card(List<ApprovalItem> items, {required bool recent}) => Container(
+    decoration: BoxDecoration(
+      color: AppTheme.surfaceContainerLowest,
+      borderRadius: BorderRadius.circular(24),
+      boxShadow: AppTheme.glassShadow,
+    ),
+    clipBehavior: Clip.antiAlias,
+    child: Material(
+      type: MaterialType.transparency,
+      child: Column(
+        children: [
+          for (var i = 0; i < items.length; i++) ...[
+            if (i > 0) const Divider(height: 1, indent: 64, endIndent: 16),
+            _ApprovalRow(
+              item: items[i],
+              recent: recent,
+              onTap: () => _open(items[i]),
+            ),
+          ],
+        ],
+      ),
+    ),
+  );
+
+  /// Heading above a Pending section.
+  Widget _sectionTitle(String text) => Padding(
+    padding: const EdgeInsets.fromLTRB(4, 4, 4, 8),
+    child: Text(
+      text,
+      style: const TextStyle(
+        fontSize: 13,
+        fontWeight: FontWeight.w700,
+        color: AppTheme.onSurfaceVariant,
+      ),
+    ),
+  );
 }
 
 /// Two-option pill switch (Pending / Recent).

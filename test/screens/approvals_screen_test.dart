@@ -13,6 +13,7 @@ ApprovalItem pendingItem(
   int id, {
   bool mine = true,
   String step = 'manager_approval',
+  WaitingFor? waitingFor,
 }) => ApprovalItem(
   id: id,
   employeeName: 'Emp $id',
@@ -27,6 +28,7 @@ ApprovalItem pendingItem(
   assignedToMe: mine,
   canApprove: true,
   canRefuse: true,
+  waitingFor: waitingFor,
 );
 
 ApprovalItem recentItem(
@@ -242,6 +244,110 @@ void main() {
     expect(api.pendingCalls, 2);
     expect(find.text('Pending · 2'), findsOneWidget);
     expect(find.text('Emp 7'), findsOneWidget);
+  });
+
+  testWidgets('Pending splits into Waiting for you and You can also approve', (
+    tester,
+  ) async {
+    final api = FakeApi(
+      pending: [pendingItem(1), pendingItem(2, mine: false), pendingItem(3)],
+    );
+    await tester.pumpWidget(host(api));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Pending · 3'), findsOneWidget);
+    expect(find.text('Waiting for you'), findsOneWidget);
+    expect(find.text('You can also approve'), findsOneWidget);
+    expect(find.text('Nothing waiting for you.'), findsNothing);
+    // Mine first (server order kept), then the section, then the others.
+    final y1 = tester.getTopLeft(find.text('Emp 1')).dy;
+    final y3 = tester.getTopLeft(find.text('Emp 3')).dy;
+    final yOthers = tester.getTopLeft(find.text('You can also approve')).dy;
+    final y2 = tester.getTopLeft(find.text('Emp 2')).dy;
+    expect(y1 < y3, isTrue);
+    expect(y3 < yOthers, isTrue);
+    expect(yOthers < y2, isTrue);
+  });
+
+  testWidgets('nothing assigned to me: the first section says so', (
+    tester,
+  ) async {
+    final api = FakeApi(pending: [pendingItem(2, mine: false)]);
+    await tester.pumpWidget(host(api));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Waiting for you'), findsOneWidget);
+    expect(find.text('Nothing waiting for you.'), findsOneWidget);
+    expect(find.text('You can also approve'), findsOneWidget);
+    expect(find.text('Emp 2'), findsOneWidget);
+  });
+
+  testWidgets('only my requests: no second section', (tester) async {
+    final api = FakeApi(pending: [pendingItem(1)]);
+    await tester.pumpWidget(host(api));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Waiting for you'), findsOneWidget);
+    expect(find.text('Nothing waiting for you.'), findsNothing);
+    expect(find.text('You can also approve'), findsNothing);
+  });
+
+  testWidgets('an empty Pending keeps the single empty state', (tester) async {
+    await tester.pumpWidget(host(FakeApi()));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Nothing waiting for you'), findsOneWidget);
+    expect(find.text('Waiting for you'), findsNothing);
+    expect(find.text('You can also approve'), findsNothing);
+  });
+
+  testWidgets('chips follow waiting_for', (tester) async {
+    final api = FakeApi(
+      pending: [
+        pendingItem(
+          1,
+          waitingFor: const WaitingFor(
+            role: 'manager',
+            names: ['Herianto Ramli'],
+            you: true,
+          ),
+        ),
+        pendingItem(
+          2,
+          mine: false,
+          waitingFor: const WaitingFor(role: 'manager', names: ['Kelvin Tan']),
+        ),
+        pendingItem(
+          3,
+          mine: false,
+          step: 'hr_approval',
+          waitingFor: const WaitingFor(role: 'hr'),
+        ),
+      ],
+    );
+    await tester.pumpWidget(host(api));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Your approval'), findsOneWidget);
+    expect(find.text('Waiting for Kelvin (manager)'), findsOneWidget);
+    expect(find.text('Waiting for HR'), findsOneWidget);
+    expect(find.text('Manager approval'), findsNothing);
+    expect(find.text('HR approval'), findsNothing);
+  });
+
+  testWidgets('Recent has no sections', (tester) async {
+    final api = FakeApi(
+      pending: [pendingItem(1)],
+      recent: [recentItem(4, 'approved')],
+    );
+    await tester.pumpWidget(host(api));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Recent'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Emp 4'), findsOneWidget);
+    expect(find.text('Waiting for you'), findsNothing);
+    expect(find.text('You can also approve'), findsNothing);
   });
 
   testWidgets('a failed load (old connector, no network) shows Retry', (
