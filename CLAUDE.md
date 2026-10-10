@@ -208,11 +208,16 @@ Spec: connector repo `docs/superpowers/specs/2026-10-10-app-access-scope-design.
   `auth/add_device` (`buildAddDeviceBody`: login, token or code, app password, device_id,
   device_label, app_version) and saves the session like activation (staged company switch,
   `saveLoginResponse`, Face ID adopts the refresh token). Errors go through
-  `friendlyAddPhoneError` (error_messages.dart: add-phone words for `mobile_not_enabled`,
-  a lost answer after the post, and an older connector), then `friendlyError` (`invalid_code`,
+  `friendlyError(e, context: ErrorContext.addPhone…)` only (error_messages.dart: add-phone words
+  for `mobile_not_enabled`, a lost answer after the post, `invalid_code` after a lost answer
+  ("may already be added", `ErrorContext.addPhoneAfterLostAnswer`), an older connector; before
+  the post `addPhoneLookup` keeps the usual network words; the rest as usual: `invalid_code`,
   `invalid_credentials`, `not_active`, `account_locked`, `seat_limit_exceeded`,
-  `rate_limit_exceeded`). Once the server answers success the form is spent (`_added`); only a
-  failed session save shows "sign in"; Face ID adopt / opt-in are best effort. Success pushes a
+  `rate_limit_exceeded`). A static "New to Omni HR? Use Activate with an invite." opens
+  activation (the server answers invited accounts with `invalid_credentials`, no state oracle).
+  Once the server answers success the form is spent (`_added`); a failed staged
+  `saveCompanyInfo` is retried once, then the message names the new company; only a failed
+  session save shows "sign in"; Face ID adopt / opt-in are best effort. Success pushes a
   fresh `SessionGate` (lib/screens/session_gate.dart, also main.dart's home) so a later
   `invalid_session` still lands on sign-in. An app older than 1.32 opens an add link as an
   invite and gets `activation_invalid` (the page says "Update the Omni HR app first").

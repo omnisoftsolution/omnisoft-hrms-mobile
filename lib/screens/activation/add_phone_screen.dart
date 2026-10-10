@@ -14,6 +14,7 @@ import '../../services/session_service.dart';
 import '../../widgets/biometric_optin_sheet.dart';
 import '../../widgets/labeled_field.dart';
 import '../session_gate.dart';
+import 'activation_screen.dart';
 
 /// Adds this phone to an Omni HR account that is already active on
 /// another phone (connector 2.62.0+, `POST auth/add_device`, spec
@@ -71,10 +72,25 @@ class _AddPhoneScreenState extends State<AddPhoneScreen> {
   /// The server added this phone: the form is spent (its pair is void)
   /// and must not post again, even when a later local step fails.
   bool _added = false;
+
+  /// An earlier attempt's answer was lost after it was sent: the server
+  /// may have added the phone and spent the pair.
+  bool _answerLost = false;
   String? _error;
 
   static const _addedSignInMessage =
       'This phone is added. Sign in with your app login and password.';
+
+  /// The phone was added to another company but switching the saved
+  /// company failed: name it, or the old company's sign-in would reject
+  /// the login.
+  static String _addedToCompanyMessage(CompanyInfo c) {
+    final name = c.name.trim();
+    final label = name.isEmpty || name.toUpperCase() == c.companyCode
+        ? c.companyCode
+        : '$name (${c.companyCode})';
+    return 'This phone is added to $label. Choose that company and sign in.';
+  }
 
   bool get _hasToken => widget.token != null && widget.token!.isNotEmpty;
   bool get _hasCompany =>
@@ -167,11 +183,19 @@ class _AddPhoneScreenState extends State<AddPhoneScreen> {
       // failure must NOT read as "ask HR for a new code" (a plain sign-in
       // already works).
       _added = true;
+      var companySaved = staged == null;
       try {
         if (staged != null) {
           // Commit the switch: drop the other company's session first.
           if (session.accessToken.isNotEmpty) await session.clearSession();
-          await session.saveCompanyInfo(staged, saasUrl: stagedSaasUrl);
+          try {
+            await session.saveCompanyInfo(staged, saasUrl: stagedSaasUrl);
+          } catch (_) {
+            // One retry: without the new company the sign-in screen would
+            // still point at the old one.
+            await session.saveCompanyInfo(staged, saasUrl: stagedSaasUrl);
+          }
+          companySaved = true;
         }
         // Same payload as /login: stored exactly like a sign-in.
         await session.saveLoginResponse(res);
@@ -180,12 +204,15 @@ class _AddPhoneScreenState extends State<AddPhoneScreen> {
         if (!mounted) return;
         _passwordController.clear();
         _codeController.clear();
-        setState(() => _error = _addedSignInMessage);
+        final message = companySaved
+            ? _addedSignInMessage
+            : _addedToCompanyMessage(staged!);
+        setState(() => _error = message);
         // Leave the dead form; the app's front door shows the sign-in.
         final nav = Navigator.of(context);
         if (nav.canPop()) {
           ScaffoldMessenger.of(context)
-              .showSnackBar(const SnackBar(content: Text(_addedSignInMessage)));
+              .showSnackBar(SnackBar(content: Text(message)));
           nav.popUntil((r) => r.isFirst);
         }
         return;
@@ -230,9 +257,14 @@ class _AddPhoneScreenState extends State<AddPhoneScreen> {
     } catch (e) {
       // invalid_code, invalid_credentials, account_locked, not_active,
       // mobile_not_enabled and the rest: the shared humanizer only.
+      final where = !requestSent
+          ? ErrorContext.addPhoneLookup
+          : _answerLost
+              ? ErrorContext.addPhoneAfterLostAnswer
+              : ErrorContext.addPhone;
+      if (requestSent && isLostAnswerError(e)) _answerLost = true;
       if (mounted) {
-        setState(() => _error =
-            friendlyAddPhoneError(e, requestSent: requestSent));
+        setState(() => _error = friendlyError(e, context: where));
       }
     } finally {
       if (mounted) setState(() => _submitting = false);
@@ -380,6 +412,21 @@ class _AddPhoneScreenState extends State<AddPhoneScreen> {
               const SizedBox(height: 16),
               const Center(child: CircularProgressIndicator()),
             ],
+            const SizedBox(height: 12),
+            // Always shown: the server answers an invited (not yet active)
+            // account with the same "invalid login or password" as any
+            // other miss, so the hint cannot depend on the error.
+            TextButton(
+              key: const Key('add_phone_activate'),
+              onPressed: _submitting
+                  ? null
+                  : () => Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => ActivationScreen(
+                            companyCode: widget.companyCode),
+                      )),
+              child: const Text('New to Omni HR? Use Activate with an invite.',
+                  textAlign: TextAlign.center),
+            ),
           ],
         ),
       ),

@@ -121,7 +121,7 @@ void main() {
       final e = await htmlAnswer(404);
       expect(e.errorCode, 'server_error');
       expect(e.data?['http_status'], 404);
-      expect(friendlyAddPhoneError(e), unavailable);
+      expect(add(e), unavailable);
       // Everywhere else the generic words stay.
       expect(friendlyError(e),
           'Something went wrong on our end. Please try again in a moment.');
@@ -129,47 +129,63 @@ void main() {
 
     test('a JSON unknown_route gets the same words', () async {
       final e = await failWith('unknown_route', 404);
-      expect(friendlyAddPhoneError(e), unavailable);
+      expect(add(e), unavailable);
     });
 
     test('an HTML 500 is a real failure, not "not available"', () async {
       final e = await htmlAnswer(500);
       expect(e.data?['http_status'], 500);
-      expect(friendlyAddPhoneError(e),
+      expect(add(e),
           'Something went wrong on our end. Please try again in a moment.');
     });
   });
 
-  group('friendlyAddPhoneError', () {
+  group('friendlyError with an Add this phone context', () {
     test('mobile_not_enabled reads as app access, not attendance', () {
-      expect(friendlyAddPhoneError(ApiException('mobile_not_enabled')),
+      expect(add(ApiException('mobile_not_enabled')),
           'App access is off for you. Ask HR.');
+      expect(friendlyError(ApiException('mobile_not_enabled')),
+          'Mobile attendance is not enabled for your profile.');
     });
 
     test('a lost answer after the post may hide an added phone', () {
       const text = 'If this phone was added, sign in with your app login '
           'and password. If not, try again.';
-      expect(friendlyAddPhoneError(ApiException('timeout')), text);
-      expect(friendlyAddPhoneError(ApiException('network_error')), text);
+      expect(add(ApiException('timeout')), text);
+      expect(add(ApiException('network_error')), text);
+      expect(isLostAnswerError(ApiException('timeout')), isTrue);
+      expect(isLostAnswerError(ApiException('network_error')), isTrue);
+      expect(isLostAnswerError(ApiException('invalid_code')), isFalse);
     });
 
     test('before the post (company lookup) the usual network words stay', () {
       expect(
-          friendlyAddPhoneError(ApiException('network_error'),
-              requestSent: false),
+          add(ApiException('network_error'), ErrorContext.addPhoneLookup),
           'No internet connection. Check your network and try again.');
       expect(
-          friendlyAddPhoneError(
-              ApiException('server_error', data: {'http_status': 404}),
-              requestSent: false),
+          add(ApiException('server_error', data: {'http_status': 404}),
+              ErrorContext.addPhoneLookup),
           'Something went wrong on our end. Please try again in a moment.');
     });
 
-    test('other codes fall through to friendlyError', () {
-      expect(friendlyAddPhoneError(ApiException('invalid_code')),
-          friendlyError(ApiException('invalid_code')));
-      expect(friendlyAddPhoneError(ApiException('not_active')),
-          friendlyError(ApiException('not_active')));
+    test('invalid_code after a lost answer: probably already added', () {
+      expect(add(ApiException('invalid_code'), ErrorContext.addPhoneAfterLostAnswer),
+          'This phone may already be added. Sign in with your app login and '
+          'password.');
+      expect(add(ApiException('invalid_code')),
+          'That add-phone code is not right or has expired. Ask HR for a new one.');
+    });
+
+    test('other codes keep the usual words', () {
+      for (final c in ErrorContext.values) {
+        expect(add(ApiException('not_active'), c),
+            friendlyError(ApiException('not_active')));
+        expect(add(ApiException('invalid_credentials'), c),
+            friendlyError(ApiException('invalid_credentials')));
+      }
     });
   });
 }
+
+String add(Object e, [ErrorContext context = ErrorContext.addPhone]) =>
+    friendlyError(e, context: context);

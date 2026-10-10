@@ -6,6 +6,7 @@ import 'package:http/testing.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:omni_hr/models/company_info.dart';
+import 'package:omni_hr/screens/activation/activation_screen.dart';
 import 'package:omni_hr/screens/activation/add_phone_screen.dart';
 import 'package:omni_hr/screens/login/login_screen.dart';
 import 'package:omni_hr/services/biometric_auth_service.dart';
@@ -55,6 +56,20 @@ class _Session extends SessionService {
   Future<void> saveLoginResponse(Map<String, dynamic> res) {
     if (failSave) throw StateError('disk full');
     return super.saveLoginResponse(res);
+  }
+
+  /// How many saveCompanyInfo calls fail before one succeeds.
+  int failCompanySaves = 0;
+  int companySaveCalls = 0;
+
+  @override
+  Future<void> saveCompanyInfo(CompanyInfo info, {required String saasUrl}) {
+    companySaveCalls++;
+    if (failCompanySaves > 0) {
+      failCompanySaves--;
+      throw StateError('disk full');
+    }
+    return super.saveCompanyInfo(info, saasUrl: saasUrl);
   }
 
   @override
@@ -163,6 +178,20 @@ void main() {
     await tester.enterText(find.byKey(const Key('add_phone_code')), '123456');
     await tester.pump();
     expect(tester.widget<FilledButton>(_addButton).onPressed, isNotNull);
+  });
+
+  testWidgets(
+      'invited employees are pointed at activation, which the hint opens',
+      (tester) async {
+    await tester.pumpWidget(
+        const MaterialApp(home: AddPhoneScreen(companyCode: 'NOVAWORKS')));
+    final hint = find.text('New to Omni HR? Use Activate with an invite.');
+    expect(hint, findsOneWidget);
+    await tester.ensureVisible(hint);
+    await tester.tap(hint);
+    await tester.pumpAndSettle();
+    final screen = tester.widget<ActivationScreen>(find.byType(ActivationScreen));
+    expect(screen.companyCode, 'NOVAWORKS');
   });
 
   testWidgets('a company code from the sign-in screen is shown, not asked',
@@ -540,6 +569,71 @@ void main() {
         expect(find.text('HOME'), findsNothing);
       });
     }
+
+    testWidgets(
+        'a lost answer, then invalid_code: "may already be added", not '
+        '"ask HR"', (tester) async {
+      await saveNova();
+      var attempt = 0;
+      await pumpScreen(tester,
+          companyCode: 'NOVAWORKS',
+          token: 'T',
+          login: 'budi.s',
+          onAddDevice: () async => throw ApiException(
+              ++attempt == 1 ? 'timeout' : 'invalid_code'));
+      await fillAndSubmit(tester);
+      expect(find.textContaining('If not, try again.'), findsOneWidget);
+      await fillAndSubmit(tester);
+      expect(api!.calls, hasLength(1)); // a fresh fake per attempt
+      expect(attempt, 2);
+      expect(
+          find.text('This phone may already be added. Sign in with your app '
+              'login and password.'),
+          findsOneWidget);
+      expect(find.textContaining('Ask HR'), findsNothing);
+    });
+
+    group('another company: the switch fails after clearing the session', () {
+      Future<void> signedInElsewhere() async {
+        await session.saveCompany(
+            saasUrl: 'https://saas',
+            companyCode: 'OLD',
+            clientUrl: 'https://old.example',
+            clientDb: 'old_db');
+        await session.saveLoginResponse(_okRes(token: 'OLD-A', rt: 'OLD-R'));
+      }
+
+      testWidgets('one failed save is retried: Home on the new company',
+          (tester) async {
+        await signedInElsewhere();
+        session.failCompanySaves = 1;
+        await pumpScreen(tester, onAddDevice: () async => _okRes());
+        await fillAndSubmit(tester,
+            company: 'novaworks', login: 'budi.s', code: '123456');
+        expect(session.companySaveCalls, 2);
+        expect(session.companyCode, 'NOVAWORKS');
+        expect(session.accessToken, 'NEW-A');
+        expect(find.text('HOME'), findsOneWidget);
+      });
+
+      testWidgets('the retry fails too: the message names the new company',
+          (tester) async {
+        await signedInElsewhere();
+        session.failCompanySaves = 2;
+        await pumpScreen(tester, onAddDevice: () async => _okRes());
+        await fillAndSubmit(tester,
+            company: 'novaworks', login: 'budi.s', code: '123456');
+        expect(session.companySaveCalls, 2);
+        expect(session.accessToken, isEmpty); // the old session was cleared
+        expect(
+            find.text('This phone is added to Nova Works (NOVAWORKS). Choose '
+                'that company and sign in.'),
+            findsOneWidget);
+        expect(find.text('HOME'), findsNothing);
+        expect(api!.calls, hasLength(1));
+        expect(tester.widget<FilledButton>(_addButton).onPressed, isNull);
+      });
+    });
 
     testWidgets('a real server error (HTML 500) keeps the generic words',
         (tester) async {

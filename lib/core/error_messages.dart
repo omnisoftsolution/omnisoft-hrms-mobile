@@ -18,6 +18,23 @@ import '../services/omni_mobile_api.dart';
 /// refreshed and an older copy is still on screen".
 const myDayRefreshFailed = 'my_day_refresh_failed';
 
+/// Where an error happened, for the codes whose words depend on the call.
+enum ErrorContext {
+  /// Every screen except Add this phone (the default).
+  general,
+
+  /// Add this phone, before `auth/add_device` was posted (the SaaS company
+  /// lookup): nothing reached the company's server yet.
+  addPhoneLookup,
+
+  /// Add this phone, `auth/add_device` posted.
+  addPhone,
+
+  /// Add this phone, posted again after an earlier answer was lost: an
+  /// `invalid_code` now probably means the phone was already added.
+  addPhoneAfterLostAnswer,
+}
+
 /// App Identity error codes that [friendlyErrorCode] owns.
 const _identityCodes = {
   'account_locked',
@@ -96,7 +113,18 @@ String friendlyErrorCode(String code, {int? retryAfter}) {
 /// contains one) to a friendly, human message. Falls back to a generic
 /// message for anything unrecognized — it will not echo raw exception
 /// text unless that text is a short, obviously-safe snake_case code.
-String friendlyError(Object e) {
+///
+/// [context] gives the few codes whose meaning depends on the call their
+/// own words (see [ErrorContext]); the default keeps every other caller's
+/// text unchanged.
+String friendlyError(
+  Object e, {
+  ErrorContext context = ErrorContext.general,
+}) {
+  if (e is ApiException && context != ErrorContext.general) {
+    final text = _addPhoneMessage(e, context);
+    if (text != null) return text;
+  }
   if (e is ApiException && _identityCodes.contains(e.errorCode)) {
     return friendlyErrorCode(
       e.errorCode,
@@ -288,38 +316,46 @@ String friendlyError(Object e) {
 
 const _genericMessage = 'Something went wrong. Please try again.';
 
-/// Words for a failed Add this phone (`auth/add_device`). Only the codes
-/// whose meaning differs on this call get their own text; everything
-/// else is [friendlyError]. [requestSent] is false while the SaaS company
-/// lookup runs, before anything reached the company's server.
-String friendlyAddPhoneError(Object e, {bool requestSent = true}) {
-  if (e is ApiException) {
-    switch (e.errorCode) {
-      case 'unknown_route':
-        return _addPhoneUnavailable;
-      case 'server_error':
-        // A connector older than 2.62.0 has no auth/add_device: Odoo
-        // answers with an HTML 404. Any other status is a real failure.
-        if (requestSent && e.data?['http_status'] == 404) {
-          return _addPhoneUnavailable;
-        }
-      case 'mobile_not_enabled':
-        return 'App access is off for you. Ask HR.';
-      case 'timeout':
-      case 'network_error':
-        // The server may have added the phone (and spent the pair) before
-        // the answer was lost. If it did not, the same code still works.
-        if (requestSent) {
-          return 'If this phone was added, sign in with your app login and '
-              'password. If not, try again.';
-        }
-    }
+/// Add this phone (`auth/add_device`) words: only the codes whose meaning
+/// differs on this call; null = the usual [friendlyError] text.
+String? _addPhoneMessage(ApiException e, ErrorContext context) {
+  final sent = context != ErrorContext.addPhoneLookup;
+  switch (e.errorCode) {
+    case 'unknown_route':
+      return _addPhoneUnavailable;
+    case 'server_error':
+      // A connector older than 2.62.0 has no auth/add_device: Odoo
+      // answers with an HTML 404. Any other status is a real failure.
+      if (sent && e.data?['http_status'] == 404) return _addPhoneUnavailable;
+    case 'mobile_not_enabled':
+      return 'App access is off for you. Ask HR.';
+    case 'timeout':
+    case 'network_error':
+      // The server may have added the phone (and spent the pair) before
+      // the answer was lost. If it did not, the same code still works.
+      if (sent) {
+        return 'If this phone was added, sign in with your app login and '
+            'password. If not, try again.';
+      }
+    case 'invalid_code':
+      // The lost answer was probably a success that spent the pair.
+      if (context == ErrorContext.addPhoneAfterLostAnswer) {
+        return 'This phone may already be added. Sign in with your app '
+            'login and password.';
+      }
   }
-  return friendlyError(e);
+  return null;
 }
 
 const _addPhoneUnavailable =
     "Adding a phone isn't available for your company yet. Ask HR.";
+
+/// True when the answer to a request was lost (`timeout`,
+/// `network_error`): after a sent `auth/add_device`, the server may have
+/// acted. Not a message: the text still comes from [friendlyError].
+bool isLostAnswerError(Object e) =>
+    e is ApiException &&
+    (e.errorCode == 'timeout' || e.errorCode == 'network_error');
 
 /// `leave/cancel` and `leave/modify` codes that mean the request is no
 /// longer what the History list shows: decided (`not_cancellable`,
