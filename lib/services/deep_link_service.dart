@@ -2,13 +2,27 @@ import 'dart:async';
 
 import 'package:app_links/app_links.dart';
 
-/// Company code + one-time token (+ the app login, since 2.47) carried
-/// by an invite link.
+/// What an Omni HR link asks the app to do.
+enum ActivationKind {
+  /// HR's invite (or reset): set the app password (`auth/activate`).
+  invite,
+
+  /// HR's Add phone pair (`k=add`, connector 2.62.0+): trust this phone
+  /// too, with the employee's existing app password (`auth/add_device`).
+  addPhone,
+}
+
+/// Company code + one-time token (+ the app login, since 2.47, and the
+/// kind, since 2.62) carried by an invite or add-phone link.
 class ActivationArgs {
   final String companyCode;
   final String token;
   final String? login;
-  const ActivationArgs(this.companyCode, this.token, {this.login});
+  final ActivationKind kind;
+  const ActivationArgs(this.companyCode, this.token,
+      {this.login, this.kind = ActivationKind.invite});
+
+  bool get isAddPhone => kind == ActivationKind.addPhone;
 }
 
 /// Reads an Omni HR invite:
@@ -16,8 +30,9 @@ class ActivationArgs {
 /// `https://<any host>/omni/activate#c=…&t=…[&l=…]` (also `?c=…` when a
 /// mail app rewrote the `#`). The host is ignored on purpose: the tenant
 /// server comes from the company code via the SaaS lookup, so a QR naming
-/// another site cannot send the app anywhere. Null for anything else or
-/// when c or t is missing/empty.
+/// another site cannot send the app anywhere. `k=add` (2.62+) marks an
+/// add-phone pair; no `k` is an invite. Null for anything else, for an
+/// unknown `k`, or when c or t is missing/empty.
 ActivationArgs? parseActivationLink(Uri uri) {
   try {
     final scheme = uri.scheme.toLowerCase();
@@ -34,8 +49,20 @@ ActivationArgs? parseActivationLink(Uri uri) {
     }
     final c = q['c'], t = q['t'];
     if (c == null || c.isEmpty || t == null || t.isEmpty) return null;
+    final k = q['k'] ?? '';
+    final ActivationKind kind;
+    if (k.isEmpty) {
+      kind = ActivationKind.invite;
+    } else if (k == 'add') {
+      kind = ActivationKind.addPhone;
+    } else {
+      // A kind this app does not know: never post its token to a route
+      // it was not issued for.
+      return null;
+    }
     final l = q['l'];
-    return ActivationArgs(c, t, login: (l == null || l.isEmpty) ? null : l);
+    return ActivationArgs(c, t,
+        login: (l == null || l.isEmpty) ? null : l, kind: kind);
   } on FormatException {
     return null;
   }
