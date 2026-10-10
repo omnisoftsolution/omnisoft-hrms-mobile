@@ -99,4 +99,77 @@ void main() {
     expect(e.errorCode, 'account_locked');
     expect(friendlyError(e), 'Too many attempts. Try again in 2 minutes.');
   });
+
+  group('older connector (2.61, no auth/add_device)', () {
+    Future<ApiException> htmlAnswer(int status) async {
+      try {
+        await withServer(
+            (_) async => http.Response('<!doctype html><p>nope</p>', status),
+            () => anon().addDevice(
+                login: 'budi.s', token: 'T', password: 'pw', deviceId: 'd'));
+      } on ApiException catch (e) {
+        return e;
+      }
+      fail('addDevice did not throw');
+    }
+
+    const unavailable =
+        "Adding a phone isn't available for your company yet. Ask HR.";
+
+    test('an HTML 404 is server_error carrying the status; add-phone words',
+        () async {
+      final e = await htmlAnswer(404);
+      expect(e.errorCode, 'server_error');
+      expect(e.data?['http_status'], 404);
+      expect(friendlyAddPhoneError(e), unavailable);
+      // Everywhere else the generic words stay.
+      expect(friendlyError(e),
+          'Something went wrong on our end. Please try again in a moment.');
+    });
+
+    test('a JSON unknown_route gets the same words', () async {
+      final e = await failWith('unknown_route', 404);
+      expect(friendlyAddPhoneError(e), unavailable);
+    });
+
+    test('an HTML 500 is a real failure, not "not available"', () async {
+      final e = await htmlAnswer(500);
+      expect(e.data?['http_status'], 500);
+      expect(friendlyAddPhoneError(e),
+          'Something went wrong on our end. Please try again in a moment.');
+    });
+  });
+
+  group('friendlyAddPhoneError', () {
+    test('mobile_not_enabled reads as app access, not attendance', () {
+      expect(friendlyAddPhoneError(ApiException('mobile_not_enabled')),
+          'App access is off for you. Ask HR.');
+    });
+
+    test('a lost answer after the post may hide an added phone', () {
+      const text = 'If this phone was added, sign in with your app login '
+          'and password; otherwise ask HR for a new code.';
+      expect(friendlyAddPhoneError(ApiException('timeout')), text);
+      expect(friendlyAddPhoneError(ApiException('network_error')), text);
+    });
+
+    test('before the post (company lookup) the usual network words stay', () {
+      expect(
+          friendlyAddPhoneError(ApiException('network_error'),
+              requestSent: false),
+          'No internet connection. Check your network and try again.');
+      expect(
+          friendlyAddPhoneError(
+              ApiException('server_error', data: {'http_status': 404}),
+              requestSent: false),
+          'Something went wrong on our end. Please try again in a moment.');
+    });
+
+    test('other codes fall through to friendlyError', () {
+      expect(friendlyAddPhoneError(ApiException('invalid_code')),
+          friendlyError(ApiException('invalid_code')));
+      expect(friendlyAddPhoneError(ApiException('not_active')),
+          friendlyError(ApiException('not_active')));
+    });
+  });
 }

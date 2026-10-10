@@ -1,15 +1,45 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:omni_hr/models/company_info.dart';
 import 'package:omni_hr/screens/activation/add_phone_screen.dart';
+import 'package:omni_hr/screens/login/login_screen.dart';
 import 'package:omni_hr/services/biometric_auth_service.dart';
 import 'package:omni_hr/services/omni_mobile_api.dart';
 import 'package:omni_hr/services/session_service.dart';
 
 import '../services/fake_gate.dart';
+
+/// BiometricAuthService whose secure-storage steps can be made to fail.
+class _Bio extends BiometricAuthService {
+  _Bio({super.gate});
+  bool throwOnAdopt = false;
+  bool throwOnEnable = false;
+  int enableCalls = 0;
+
+  @override
+  Future<bool> adoptRefreshToken(String refreshToken,
+      {required String login}) {
+    if (throwOnAdopt) throw StateError('keychain write failed');
+    return super.adoptRefreshToken(refreshToken, login: login);
+  }
+
+  @override
+  Future<bool> enableWithRefreshToken({
+    required String login,
+    required String refreshToken,
+    String? displayName,
+  }) {
+    enableCalls++;
+    if (throwOnEnable) throw StateError('keychain write failed');
+    return super.enableWithRefreshToken(
+        login: login, refreshToken: refreshToken, displayName: displayName);
+  }
+}
 
 /// SessionService whose SaaS lookup is scripted (no HTTP).
 class _Session extends SessionService {
@@ -151,32 +181,45 @@ void main() {
     String? builtUrl;
     String? builtDb;
 
+    /// [realApi]: the real [OmniMobileApi] (answer it with
+    /// `http.runWithClient`) instead of [_FakeApi]. [pushed]: the screen
+    /// is pushed above a plain, non-reactive root route (like a bare
+    /// HomeShell or LoginScreen left by an earlier stack reset).
     Future<void> pumpScreen(
       WidgetTester tester, {
       String? companyCode,
       String? token,
       String? login,
-      required Future<Map<String, dynamic>> Function() onAddDevice,
+      Future<Map<String, dynamic>> Function()? onAddDevice,
+      bool realApi = false,
+      bool pushed = false,
     }) async {
+      final navKey = GlobalKey<NavigatorState>();
+      final screen = AddPhoneScreen(
+        companyCode: companyCode,
+        token: token,
+        login: login,
+        apiBuilder: (url, db) {
+          builtUrl = url;
+          builtDb = db;
+          if (realApi) return OmniMobileApi(baseUrl: url, db: db, token: '');
+          return api = _FakeApi(url, db, onAddDevice!);
+        },
+        homeBuilder: (_) => const Scaffold(body: Text('HOME')),
+      );
       await tester.pumpWidget(MultiProvider(
         providers: [
           ChangeNotifierProvider<SessionService>.value(value: session),
           ChangeNotifierProvider<BiometricAuthService>.value(value: bio),
         ],
         child: MaterialApp(
-          home: AddPhoneScreen(
-            companyCode: companyCode,
-            token: token,
-            login: login,
-            apiBuilder: (url, db) {
-              builtUrl = url;
-              builtDb = db;
-              return api = _FakeApi(url, db, onAddDevice);
-            },
-            homeBuilder: (_) => const Scaffold(body: Text('HOME')),
-          ),
+          navigatorKey: navKey,
+          home: pushed ? const Scaffold(body: Text('OLD ROOT')) : screen,
         ),
       ));
+      if (pushed) {
+        navKey.currentState!.push(MaterialPageRoute(builder: (_) => screen));
+      }
       await tester.pumpAndSettle();
     }
 
@@ -184,7 +227,8 @@ void main() {
         {String? company,
         String? login,
         String? code,
-        String password = 'my-app-pw'}) async {
+        String password = 'my-app-pw',
+        bool settle = true}) async {
       if (company != null) {
         await tester.enterText(
             find.byKey(const Key('add_phone_company')), company);
@@ -200,7 +244,14 @@ void main() {
       await tester.pump();
       await tester.ensureVisible(_addButton);
       await tester.tap(_addButton);
-      await tester.pumpAndSettle();
+      if (settle) {
+        await tester.pumpAndSettle();
+      } else {
+        // The spinner keeps animating while a sheet is up.
+        for (var i = 0; i < 10; i++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+      }
     }
 
     Future<void> saveNova() => session.saveCompany(
@@ -285,9 +336,18 @@ void main() {
         'Your Omni HR account is not active yet. Activate it with the invite '
             'from HR first.'
       ),
+      // Add-phone wording, not the attendance one.
+      (ApiException('mobile_not_enabled'), 'App access is off for you. Ask HR.'),
+      // The request may have reached the server: the pair could be spent.
       (
-        ApiException('mobile_not_enabled'),
-        'Mobile attendance is not enabled for your profile.'
+        ApiException('timeout'),
+        'If this phone was added, sign in with your app login and password; '
+            'otherwise ask HR for a new code.'
+      ),
+      (
+        ApiException('network_error'),
+        'If this phone was added, sign in with your app login and password; '
+            'otherwise ask HR for a new code.'
       ),
     ]) {
       testWidgets('${error.errorCode}: shown in words, nothing saved',
@@ -379,6 +439,124 @@ void main() {
       const s = FlutterSecureStorage();
       expect(await s.read(key: 'biometric_refresh_token'), 'NEW');
       expect(find.text('HOME'), findsOneWidget);
+    });
+
+    testWidgets(
+        'Face ID opt-in storage fails: one add_device call, the user still '
+        'lands on Home', (tester) async {
+      final b = _Bio(gate: FakeBiometricGate())..throwOnEnable = true;
+      await b.load();
+      bio = b;
+      await saveNova();
+      await pumpScreen(tester,
+          companyCode: 'NOVAWORKS',
+          token: 'T',
+          login: 'budi.s',
+          onAddDevice: () async => _okRes());
+      await fillAndSubmit(tester, settle: false);
+      // The one-time offer is up; the session is already saved.
+      expect(find.byType(BottomSheet), findsOneWidget);
+      expect(session.accessToken, 'NEW-A');
+      await tester.tap(find.textContaining('Enable '));
+      await tester.pumpAndSettle();
+      expect(b.enableCalls, 1);
+      expect(api!.calls, hasLength(1));
+      expect(find.text('HOME'), findsOneWidget);
+      expect(find.textContaining('Sign in with your app login'), findsNothing);
+    });
+
+    testWidgets(
+        'adopting the refresh token fails after the save: Home, not the '
+        'sign-in message', (tester) async {
+      final b = _Bio(gate: FakeBiometricGate(available: false))
+        ..throwOnAdopt = true;
+      await b.load();
+      bio = b;
+      await saveNova();
+      await pumpScreen(tester,
+          companyCode: 'NOVAWORKS',
+          token: 'T',
+          login: 'budi.s',
+          onAddDevice: () async => _okRes());
+      await fillAndSubmit(tester);
+      expect(api!.calls, hasLength(1));
+      expect(session.accessToken, 'NEW-A');
+      expect(find.text('HOME'), findsOneWidget);
+      expect(find.textContaining('Sign in with your app login'), findsNothing);
+    });
+
+    testWidgets(
+        'success replaces the whole stack with the session-aware root: when '
+        'HR later revokes this phone, sign-in replaces Home', (tester) async {
+      await saveNova();
+      await pumpScreen(tester,
+          companyCode: 'NOVAWORKS',
+          token: 'T',
+          login: 'budi.s',
+          pushed: true,
+          onAddDevice: () async => _okRes());
+      expect(find.text('OLD ROOT'), findsNothing); // covered by the screen
+      await fillAndSubmit(tester);
+      expect(find.text('HOME'), findsOneWidget);
+      // invalid_session → main.dart's onInvalidSession clears the session.
+      await session.clearSession();
+      await tester.pumpAndSettle();
+      expect(find.text('HOME'), findsNothing);
+      expect(find.byType(LoginScreen), findsOneWidget);
+      expect(find.text('OLD ROOT'), findsNothing);
+    });
+
+    // A 2.61 connector has no auth/add_device.
+    for (final (label, answer) in <(String, http.Response Function())>[
+      (
+        'an HTML 404',
+        () => http.Response('<!doctype html><title>404 Not Found</title>', 404,
+            headers: {'content-type': 'text/html'})
+      ),
+      (
+        'a JSON unknown_route',
+        () => http.Response('{"success": false, "error": "unknown_route"}', 404,
+            headers: {'content-type': 'application/json'})
+      ),
+    ]) {
+      testWidgets(
+          'an older connector ($label): "not available yet", the existing '
+          'session survives', (tester) async {
+        await saveNova();
+        await session.saveLoginResponse(_okRes(token: 'OLD-A', rt: 'OLD-R'));
+        await pumpScreen(tester,
+            companyCode: 'NOVAWORKS',
+            token: 'T',
+            login: 'budi.s',
+            realApi: true);
+        await http.runWithClient(() => fillAndSubmit(tester),
+            () => MockClient((_) async => answer()));
+        expect(
+            find.text(
+                "Adding a phone isn't available for your company yet. Ask HR."),
+            findsOneWidget);
+        expect(session.accessToken, 'OLD-A');
+        expect(session.refreshToken, 'OLD-R');
+        expect(find.text('HOME'), findsNothing);
+      });
+    }
+
+    testWidgets('a real server error (HTML 500) keeps the generic words',
+        (tester) async {
+      await saveNova();
+      await pumpScreen(tester,
+          companyCode: 'NOVAWORKS',
+          token: 'T',
+          login: 'budi.s',
+          realApi: true);
+      await http.runWithClient(
+          () => fillAndSubmit(tester),
+          () => MockClient((_) async =>
+              http.Response('<!doctype html><title>500</title>', 500)));
+      expect(
+          find.text(
+              'Something went wrong on our end. Please try again in a moment.'),
+          findsOneWidget);
     });
   });
 }

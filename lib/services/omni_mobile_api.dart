@@ -197,8 +197,10 @@ class OmniMobileApi {
       // to a synthetic ApiException so _humanize falls through to the
       // friendly default ("Login failed. Please try again or contact
       // your administrator.") instead of leaking <!doctype html> to
-      // the screen.
-      throw ApiException('server_error');
+      // the screen. The status lets a caller tell a missing route (404 on
+      // an older connector) from a real server failure.
+      throw ApiException('server_error',
+          data: {'http_status': response.statusCode});
     }
     if (data['success'] != true) {
       final code = data['error']?.toString();

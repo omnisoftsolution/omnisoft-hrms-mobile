@@ -13,7 +13,7 @@ import '../../services/omni_mobile_api.dart';
 import '../../services/session_service.dart';
 import '../../widgets/biometric_optin_sheet.dart';
 import '../../widgets/labeled_field.dart';
-import '../home/home_shell.dart';
+import '../session_gate.dart';
 
 /// Adds this phone to an Omni HR account that is already active on
 /// another phone (connector 2.62.0+, `POST auth/add_device`, spec
@@ -41,8 +41,8 @@ class AddPhoneScreen extends StatefulWidget {
   @visibleForTesting
   final OmniMobileApi Function(String baseUrl, String db)? apiBuilder;
 
-  /// Test seam: the screen shown after the phone is added. Defaults to
-  /// [HomeShell].
+  /// Test seam: the signed-in screen inside the [SessionGate] shown after
+  /// the phone is added. Defaults to HomeShell.
   @visibleForTesting
   final WidgetBuilder? homeBuilder;
 
@@ -68,8 +68,8 @@ class _AddPhoneScreenState extends State<AddPhoneScreen> {
   bool _obscurePassword = true;
   bool _submitting = false;
 
-  /// The server added this phone but saving the result locally failed;
-  /// the form is spent (its pair is void) and must not post again.
+  /// The server added this phone: the form is spent (its pair is void)
+  /// and must not post again, even when a later local step fails.
   bool _added = false;
   String? _error;
 
@@ -127,6 +127,9 @@ class _AddPhoneScreenState extends State<AddPhoneScreen> {
       _submitting = true;
       _error = null;
     });
+    // True once auth/add_device was posted: from then on a lost answer may
+    // hide a phone the server already added.
+    var requestSent = false;
     try {
       final sameCompany = session.hasCompany &&
           companyCode.toUpperCase() == session.companyCode.toUpperCase();
@@ -149,6 +152,7 @@ class _AddPhoneScreenState extends State<AddPhoneScreen> {
             db: db,
             token: '', // add_device has no auth header
           );
+      requestSent = true;
       final res = await api.addDevice(
         login: login,
         token: _hasToken ? widget.token : null,
@@ -158,10 +162,11 @@ class _AddPhoneScreenState extends State<AddPhoneScreen> {
         deviceLabel: deviceLabel,
         appVersion: AppConstants.appVersion,
       );
-      // From here the server has trusted this phone and voided the pair, so
-      // a failure to store the result locally must NOT read as "ask HR for
-      // a new code": a plain sign-in already works.
-      final String faceIdLogin;
+      // From here the server has trusted this phone and voided the pair:
+      // the form must never post again, whatever fails below, and a
+      // failure must NOT read as "ask HR for a new code" (a plain sign-in
+      // already works).
+      _added = true;
       try {
         if (staged != null) {
           // Commit the switch: drop the other company's session first.
@@ -170,21 +175,12 @@ class _AddPhoneScreenState extends State<AddPhoneScreen> {
         }
         // Same payload as /login: stored exactly like a sign-in.
         await session.saveLoginResponse(res);
-        // Face ID follows the server's login, never the typed text, and
-        // never a hidden Odoo user an older connector could return.
-        final returned = session.userLogin;
-        faceIdLogin = returned.isNotEmpty && !isHiddenOdooLogin(returned)
-            ? returned
-            : login;
-        await bio.adoptRefreshToken(session.refreshToken, login: faceIdLogin);
       } catch (_) {
+        // Only a failed session save asks for a sign-in.
         if (!mounted) return;
         _passwordController.clear();
         _codeController.clear();
-        setState(() {
-          _added = true; // the form must not post again
-          _error = _addedSignInMessage;
-        });
+        setState(() => _error = _addedSignInMessage);
         // Leave the dead form; the app's front door shows the sign-in.
         final nav = Navigator.of(context);
         if (nav.canPop()) {
@@ -194,26 +190,50 @@ class _AddPhoneScreenState extends State<AddPhoneScreen> {
         }
         return;
       }
+      // The session is saved: the secrets did their job (a disposed
+      // controller must never be cleared).
+      if (mounted) {
+        _passwordController.clear();
+        _codeController.clear();
+      }
+      // Face ID follows the server's login, never the typed text, and
+      // never a hidden Odoo user an older connector could return.
+      final returned = session.userLogin;
+      final faceIdLogin = returned.isNotEmpty && !isHiddenOdooLogin(returned)
+          ? returned
+          : login;
+      // Face ID work is best effort: a keychain failure must neither
+      // re-open the spent form nor keep the user from Home.
+      try {
+        await bio.adoptRefreshToken(session.refreshToken, login: faceIdLogin);
+      } catch (_) {
+        // Face ID keeps its old token; the next sign-in refreshes it.
+      }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content:
               Text('This phone is added. Your other phones stay signed in.')));
-      await _maybeOfferBiometricOptIn(
-          bio, faceIdLogin, session.refreshToken, session.employeeName);
+      try {
+        await _maybeOfferBiometricOptIn(
+            bio, faceIdLogin, session.refreshToken, session.employeeName);
+      } catch (_) {
+        // No offer this time; the next sign-in offers Face ID again.
+      }
       if (!mounted) return;
-      // The secrets did their job: drop them from the form, now that the
-      // session is saved (a disposed controller must never be cleared).
-      _passwordController.clear();
-      _codeController.clear();
+      // Back to the session-aware front door (not a bare HomeShell), so a
+      // later invalid_session (HR revokes this phone) still shows sign-in.
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(
-            builder: widget.homeBuilder ?? (_) => const HomeShell()),
+            builder: (_) => SessionGate(homeBuilder: widget.homeBuilder)),
         (_) => false,
       );
     } catch (e) {
       // invalid_code, invalid_credentials, account_locked, not_active,
       // mobile_not_enabled and the rest: the shared humanizer only.
-      if (mounted) setState(() => _error = friendlyError(e));
+      if (mounted) {
+        setState(() => _error =
+            friendlyAddPhoneError(e, requestSent: requestSent));
+      }
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -231,8 +251,13 @@ class _AddPhoneScreenState extends State<AddPhoneScreen> {
     final choice = await showBiometricOptInSheet(context, kind: kind);
     if (!mounted) return;
     if (choice == true) {
-      final ok = await bio.enableWithRefreshToken(
-          login: login, refreshToken: refreshToken, displayName: displayName);
+      bool ok;
+      try {
+        ok = await bio.enableWithRefreshToken(
+            login: login, refreshToken: refreshToken, displayName: displayName);
+      } catch (_) {
+        ok = false; // the keychain write failed; Face ID stays off
+      }
       if (ok && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text('${biometricLabel(kind)} login enabled')));

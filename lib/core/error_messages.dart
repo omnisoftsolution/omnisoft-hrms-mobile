@@ -288,6 +288,39 @@ String friendlyError(Object e) {
 
 const _genericMessage = 'Something went wrong. Please try again.';
 
+/// Words for a failed Add this phone (`auth/add_device`). Only the codes
+/// whose meaning differs on this call get their own text; everything
+/// else is [friendlyError]. [requestSent] is false while the SaaS company
+/// lookup runs, before anything reached the company's server.
+String friendlyAddPhoneError(Object e, {bool requestSent = true}) {
+  if (e is ApiException) {
+    switch (e.errorCode) {
+      case 'unknown_route':
+        return _addPhoneUnavailable;
+      case 'server_error':
+        // A connector older than 2.62.0 has no auth/add_device: Odoo
+        // answers with an HTML 404. Any other status is a real failure.
+        if (requestSent && e.data?['http_status'] == 404) {
+          return _addPhoneUnavailable;
+        }
+      case 'mobile_not_enabled':
+        return 'App access is off for you. Ask HR.';
+      case 'timeout':
+      case 'network_error':
+        // The server may have added the phone (and spent the pair) before
+        // the answer was lost.
+        if (requestSent) {
+          return 'If this phone was added, sign in with your app login and '
+              'password; otherwise ask HR for a new code.';
+        }
+    }
+  }
+  return friendlyError(e);
+}
+
+const _addPhoneUnavailable =
+    "Adding a phone isn't available for your company yet. Ask HR.";
+
 /// `leave/cancel` and `leave/modify` codes that mean the request is no
 /// longer what the History list shows: decided (`not_cancellable`,
 /// `not_modifiable`, both carrying the new `state`), deleted

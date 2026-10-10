@@ -1,4 +1,4 @@
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 
 import '../../services/deep_link_service.dart';
 import 'activation_screen.dart';
@@ -15,3 +15,8 @@ Widget screenForActivationLink(ActivationArgs a) => a.isAddPhone
         companyCode: a.companyCode, token: a.token, login: a.login)
     : ActivationScreen(
         companyCode: a.companyCode, token: a.token, login: a.login);
+
+/// Opens a deep link's screen on top of whatever [nav] shows (main.dart's
+/// root navigator), keeping the routes below it.
+void pushActivationLink(NavigatorState nav, ActivationArgs a) =>
+    nav.push(MaterialPageRoute(builder: (_) => screenForActivationLink(a)));

@@ -207,11 +207,19 @@ Spec: connector repo `docs/superpowers/specs/2026-10-10-app-access-scope-design.
   has an always-visible "Add this phone" (`login_add_phone`). `AddPhoneScreen` posts
   `auth/add_device` (`buildAddDeviceBody`: login, token or code, app password, device_id,
   device_label, app_version) and saves the session like activation (staged company switch,
-  `saveLoginResponse`, Face ID adopts the refresh token). Errors go through `friendlyError`
-  only (`invalid_code`, `invalid_credentials`, `not_active`, `account_locked`,
-  `mobile_not_enabled`, `seat_limit_exceeded`, `rate_limit_exceeded`). An app older than 1.32
-  opens an add link as an invite and gets `activation_invalid` (the page says "Update the
-  Omni HR app first").
+  `saveLoginResponse`, Face ID adopts the refresh token). Errors go through
+  `friendlyAddPhoneError` (error_messages.dart: add-phone words for `mobile_not_enabled`,
+  a lost answer after the post, and an older connector), then `friendlyError` (`invalid_code`,
+  `invalid_credentials`, `not_active`, `account_locked`, `seat_limit_exceeded`,
+  `rate_limit_exceeded`). Once the server answers success the form is spent (`_added`); only a
+  failed session save shows "sign in"; Face ID adopt / opt-in are best effort. Success pushes a
+  fresh `SessionGate` (lib/screens/session_gate.dart, also main.dart's home) so a later
+  `invalid_session` still lands on sign-in. An app older than 1.32 opens an add link as an
+  invite and gets `activation_invalid` (the page says "Update the Omni HR app first").
+- Older connector (< 2.62, no `auth/add_device`): Odoo answers an HTML 404, which `_post`
+  reports as `server_error` with `data.http_status` 404; on this call only (also a JSON
+  `unknown_route`) the screen says "Adding a phone isn't available for your company yet. Ask
+  HR." and the saved session is untouched. An HTML 500 keeps the generic server-error words.
 - Rollout: the connector's Add phone button needs this app (1.32). HR should not use it until
   1.32 is live on the stores, or the tenant's Minimum App Version on hrmsmanager is 1.32.
 
