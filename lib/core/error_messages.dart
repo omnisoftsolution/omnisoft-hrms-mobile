@@ -335,24 +335,27 @@ String? _addPhoneMessage(
     case 'timeout':
     case 'network_error':
       // The server may have added the phone (and spent the pair) before
-      // the answer was lost. If it did not, the same code still works.
+      // the answer was lost, or the phone was offline and nothing was sent
+      // (the transport cannot tell): both ways out are given. The form
+      // stays usable, so the same code can also be retried.
       // While switching company, the phone (if added) belongs to the new
       // one, which is not saved on this phone yet.
       if (sent) {
         return company == null
             ? 'If this phone was added, sign in with your app login and '
-                'password. If not, try again.'
+                'password. $_askHrIfSignInFails'
             : 'If this phone was added, choose $company and sign in. '
-                'If not, try again.';
+                '$_askHrIfSignInFails';
       }
     case 'invalid_code':
-      // The lost answer was probably a success that spent the pair.
+      // The lost answer was probably a success that spent the pair, or the
+      // earlier attempt never left the phone and the code is really bad.
       if (context == ErrorContext.addPhoneAfterLostAnswer) {
         return company == null
             ? 'This phone may already be added. Sign in with your app '
-                'login and password.'
+                'login and password. $_askHrIfSignInFails'
             : 'This phone may already be added to $company. Choose that '
-                'company and sign in.';
+                'company and sign in. $_askHrIfSignInFails';
       }
   }
   return null;
@@ -360,6 +363,8 @@ String? _addPhoneMessage(
 
 const _addPhoneUnavailable =
     "Adding a phone isn't available for your company yet. Ask HR.";
+
+const _askHrIfSignInFails = "If sign-in doesn't work, ask HR for a new code.";
 
 /// True when the answer to a request was lost (`timeout`,
 /// `network_error`): after a sent `auth/add_device`, the server may have

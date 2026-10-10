@@ -98,15 +98,24 @@ class _AddPhoneScreenState extends State<AddPhoneScreen> {
       'This phone is added to ${_companyLabel(c)}. Choose that company and '
       'sign in.';
 
-  /// Who and what the form would send now: the company, the login and the
-  /// add-phone token or code (the password is not part of it).
-  String _requestKey() => [
-        (_hasCompany ? widget.companyCode! : _companyController.text)
-            .trim()
-            .toUpperCase(),
-        normalizeAppLogin(_loginController.text.trim()),
-        _hasToken ? 't:${widget.token}' : 'c:${_codeController.text.trim()}',
+  /// Identity of a request: the company, the login and the add-phone
+  /// token or code (the password is not part of it).
+  static String _keyFor(
+          String company, String login, String? token, String? code) =>
+      [
+        company.trim().toUpperCase(),
+        normalizeAppLogin(login.trim()),
+        token != null ? 't:$token' : 'c:${code ?? ''}',
       ].join('\u0000');
+
+  String get _fieldCompany =>
+      (_hasCompany ? widget.companyCode! : _companyController.text).trim();
+  String? get _fieldToken => _hasToken ? widget.token : null;
+  String? get _fieldCode => _hasToken ? null : _codeController.text.trim();
+
+  /// What the form would send now.
+  String _requestKey() => _keyFor(_fieldCompany, _loginController.text,
+      _fieldToken, _fieldCode);
 
   bool get _hasToken => widget.token != null && widget.token!.isNotEmpty;
   bool get _hasCompany =>
@@ -158,11 +167,15 @@ class _AddPhoneScreenState extends State<AddPhoneScreen> {
     if (!_canSubmit) return;
     final session = context.read<SessionService>();
     final bio = context.read<BiometricAuthService>();
-    final companyCode =
-        (_hasCompany ? widget.companyCode! : _companyController.text).trim();
+    // One snapshot of the request, taken now: the fields stay editable
+    // while the lookup and the post run, and the key must describe exactly
+    // what is sent.
+    final companyCode = _fieldCompany;
     final login = _loginController.text.trim();
-    // Taken now: the fields may change while the request runs.
-    final requestKey = _requestKey();
+    final token = _fieldToken;
+    final code = _fieldCode;
+    final password = _passwordController.text;
+    final requestKey = _keyFor(companyCode, login, token, code);
     final afterLostAnswer = _lostAnswerKey == requestKey;
     setState(() {
       _submitting = true;
@@ -197,9 +210,9 @@ class _AddPhoneScreenState extends State<AddPhoneScreen> {
       requestSent = true;
       final res = await api.addDevice(
         login: login,
-        token: _hasToken ? widget.token : null,
-        code: _hasToken ? null : _codeController.text.trim(),
-        password: _passwordController.text,
+        token: token,
+        code: code,
+        password: password,
         deviceId: deviceId,
         deviceLabel: deviceLabel,
         appVersion: AppConstants.appVersion,

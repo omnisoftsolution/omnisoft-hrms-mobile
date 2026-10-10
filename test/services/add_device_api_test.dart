@@ -150,7 +150,7 @@ void main() {
 
     test('a lost answer after the post may hide an added phone', () {
       const text = 'If this phone was added, sign in with your app login '
-          'and password. If not, try again.';
+          "and password. If sign-in doesn't work, ask HR for a new code.";
       expect(add(ApiException('timeout')), text);
       expect(add(ApiException('network_error')), text);
       expect(isLostAnswerError(ApiException('timeout')), isTrue);
@@ -171,7 +171,7 @@ void main() {
     test('invalid_code after a lost answer: probably already added', () {
       expect(add(ApiException('invalid_code'), ErrorContext.addPhoneAfterLostAnswer),
           'This phone may already be added. Sign in with your app login and '
-          'password.');
+          "password. If sign-in doesn't work, ask HR for a new code.");
       expect(add(ApiException('invalid_code')),
           'That add-phone code is not right or has expired. Ask HR for a new one.');
     });
@@ -181,10 +181,11 @@ void main() {
           ApiException(code), context: c, addPhoneCompany: 'Nova (NOVA)');
       expect(named('timeout', ErrorContext.addPhone),
           'If this phone was added, choose Nova (NOVA) and sign in. '
-          'If not, try again.');
+          "If sign-in doesn't work, ask HR for a new code.");
       expect(named('invalid_code', ErrorContext.addPhoneAfterLostAnswer),
           'This phone may already be added to Nova (NOVA). Choose that '
-          'company and sign in.');
+          "company and sign in. If sign-in doesn't work, ask HR for a new "
+          'code.');
       // Ignored outside the add-phone words.
       expect(named('invalid_code', ErrorContext.addPhone),
           'That add-phone code is not right or has expired. Ask HR for a new one.');

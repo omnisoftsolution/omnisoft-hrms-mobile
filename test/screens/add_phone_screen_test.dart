@@ -74,10 +74,14 @@ class _Session extends SessionService {
     return super.saveCompanyInfo(info, saasUrl: saasUrl);
   }
 
+  /// When set, the lookup waits for it (the fields stay editable).
+  Completer<void>? lookupGate;
+
   @override
   Future<CompanyInfo> lookupCompany(String code, {String? saasUrl}) async {
     lookups++;
     lastLookupCode = code;
+    if (lookupGate != null) await lookupGate!.future;
     return info!;
   }
 }
@@ -132,6 +136,9 @@ Map<String, dynamic> _okRes(
     };
 
 Finder get _addButton => find.widgetWithText(FilledButton, 'Add this phone');
+
+/// End of every lost-answer text: the way out when sign-in fails too.
+const _lostAnswerTail = "If sign-in doesn't work, ask HR for a new code.";
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -373,12 +380,12 @@ void main() {
       (
         ApiException('timeout'),
         'If this phone was added, sign in with your app login and password. '
-            'If not, try again.'
+            "If sign-in doesn't work, ask HR for a new code."
       ),
       (
         ApiException('network_error'),
         'If this phone was added, sign in with your app login and password. '
-            'If not, try again.'
+            "If sign-in doesn't work, ask HR for a new code."
       ),
     ]) {
       testWidgets('${error.errorCode}: shown in words, nothing saved',
@@ -584,20 +591,22 @@ void main() {
           onAddDevice: () async => throw ApiException(
               ++attempt == 1 ? 'timeout' : 'invalid_code'));
       await fillAndSubmit(tester);
-      expect(find.textContaining('If not, try again.'), findsOneWidget);
+      expect(find.textContaining(_lostAnswerTail), findsOneWidget);
       await fillAndSubmit(tester);
       expect(api!.calls, hasLength(1)); // a fresh fake per attempt
       expect(attempt, 2);
       expect(
           find.text('This phone may already be added. Sign in with your app '
-              'login and password.'),
+              "login and password. If sign-in doesn't work, ask HR for a new "
+              'code.'),
           findsOneWidget);
-      expect(find.textContaining('Ask HR'), findsNothing);
+      expect(find.textContaining('Ask HR for a new one'), findsNothing);
     });
 
     group('the lost answer belongs to the request that was sent', () {
       const mayBeAdded = 'This phone may already be added. Sign in with your '
-          'app login and password.';
+          "app login and password. If sign-in doesn't work, ask HR for a new "
+          'code.';
       const askHr = 'That add-phone code is not right or has expired. '
           'Ask HR for a new one.';
 
@@ -631,7 +640,7 @@ void main() {
               onAddDevice: answers(['timeout', 'invalid_code']));
           await fillAndSubmit(tester,
               company: 'NOVAWORKS', login: 'budi.s', code: '123456');
-          expect(find.textContaining('If not, try again.'), findsOneWidget);
+          expect(find.textContaining(_lostAnswerTail), findsOneWidget);
           await fillAndSubmit(tester,
               company: changed.company,
               login: changed.login,
@@ -658,7 +667,7 @@ void main() {
             find.byKey(const Key('add_phone_login')), 'siti.r');
         pending.completeError(ApiException('timeout'));
         await tester.pumpAndSettle();
-        expect(find.textContaining('If not, try again.'), findsOneWidget);
+        expect(find.textContaining(_lostAnswerTail), findsOneWidget);
         await fillAndSubmit(tester);
         expect(attempt, 2);
         expect(find.text(askHr), findsOneWidget);
@@ -692,15 +701,50 @@ void main() {
             company: 'novaworks', login: 'budi.s', code: '123456');
         expect(
             find.text('If this phone was added, choose Nova Works (NOVAWORKS) '
-                'and sign in. If not, try again.'),
+                "and sign in. If sign-in doesn't work, ask HR for a new code."),
             findsOneWidget);
         await fillAndSubmit(tester,
             company: 'novaworks', login: 'budi.s', code: '123456');
         expect(
             find.text('This phone may already be added to Nova Works '
-                '(NOVAWORKS). Choose that company and sign in.'),
+                '(NOVAWORKS). Choose that company and sign in. If sign-in '
+                "doesn't work, ask HR for a new code."),
             findsOneWidget);
         expect(session.companyCode, 'OLD'); // nothing switched
+      });
+
+      testWidgets(
+          'the code edited during the company lookup is not what is sent: the '
+          'snapshot taken at submit is', (tester) async {
+        await session.saveCompany(
+            saasUrl: 'https://saas',
+            companyCode: 'OLD',
+            clientUrl: 'https://old.example',
+            clientDb: 'old_db');
+        final sent = <String?>[];
+        final gate = Completer<void>();
+        session.lookupGate = gate;
+        await pumpScreen(tester,
+            onAddDevice: answers(['timeout', 'invalid_code']));
+        await fillAndSubmit(tester,
+            company: 'novaworks',
+            login: 'budi.s',
+            code: '123456',
+            settle: false);
+        // The lookup is still running; the employee edits the code.
+        await tester.enterText(
+            find.byKey(const Key('add_phone_code')), '654321');
+        gate.complete();
+        await tester.pumpAndSettle();
+        sent.add(api!.calls.single['code']);
+        expect(sent.single, '123456');
+        expect(find.textContaining(_lostAnswerTail), findsOneWidget);
+        // 654321 was never sent, so a retry with it is a fresh request.
+        session.lookupGate = null;
+        await fillAndSubmit(tester,
+            company: 'novaworks', login: 'budi.s', code: '654321');
+        expect(api!.calls.single['code'], '654321');
+        expect(find.text(askHr), findsOneWidget);
       });
     });
 
