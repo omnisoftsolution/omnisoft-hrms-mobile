@@ -192,6 +192,29 @@ iOS is still-frame-only for spoof texture (multi-frame raw-bytes P1.1 open, per 
 - Known gap: `/leave/attachment/get` answers `not_owner` for anyone but the leave's own
   employee until connector 2.50.0; an approver cannot open an attachment yet.
 
+## App access scope (1.32.0, connector 2.62.0)
+Spec: connector repo `docs/superpowers/specs/2026-10-10-app-access-scope-design.md` §3.3 / §3.8.
+- Approvals: pending / recent / get rows carry `waiting_for` `{role, names, you}` → `WaitingFor`
+  (lib/models/approval_item.dart). `ApprovalItem.stepLabel` and the current step's
+  `ApprovalStep.title` use `WaitingFor.label` ("Your approval", "Waiting for Kelvin (manager)",
+  " +N" for more names, "Waiting for HR", "Waiting for manager"); without the key (connector
+  < 2.62) the old texts stay. Pending is split by `assigned_to_me` into "Waiting for you" /
+  "You can also approve" ("Nothing waiting for you." when only the second part has rows).
+- Add this phone: links carry `k=add` (`omnihr://activate?k=add&c=…&t=…&l=…`, or the https
+  `/omni/activate#k=add&…` page that hands off to it). `ActivationArgs.kind`; an unknown `k`
+  is not opened. `screenForActivationLink` (lib/screens/activation/link_route.dart) is the one
+  switch for main.dart and the company-code / login / activation scanners; the sign-in screen
+  has an always-visible "Add this phone" (`login_add_phone`). `AddPhoneScreen` posts
+  `auth/add_device` (`buildAddDeviceBody`: login, token or code, app password, device_id,
+  device_label, app_version) and saves the session like activation (staged company switch,
+  `saveLoginResponse`, Face ID adopts the refresh token). Errors go through `friendlyError`
+  only (`invalid_code`, `invalid_credentials`, `not_active`, `account_locked`,
+  `mobile_not_enabled`, `seat_limit_exceeded`, `rate_limit_exceeded`). An app older than 1.32
+  opens an add link as an invite and gets `activation_invalid` (the page says "Update the
+  Omni HR app first").
+- Rollout: the connector's Add phone button needs this app (1.32). HR should not use it until
+  1.32 is live on the stores, or the tenant's Minimum App Version on hrmsmanager is 1.32.
+
 ## My day (1.26.0)
 
 Spec + plan live in the connector repo:
