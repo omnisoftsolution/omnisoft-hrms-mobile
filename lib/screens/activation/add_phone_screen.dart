@@ -67,7 +67,14 @@ class _AddPhoneScreenState extends State<AddPhoneScreen> {
   final _deviceService = DeviceService();
   bool _obscurePassword = true;
   bool _submitting = false;
+
+  /// The server added this phone but saving the result locally failed;
+  /// the form is spent (its pair is void) and must not post again.
+  bool _added = false;
   String? _error;
+
+  static const _addedSignInMessage =
+      'This phone is added. Sign in with your app login and password.';
 
   bool get _hasToken => widget.token != null && widget.token!.isNotEmpty;
   bool get _hasCompany =>
@@ -100,6 +107,7 @@ class _AddPhoneScreenState extends State<AddPhoneScreen> {
   }
 
   bool get _canSubmit =>
+      !_added &&
       _loginController.text.trim().isNotEmpty &&
       _passwordController.text.isNotEmpty &&
       (_hasToken || _codeController.text.trim().length == 6) &&
@@ -150,23 +158,42 @@ class _AddPhoneScreenState extends State<AddPhoneScreen> {
         deviceLabel: deviceLabel,
         appVersion: AppConstants.appVersion,
       );
-      // The secrets did their job: do not keep them in the form.
-      _passwordController.clear();
-      _codeController.clear();
-      if (staged != null) {
-        // Commit the switch: drop the other company's session first.
-        if (session.accessToken.isNotEmpty) await session.clearSession();
-        await session.saveCompanyInfo(staged, saasUrl: stagedSaasUrl);
+      // From here the server has trusted this phone and voided the pair, so
+      // a failure to store the result locally must NOT read as "ask HR for
+      // a new code": a plain sign-in already works.
+      final String faceIdLogin;
+      try {
+        if (staged != null) {
+          // Commit the switch: drop the other company's session first.
+          if (session.accessToken.isNotEmpty) await session.clearSession();
+          await session.saveCompanyInfo(staged, saasUrl: stagedSaasUrl);
+        }
+        // Same payload as /login: stored exactly like a sign-in.
+        await session.saveLoginResponse(res);
+        // Face ID follows the server's login, never the typed text, and
+        // never a hidden Odoo user an older connector could return.
+        final returned = session.userLogin;
+        faceIdLogin = returned.isNotEmpty && !isHiddenOdooLogin(returned)
+            ? returned
+            : login;
+        await bio.adoptRefreshToken(session.refreshToken, login: faceIdLogin);
+      } catch (_) {
+        if (!mounted) return;
+        _passwordController.clear();
+        _codeController.clear();
+        setState(() {
+          _added = true; // the form must not post again
+          _error = _addedSignInMessage;
+        });
+        // Leave the dead form; the app's front door shows the sign-in.
+        final nav = Navigator.of(context);
+        if (nav.canPop()) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(const SnackBar(content: Text(_addedSignInMessage)));
+          nav.popUntil((r) => r.isFirst);
+        }
+        return;
       }
-      // Same payload as /login: stored exactly like a sign-in.
-      await session.saveLoginResponse(res);
-      // Face ID follows the server's login, never the typed text, and
-      // never a hidden Odoo user an older connector could return.
-      final returned = session.userLogin;
-      final faceIdLogin = returned.isNotEmpty && !isHiddenOdooLogin(returned)
-          ? returned
-          : login;
-      await bio.adoptRefreshToken(session.refreshToken, login: faceIdLogin);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content:
@@ -174,6 +201,10 @@ class _AddPhoneScreenState extends State<AddPhoneScreen> {
       await _maybeOfferBiometricOptIn(
           bio, faceIdLogin, session.refreshToken, session.employeeName);
       if (!mounted) return;
+      // The secrets did their job: drop them from the form, now that the
+      // session is saved (a disposed controller must never be cleared).
+      _passwordController.clear();
+      _codeController.clear();
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(
             builder: widget.homeBuilder ?? (_) => const HomeShell()),
@@ -214,7 +245,11 @@ class _AddPhoneScreenState extends State<AddPhoneScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Scaffold(
+    // No backing out while the request runs: the pair would be spent with
+    // nothing saved on this phone.
+    return PopScope(
+      canPop: !_submitting,
+      child: Scaffold(
       appBar: AppBar(),
       body: SingleChildScrollView(
         // viewPadding (not SafeArea): the system inset below the button,
@@ -322,6 +357,7 @@ class _AddPhoneScreenState extends State<AddPhoneScreen> {
             ],
           ],
         ),
+      ),
       ),
     );
   }

@@ -18,6 +18,15 @@ class _Session extends SessionService {
   int lookups = 0;
   String? lastLookupCode;
 
+  /// When true, storing the login response fails (local persistence error).
+  bool failSave = false;
+
+  @override
+  Future<void> saveLoginResponse(Map<String, dynamic> res) {
+    if (failSave) throw StateError('disk full');
+    return super.saveLoginResponse(res);
+  }
+
   @override
   Future<CompanyInfo> lookupCompany(String code, {String? saasUrl}) async {
     lookups++;
@@ -298,6 +307,62 @@ void main() {
         expect(tester.widget<FilledButton>(_addButton).onPressed, isNotNull);
       });
     }
+
+    testWidgets(
+        'phone added but the local save fails: sign-in guidance, not '
+        '"ask HR", and the form cannot post again', (tester) async {
+      await saveNova();
+      session.failSave = true;
+      await pumpScreen(tester,
+          companyCode: 'NOVAWORKS',
+          token: 'T',
+          login: 'budi.s',
+          onAddDevice: () async => _okRes());
+      await fillAndSubmit(tester);
+      expect(
+          find.text(
+              'This phone is added. Sign in with your app login and password.'),
+          findsOneWidget);
+      expect(find.textContaining('Ask HR'), findsNothing);
+      expect(find.text('HOME'), findsNothing);
+      expect(api!.calls, hasLength(1));
+      // The pair is void: the form is disarmed, the password is gone.
+      expect(tester.widget<FilledButton>(_addButton).onPressed, isNull);
+      expect(
+          tester
+              .widget<TextField>(find.descendant(
+                  of: find.byKey(const Key('add_phone_password')),
+                  matching: find.byType(TextField)))
+              .controller!
+              .text,
+          isEmpty);
+    });
+
+    testWidgets(
+        'another company, add fails: nothing switched, old company and '
+        'tokens survive', (tester) async {
+      await session.saveCompany(
+          saasUrl: 'https://saas',
+          companyCode: 'OLD',
+          clientUrl: 'https://old.example',
+          clientDb: 'old_db');
+      await session.saveLoginResponse(_okRes(token: 'OLD-A', rt: 'OLD-R'));
+      await pumpScreen(tester,
+          onAddDevice: () async => throw ApiException('invalid_code'));
+      await fillAndSubmit(tester,
+          company: 'novaworks', login: 'budi.s', code: '123456');
+      expect(session.lookups, 1);
+      expect(api!.calls, hasLength(1));
+      expect(
+          find.text(
+              'That add-phone code is not right or has expired. Ask HR for a new one.'),
+          findsOneWidget);
+      expect(session.companyCode, 'OLD');
+      expect(session.clientUrl, 'https://old.example');
+      expect(session.accessToken, 'OLD-A');
+      expect(session.refreshToken, 'OLD-R');
+      expect(find.text('HOME'), findsNothing);
+    });
 
     testWidgets('Face ID already on for this login adopts the new token',
         (tester) async {
