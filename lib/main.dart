@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'core/constants.dart';
@@ -6,6 +9,7 @@ import 'services/face_recognition_service.dart';
 import 'services/holiday_service.dart';
 import 'services/notification_service.dart';
 import 'services/omni_mobile_api.dart';
+import 'services/push_service.dart';
 import 'services/session_service.dart';
 import 'services/biometric_auth_service.dart';
 import 'services/deep_link_service.dart';
@@ -41,13 +45,38 @@ void main() async {
     session.refreshMe();
   };
 
-  runApp(OmniHrApp(session: session, biometric: biometric));
+  // Push notifications (spec 2026-10-11 §6). onSignedIn attaches the
+  // session at once; the token registration itself runs in the background.
+  final push = PushService(messaging: await _startFirebase());
+  session.onSessionClearing = push.onSessionCleared;
+  unawaited(push.onSignedIn(session));
+  await push.init();
+
+  runApp(OmniHrApp(session: session, biometric: biometric, push: push));
+}
+
+/// Firebase for push notifications (spec 2026-10-11 §6.1). A failure
+/// leaves push off for this run; nothing else depends on it.
+Future<PushMessaging?> _startFirebase() async {
+  try {
+    await Firebase.initializeApp();
+    return FirebasePushMessaging();
+  } catch (e) {
+    debugPrint('Push notifications off: Firebase did not start ($e)');
+    return null;
+  }
 }
 
 class OmniHrApp extends StatefulWidget {
   final SessionService session;
   final BiometricAuthService biometric;
-  const OmniHrApp({super.key, required this.session, required this.biometric});
+  final PushService push;
+  const OmniHrApp({
+    super.key,
+    required this.session,
+    required this.biometric,
+    required this.push,
+  });
 
   @override
   State<OmniHrApp> createState() => _OmniHrAppState();
@@ -100,6 +129,7 @@ class _OmniHrAppState extends State<OmniHrApp> with WidgetsBindingObserver {
       // record" case.
       _refreshSubscriptionInBackground();
       _refreshMeInBackground();
+      unawaited(widget.push.onResumed());
     }
   }
 
@@ -130,6 +160,7 @@ class _OmniHrAppState extends State<OmniHrApp> with WidgetsBindingObserver {
       providers: [
         ChangeNotifierProvider.value(value: widget.session),
         ChangeNotifierProvider.value(value: widget.biometric),
+        ChangeNotifierProvider.value(value: widget.push),
         ChangeNotifierProvider(create: (_) => HolidayService()),
         ChangeNotifierProvider(create: (_) => FaceRecognitionService()),
         ChangeNotifierProvider(create: (_) => NotificationService()),

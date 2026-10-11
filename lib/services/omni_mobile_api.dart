@@ -16,6 +16,7 @@ import '../models/notification_record.dart';
 import '../models/ocr_result.dart';
 import '../models/payslip_record.dart';
 import '../models/public_holiday.dart';
+import '../models/push_prefs.dart';
 import 'identity_bodies.dart';
 
 /// Builds the request body map for attendance check-in/out calls.
@@ -162,7 +163,17 @@ class OmniMobileApi {
   Future<Map<String, dynamic>> _post(
     String path, [
     Map<String, dynamic>? body,
-  ]) async {
+  ]) => _send(path, body, fireHooks: true);
+
+  /// The one HTTP call. [fireHooks] false skips [onInvalidSession] and
+  /// [onKioskOnly]: `push/unregister` runs inside `clearSession()`, often
+  /// with a token the server already revoked, and must not sign the user
+  /// out a second time.
+  Future<Map<String, dynamic>> _send(
+    String path,
+    Map<String, dynamic>? body, {
+    required bool fireHooks,
+  }) async {
     // 30s timeout so the UI can't hang forever if the server stops
     // responding cleanly (Android symptom: CHECK OUT button stuck on
     // SCANNING…). 30s is generous enough for cellular + a real
@@ -205,10 +216,10 @@ class OmniMobileApi {
     if (data['success'] != true) {
       final code = data['error']?.toString();
       // 'invalid_token' kept for legacy; new server returns 'invalid_session'.
-      if (code == 'invalid_session' || code == 'invalid_token') {
+      if (fireHooks && (code == 'invalid_session' || code == 'invalid_token')) {
         onInvalidSession?.call();
       }
-      if (code == 'kiosk_only') {
+      if (fireHooks && code == 'kiosk_only') {
         onKioskOnly?.call();
       }
       throw ApiException.fromBody(data);
@@ -361,6 +372,36 @@ class OmniMobileApi {
     });
     return (data['marked'] as num?)?.toInt() ?? 0;
   }
+
+  /// One bell notice by id (a push tap, spec 2026-10-11 §6.4). Throws
+  /// ApiException('not_found') when it is gone or not visible to the
+  /// session.
+  Future<NotificationRecord> notificationGet(int id) async {
+    final data = await _post('/notifications/get', {'id': id});
+    final n = data['notification'];
+    if (n is! Map) throw ApiException('not_found', data: data);
+    return NotificationRecord.fromJson(Map<String, dynamic>.from(n));
+  }
+
+  // -- Push notifications (connector 2.63.0, spec 2026-10-11 §4.1) --
+
+  /// Puts this phone's FCM token on the signed-in session. A legacy sign-in
+  /// answers 400 `session_required`; an older connector an HTML 404.
+  Future<void> pushRegister(String token, String platform) async {
+    await _post('/push/register', {'token': token, 'platform': platform});
+  }
+
+  /// Takes the token off the session. Quiet: never signs the user out.
+  Future<void> pushUnregister() async {
+    await _send('/push/unregister', const {}, fireHooks: false);
+  }
+
+  Future<PushPrefs> pushPrefsGet() async =>
+      PushPrefs.fromJson(await _post('/push/prefs/get'));
+
+  /// Replaces the user's mutes; answers like [pushPrefsGet].
+  Future<PushPrefs> pushPrefsSet(List<String> muted) async =>
+      PushPrefs.fromJson(await _post('/push/prefs/set', {'muted': muted}));
 
   // -- Attendance --
 

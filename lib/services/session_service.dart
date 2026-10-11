@@ -30,6 +30,14 @@ class SessionService extends ChangeNotifier {
   /// sign-out also forgets the biometric credential.
   void Function()? onLogout;
 
+  /// Runs at the start of every sign-out ([clearSession], [signOut],
+  /// [logout]) while the session is still intact, once per sign-out.
+  /// main() wires it to PushService.onSessionCleared (push/unregister,
+  /// clear delivered, delete the FCM token; spec 2026-10-11 §6.3). Errors
+  /// are swallowed: a sign-out never fails because of it.
+  Future<void> Function()? onSessionClearing;
+  bool _inClearingHook = false;
+
   // Keys: SaaS routing (kept across logout)
   static const _keySaasUrl = 'saas_url';
   static const _keyCompanyCode = 'company_code';
@@ -706,8 +714,29 @@ class SessionService extends ChangeNotifier {
   }
 
   /// Clear only the auth session keys. SaaS routing stays so re-login
-  /// doesn't require re-entering the company code.
+  /// doesn't require re-entering the company code. Runs
+  /// [onSessionClearing] first, while the session is still intact.
   Future<void> clearSession() async {
+    await _runClearingHook();
+    await _clearSessionFields();
+  }
+
+  /// [onSessionClearing], at most once at a time: a clearSession started
+  /// from inside the hook (an invalid_session answer) skips it.
+  Future<void> _runClearingHook() async {
+    final hook = onSessionClearing;
+    if (hook == null || _inClearingHook) return;
+    _inClearingHook = true;
+    try {
+      await hook();
+    } catch (_) {
+      // Best effort — the sign-out goes on.
+    } finally {
+      _inClearingHook = false;
+    }
+  }
+
+  Future<void> _clearSessionFields() async {
     _accessToken = '';
     _expiresAt = null;
     _userId = 0;
@@ -990,12 +1019,14 @@ class SessionService extends ChangeNotifier {
   /// Full reset (clears SaaS routing too). Used when the user wants to
   /// switch companies entirely.
   Future<void> logout() async {
+    // Push first: it needs the old company's URL and token.
+    await _runClearingHook();
     _saasUrl = '';
     _companyCode = '';
     _clientUrl = '';
     _clientDb = '';
     _identityCapable = false;
-    await clearSession();
+    await _clearSessionFields();
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_keySaasUrl);
     await prefs.remove(_keyCompanyCode);
