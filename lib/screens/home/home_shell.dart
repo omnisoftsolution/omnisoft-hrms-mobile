@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -12,6 +14,7 @@ import '../../models/notification_record.dart';
 import '../../services/face_recognition_service.dart';
 import '../../services/holiday_service.dart';
 import '../../services/notification_service.dart';
+import '../../services/push_service.dart';
 import '../../services/session_service.dart';
 
 class HomeShell extends StatefulWidget {
@@ -41,6 +44,7 @@ class HomeShellState extends State<HomeShell> {
   final _expensesNavKey = GlobalKey<NavigatorState>();
 
   NotificationService? _notifSvc;
+  PushService? _push;
 
   @override
   void initState() {
@@ -53,6 +57,11 @@ class HomeShellState extends State<HomeShell> {
       _notifSvc = context.read<NotificationService>();
       _notifSvc!.start(session);
       _notifSvc!.addListener(_onNotificationChange);
+      // Pushes (spec 2026-10-11 §6.4) hand reminders, taps and the
+      // explainer over here. Run once now: something may already wait.
+      _push = context.read<PushService>();
+      _push!.addListener(_onPushChange);
+      _onPushChange();
     });
   }
 
@@ -62,6 +71,7 @@ class HomeShellState extends State<HomeShell> {
     // session.clearSession on invalid_session reroutes us to Login).
     _notifSvc?.removeListener(_onNotificationChange);
     _notifSvc?.stop();
+    _push?.removeListener(_onPushChange);
     super.dispose();
   }
 
@@ -127,6 +137,25 @@ class HomeShellState extends State<HomeShell> {
         _notifSvc?.markRead(fresh.id);
         navigateToExpense(id);
       }
+    }
+  }
+
+  /// What PushService handed over: a reminder that arrived while the app
+  /// is open becomes a snackbar whose "Open" goes Home (spec §6.4).
+  void _onPushChange() {
+    final push = _push;
+    if (push == null || !mounted) return;
+    final arrivals = push.consumeArrivals();
+    final messenger = _scaffoldMessengerKey.currentState;
+    if (arrivals.isNotEmpty && messenger != null) {
+      messenger
+        ..removeCurrentSnackBar()
+        ..showSnackBar(
+          pushArrivalSnackBar(
+            arrivals.first,
+            onOpen: () => unawaited(navigateToMyDay()),
+          ),
+        );
     }
   }
 
@@ -417,4 +446,57 @@ SnackBar notificationArrivalSnackBar(
           onPressed: onAction,
         )
       : null,
+);
+
+/// The snackbar for a push-only notice (a check-in / check-out reminder)
+/// that arrives while the app is open (spec 2026-10-11 §6.4): the push's
+/// own title and body; "Open" goes to Home.
+SnackBar pushArrivalSnackBar(
+  PushArrival arrival, {
+  required VoidCallback onOpen,
+}) => SnackBar(
+  backgroundColor: AppTheme.primary,
+  // Same as the notice snackbar: a bar with an action must still time out.
+  persist: false,
+  duration: const Duration(seconds: 6),
+  behavior: SnackBarBehavior.floating,
+  margin: const EdgeInsets.all(16),
+  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+  content: Row(
+    children: [
+      const Icon(Icons.alarm_rounded, color: Colors.white, size: 20),
+      const SizedBox(width: 12),
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              arrival.title,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+                fontSize: 14,
+              ),
+            ),
+            if (arrival.body.isNotEmpty)
+              Text(
+                arrival.body,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.85),
+                  fontSize: 12,
+                ),
+              ),
+          ],
+        ),
+      ),
+    ],
+  ),
+  action: SnackBarAction(
+    label: 'Open',
+    textColor: Colors.white,
+    onPressed: onOpen,
+  ),
 );

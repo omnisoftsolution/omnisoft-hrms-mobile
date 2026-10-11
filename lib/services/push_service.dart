@@ -1,10 +1,14 @@
 import 'dart:async';
+import 'dart:ui' show DartPluginRegistrant;
 
 import 'package:firebase_core/firebase_core.dart' show FirebaseException;
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/push_groups.dart';
 import '../models/push_prefs.dart';
+import 'notification_service.dart';
 import 'omni_mobile_api.dart';
 import 'push_native.dart';
 import 'session_service.dart';
@@ -95,6 +99,7 @@ class PushService extends ChangeNotifier {
     PushMessaging? messaging,
     PushNative? pushNative,
     PushApiBuilder? apiBuilder,
+    NotificationService? notifications,
     String? platform,
     List<Duration> apnsRetryDelays = const [
       Duration(seconds: 2),
@@ -106,6 +111,7 @@ class PushService extends ChangeNotifier {
   }) : _messaging = messaging,
        _native = pushNative ?? PushNative.instance,
        _apiBuilder = apiBuilder ?? _targetApi,
+       _notifications = notifications,
        _platform =
            platform ??
            (defaultTargetPlatform == TargetPlatform.iOS ? 'ios' : 'android'),
@@ -128,6 +134,9 @@ class PushService extends ChangeNotifier {
   /// the teardown finishes in the background ([_teardown]).
   final Duration _signOutCap;
   final List<StreamSubscription<Object?>> _subs = [];
+
+  /// The bell; a notice arriving in the foreground re-polls it.
+  final NotificationService? _notifications;
 
   SessionService? _session;
 
@@ -162,6 +171,7 @@ class PushService extends ChangeNotifier {
   /// background after the sign-out returned.
   Future<void>? _teardown;
   PushPrefs? _prefs;
+  List<PushArrival> _arrivals = const [];
 
   /// Firebase came up. False: every push feature is off on this run.
   bool get enabled => _messaging != null;
@@ -173,8 +183,8 @@ class PushService extends ChangeNotifier {
   /// The tenant sends pushes: gates Profile → Notifications (§6.6).
   bool get available => _prefs?.pushAvailable == true;
 
-  /// Android channels and the FCM token stream. Call once at start-up,
-  /// after [onSignedIn].
+  /// Android channels, the FCM token stream and foreground messages. Call
+  /// once at start-up, after [onSignedIn].
   Future<void> init() async {
     final m = _messaging;
     if (m == null) return;
@@ -183,6 +193,17 @@ class PushService extends ChangeNotifier {
       m.onTokenRefresh.listen(
         (_) => _onFcmTokenRefresh(),
         onError: (Object e) => debugPrint('push: token refresh failed ($e)'),
+      ),
+    );
+    _subs.add(
+      m.onMessage.listen(
+        (msg) => unawaited(
+          handleForeground(
+            msg.data,
+            title: msg.notification?.title,
+            body: msg.notification?.body,
+          ),
+        ),
       ),
     );
   }
@@ -365,6 +386,7 @@ class PushService extends ChangeNotifier {
     _current = null;
     _registered = null;
     _settled = false;
+    _arrivals = const [];
     if (_prefs != null) {
       _prefs = null;
       notifyListeners();
@@ -438,6 +460,42 @@ class PushService extends ChangeNotifier {
     }
   }
 
+  /// A push that arrived while the app is open (spec §6.4). Only this
+  /// tenant's pushes count. No system banner: a notice re-polls the bell
+  /// (its arrival snackbar follows), a reminder is queued for HomeShell's
+  /// snackbar, a `remove` takes the notification off and applies the badge.
+  Future<void> handleForeground(
+    Map<String, dynamic> data, {
+    String? title,
+    String? body,
+  }) async {
+    final s = _session;
+    if (s == null || !s.isLoggedIn || !isForThisTenant(data, s.companyCode)) {
+      return;
+    }
+    if (data['action'] == 'remove') {
+      await applyRemove(data, _native);
+      return;
+    }
+    final kind = data['kind']?.toString() ?? '';
+    if (isReminderKind(kind)) {
+      _arrivals = [
+        PushArrival(kind: kind, title: title ?? '', body: body ?? ''),
+        ..._arrivals,
+      ];
+      notifyListeners();
+      return;
+    }
+    await _notifications?.refreshNow();
+  }
+
+  /// Reminders that arrived since HomeShell last asked, newest first.
+  List<PushArrival> consumeArrivals() {
+    final a = _arrivals;
+    _arrivals = const [];
+    return a;
+  }
+
   @override
   void dispose() {
     for (final sub in _subs) {
@@ -446,4 +504,83 @@ class PushService extends ChangeNotifier {
     _session?.removeListener(_onSessionChanged);
     super.dispose();
   }
+}
+
+/// A push-only notice (a check-in / check-out reminder) that arrived while
+/// the app was open; HomeShell shows it as a snackbar (spec §6.4).
+class PushArrival {
+  const PushArrival({
+    required this.kind,
+    required this.title,
+    required this.body,
+  });
+
+  final String kind;
+  final String title;
+  final String body;
+}
+
+/// Every push carries `company_code` (set by hrmsmanager from the sending
+/// tenant). One for another tenant is ignored (spec §6.4).
+bool isForThisTenant(Map<String, dynamic> data, String companyCode) {
+  final code = data['company_code'];
+  if (code is! String) return false;
+  final mine = companyCode.trim().toUpperCase();
+  return mine.isNotEmpty && code.trim().toUpperCase() == mine;
+}
+
+/// A `remove` push (spec §6.4): take the notification about its `omni_key`
+/// off the phone (iOS by identifier = apns-collapse-id, Android by tag) and
+/// apply its badge (iOS). Best effort (§10).
+Future<void> applyRemove(
+  Map<String, dynamic> data,
+  PushNative pushNative,
+) async {
+  final key = data['omni_key']?.toString() ?? '';
+  if (key.isNotEmpty) {
+    await pushNative.removeDelivered([key]);
+    await pushNative.cancelTag(key);
+  }
+  final badge = int.tryParse(data['badge']?.toString() ?? '');
+  if (badge != null) await pushNative.setBadge(badge);
+}
+
+/// The signed-in company code as SessionService stored it — the background
+/// isolate has no SessionService. Android runs the background handler in
+/// its own isolate, whose SharedPreferences cache outlives a message while
+/// the main isolate switches tenant: reload before reading. [open] is a
+/// test seam.
+Future<String> storedCompanyCode({
+  Future<SharedPreferences> Function()? open,
+}) async {
+  final prefs = await (open ?? SharedPreferences.getInstance)();
+  await prefs.reload();
+  return prefs.getString(SessionService.companyCodePrefsKey) ?? '';
+}
+
+/// A data message while the app is in the background or closed. Only
+/// `remove` needs work (the system shows `show` pushes itself), and only
+/// for this phone's tenant — checked before anything is cancelled.
+@visibleForTesting
+Future<void> handleBackgroundData(
+  Map<String, dynamic> data, {
+  PushNative? pushNative,
+  Future<String> Function()? companyCode,
+}) async {
+  if (data['action'] != 'remove') return;
+  final code = await (companyCode ?? storedCompanyCode)();
+  if (!isForThisTenant(data, code)) return;
+  await applyRemove(data, pushNative ?? PushNative.instance);
+}
+
+/// FCM's background entry point (registered in main). Android runs it in
+/// a background isolate, iOS on the main isolate.
+@pragma('vm:entry-point')
+Future<void> firebaseBackgroundHandler(RemoteMessage message) async {
+  // FlutterFire's dispatcher only initialises the binding. Register the
+  // Dart side of the plugins (shared_preferences, flutter_local_notifications'
+  // Android class used by cancel-by-tag) in this isolate first; without it
+  // a remove would silently do nothing. Idempotent; harmless on iOS.
+  DartPluginRegistrant.ensureInitialized();
+  await handleBackgroundData(message.data);
 }

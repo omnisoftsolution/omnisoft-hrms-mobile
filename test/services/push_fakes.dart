@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:omni_hr/models/notification_record.dart';
 import 'package:omni_hr/models/push_prefs.dart';
+import 'package:omni_hr/services/notification_service.dart';
 import 'package:omni_hr/services/omni_mobile_api.dart';
 import 'package:omni_hr/services/push_native.dart';
 import 'package:omni_hr/services/push_service.dart';
@@ -228,6 +229,7 @@ PushService pushService({
   required FakeMessaging? messaging,
   required PushApiLog log,
   FakeNative? pushNative,
+  NotificationService? notifications,
   String platform = 'android',
   List<Duration> apnsRetryDelays = const [
     Duration.zero,
@@ -241,8 +243,23 @@ PushService pushService({
   pushNative: pushNative ?? FakeNative(),
   apiBuilder: (t) =>
       FakePushApi(log, baseUrl: t.baseUrl, db: t.db, token: t.token),
+  notifications: notifications,
   platform: platform,
   apnsRetryDelays: apnsRetryDelays,
   callTimeout: callTimeout,
   signOutCap: signOutCap,
 );
+
+/// The bell as PushService sees it: counts re-polls, fixed unread count.
+class FakeNotifications extends NotificationService {
+  int refreshes = 0;
+  int unread = 0;
+
+  @override
+  int get unreadCount => unread;
+
+  @override
+  Future<void> refreshNow() async {
+    refreshes++;
+  }
+}

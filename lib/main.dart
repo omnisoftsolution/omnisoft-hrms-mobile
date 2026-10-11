@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'core/constants.dart';
@@ -47,12 +48,23 @@ void main() async {
 
   // Push notifications (spec 2026-10-11 §6). onSignedIn attaches the
   // session at once; the token registration itself runs in the background.
-  final push = PushService(messaging: await _startFirebase());
+  final notifications = NotificationService();
+  final push = PushService(
+    messaging: await _startFirebase(),
+    notifications: notifications,
+  );
   session.onSessionClearing = push.onSessionCleared;
   unawaited(push.onSignedIn(session));
   await push.init();
 
-  runApp(OmniHrApp(session: session, biometric: biometric, push: push));
+  runApp(
+    OmniHrApp(
+      session: session,
+      biometric: biometric,
+      push: push,
+      notifications: notifications,
+    ),
+  );
 }
 
 /// Firebase for push notifications (spec 2026-10-11 §6.1). A failure
@@ -60,6 +72,8 @@ void main() async {
 Future<PushMessaging?> _startFirebase() async {
   try {
     await Firebase.initializeApp();
+    // `remove` pushes while the app is in the background (spec §6.4).
+    FirebaseMessaging.onBackgroundMessage(firebaseBackgroundHandler);
     return FirebasePushMessaging();
   } catch (e) {
     debugPrint('Push notifications off: Firebase did not start ($e)');
@@ -71,11 +85,13 @@ class OmniHrApp extends StatefulWidget {
   final SessionService session;
   final BiometricAuthService biometric;
   final PushService push;
+  final NotificationService notifications;
   const OmniHrApp({
     super.key,
     required this.session,
     required this.biometric,
     required this.push,
+    required this.notifications,
   });
 
   @override
@@ -163,7 +179,7 @@ class _OmniHrAppState extends State<OmniHrApp> with WidgetsBindingObserver {
         ChangeNotifierProvider.value(value: widget.push),
         ChangeNotifierProvider(create: (_) => HolidayService()),
         ChangeNotifierProvider(create: (_) => FaceRecognitionService()),
-        ChangeNotifierProvider(create: (_) => NotificationService()),
+        ChangeNotifierProvider.value(value: widget.notifications),
       ],
       child: MaterialApp(
         navigatorKey: _navigatorKey,

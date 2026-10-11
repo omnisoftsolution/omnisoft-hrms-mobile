@@ -40,7 +40,9 @@ class SessionService extends ChangeNotifier {
 
   // Keys: SaaS routing (kept across logout)
   static const _keySaasUrl = 'saas_url';
-  static const _keyCompanyCode = 'company_code';
+  /// Read by the push background handler, which has no SessionService.
+  static const companyCodePrefsKey = 'company_code';
+  static const _keyCompanyCode = companyCodePrefsKey;
   static const _keyClientUrl = 'client_url';
   static const _keyClientDb = 'client_db';
   // SaaS-side subscription feature flags. Persisted with company

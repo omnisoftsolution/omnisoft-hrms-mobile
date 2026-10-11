@@ -95,6 +95,11 @@ class NotificationService extends ChangeNotifier {
     // so a notification here adds nothing useful anyway.
   }
 
+  /// Re-poll now: a push arrived while the app is open (spec 2026-10-11
+  /// §6.4). Same path as the 60 s timer, so the arrival snackbar follows.
+  /// Does nothing before [start].
+  Future<void> refreshNow() => _refreshUnread();
+
   /// Lightweight unread-count probe used by the periodic timer.
   /// When the unread count *increases* after we've already polled at
   /// least once, fetches the full list and queues the freshest unread
