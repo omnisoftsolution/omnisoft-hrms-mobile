@@ -50,23 +50,30 @@ class NotificationTapTargets {
 /// opens the answer sheet; leave / expense / approval / "HR updated your
 /// attendance" go to their screen through [targets]; anything else stays
 /// where it is. [context] must sit under the [NotificationService]
-/// provider and a ScaffoldMessenger.
+/// provider and a ScaffoldMessenger. [stillCurrent] (push taps: the
+/// session is still the app's and no newer tap arrived) is checked again
+/// after `markRead`, immediately before navigating; false opens nothing.
 Future<void> handleNotificationTap(
   BuildContext context,
   NotificationRecord n, {
   NotificationTapTargets targets = const NotificationTapTargets(),
   ReviewAnswerPoster? answerReview,
+  bool Function()? stillCurrent,
 }) async {
   final svc = context.read<NotificationService>();
+  // A push tap passes its session / latest-tap check: asked again after
+  // every await, right before anything opens. The bell passes none.
+  bool still() => context.mounted && (stillCurrent?.call() ?? true);
   if (n.isAttendanceQuery &&
       !n.answered &&
       AskOption.listFrom(n.payload['options']).isNotEmpty) {
+    if (!still()) return;
     await _answer(context, n, svc, answerReview);
     return;
   }
   final messenger = ScaffoldMessenger.of(context);
   if (!n.read) await svc.markRead(n.id);
-  if (!context.mounted) return;
+  if (!still()) return;
   // APP-5: one answer only — say so instead of a tap that does nothing.
   if (n.isAttendanceQuery && n.answered) {
     messenger

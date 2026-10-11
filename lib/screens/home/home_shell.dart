@@ -180,13 +180,14 @@ class HomeShellState extends State<HomeShell> {
   Future<void> _openPushTap(PushService push, Map<String, dynamic> data) {
     final current = push.sessionStillCurrent();
     final latest = _pushTaps.next();
+    bool still() => mounted && current() && latest();
     popAbove(context);
     return openPushTap(
       data,
       fetch: push.fetchNotice,
       openHome: navigateToMyDay,
       openBell: openNotifications,
-      stillCurrent: () => mounted && current() && latest(),
+      stillCurrent: still,
       runHandler: (n) async {
         final ctx = _myDayKey.currentContext;
         if (ctx == null || !ctx.mounted) return openNotifications();
@@ -199,6 +200,7 @@ class HomeShellState extends State<HomeShell> {
             onApprovalTap: navigateToApproval,
             onMyDayTap: navigateToMyDay,
           ),
+          stillCurrent: still,
         );
       },
     );

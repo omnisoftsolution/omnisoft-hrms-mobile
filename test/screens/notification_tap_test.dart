@@ -11,12 +11,17 @@ import 'package:omni_hr/services/omni_mobile_api.dart';
 class _Bell extends NotificationService {
   final List<int> marked = [];
 
+  /// markRead(id) waits for markGates[id] when one is set.
+  final Map<int, Completer<void>> markGates = {};
+
   @override
   Future<void> refreshList() async {}
 
   @override
   Future<void> markRead(int id) async {
     marked.add(id);
+    final gate = markGates[id];
+    if (gate != null) await gate.future;
   }
 }
 
@@ -87,6 +92,52 @@ void main() {
       await tap(tester, _n(15, 'announcement', payload: const {'announcement_id': 4}));
       expect(bell.marked, [15]);
       expect(taps, isEmpty);
+    });
+
+    // Fix round 2 (Codex r2 MINOR): the latest-tap check is carried into
+    // the handler and asked again after its own awaits.
+    testWidgets('a push tap whose mark-read is overtaken by a newer tap '
+        'navigates nowhere; the newer one does', (tester) async {
+      late BuildContext ctx;
+      await tester.pumpWidget(
+        ChangeNotifierProvider<NotificationService>.value(
+          value: bell,
+          child: MaterialApp(
+            home: Scaffold(
+              body: Builder(
+                builder: (c) {
+                  ctx = c;
+                  return const SizedBox();
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+      final targets = NotificationTapTargets(
+        onLeaveTap: (id) => taps.add('leave:$id'),
+      );
+      final gate = Completer<void>();
+      bell.markGates[21] = gate;
+      final latest = LatestTap();
+      final older = handleNotificationTap(
+        ctx,
+        _n(21, 'leave_approved', payload: const {'leave_id': 1}),
+        targets: targets,
+        stillCurrent: latest.next(),
+      );
+      await tester.pump();
+      await handleNotificationTap(
+        ctx,
+        _n(22, 'leave_approved', payload: const {'leave_id': 2}),
+        targets: targets,
+        stillCurrent: latest.next(),
+      );
+      expect(taps, ['leave:2']);
+      gate.complete();
+      await older;
+      await tester.pump();
+      expect(taps, ['leave:2']);
     });
 
     testWidgets('an answered HR question says so', (tester) async {
