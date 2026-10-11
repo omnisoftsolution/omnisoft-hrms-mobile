@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui' show DartPluginRegistrant;
 
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:firebase_core/firebase_core.dart' show FirebaseException;
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
@@ -96,6 +97,10 @@ Future<void> _openAppSettings() async {
   await Geolocator.openAppSettings();
 }
 
+/// This phone's Android API level.
+Future<int> _androidSdkInt() async =>
+    (await DeviceInfoPlugin().androidInfo).version.sdkInt;
+
 /// Push notifications on this phone (spec 2026-10-11 §6): the FCM token's
 /// life on the tenant session (§6.3) and the user's mutes (§6.6).
 ///
@@ -108,6 +113,7 @@ class PushService extends ChangeNotifier {
     PushApiBuilder? apiBuilder,
     NotificationService? notifications,
     String? platform,
+    Future<int> Function()? androidSdk,
     Future<void> Function()? openSettings,
     List<Duration> apnsRetryDelays = const [
       Duration(seconds: 2),
@@ -123,6 +129,7 @@ class PushService extends ChangeNotifier {
        _platform =
            platform ??
            (defaultTargetPlatform == TargetPlatform.iOS ? 'ios' : 'android'),
+       _androidSdk = androidSdk ?? _androidSdkInt,
        _openSettings = openSettings ?? _openAppSettings,
        _apnsRetryDelays = apnsRetryDelays,
        _callTimeout = callTimeout,
@@ -150,6 +157,11 @@ class PushService extends ChangeNotifier {
   /// The bell; a notice arriving in the foreground re-polls it.
   final NotificationService? _notifications;
   final Future<void> Function() _openSettings;
+
+  /// The Android API level (33 = Android 13, the first with a runtime
+  /// notification prompt). Read once, on Android only.
+  final Future<int> Function() _androidSdk;
+  Future<int>? _sdk;
 
   SessionService? _session;
 
@@ -416,6 +428,7 @@ class PushService extends ChangeNotifier {
     _settled = false;
     _arrivals = const [];
     _pendingTap = null;
+    _explainerDue = false;
     if (_prefs != null) {
       _prefs = null;
       notifyListeners();
@@ -579,7 +592,8 @@ class PushService extends ChangeNotifier {
   /// What the phone allows (spec §6.2). firebase_messaging 16.7.0 on
   /// Android 13+: notDetermined = never asked; denied = refused, but the
   /// system prompt may be shown again; deniedPermanently = only the phone's
-  /// settings can turn it on. On iOS denied always means the settings.
+  /// settings can turn it on. Android 12 and older have no runtime prompt:
+  /// denied (notifications off) means the settings. So does denied on iOS.
   Future<PushPermission> permission() async {
     final status = await _status();
     if (status == null) return PushPermission.denied;
@@ -588,9 +602,22 @@ class PushService extends ChangeNotifier {
       AuthorizationStatus.provisional => PushPermission.granted,
       AuthorizationStatus.notDetermined => PushPermission.notAsked,
       AuthorizationStatus.denied =>
-        _platform == 'ios' ? PushPermission.denied : PushPermission.notAsked,
+        await _canPromptAgain() ? PushPermission.notAsked : PushPermission.denied,
       AuthorizationStatus.deniedPermanently => PushPermission.denied,
     };
+  }
+
+  /// Android 13+ only (API 33, POST_NOTIFICATIONS): after a refusal the
+  /// system prompt can still be shown. Unknown API level: no (the settings
+  /// always work).
+  Future<bool> _canPromptAgain() async {
+    if (_platform != 'android') return false;
+    try {
+      return await (_sdk ??= _androidSdk()) >= 33;
+    } catch (_) {
+      _sdk = null;
+      return false;
+    }
   }
 
   /// The system's answer; null without Firebase or when it cannot say.
@@ -678,7 +705,10 @@ class PushService extends ChangeNotifier {
 
   Future<void> _checkExplainer() async {
     if (_explainerDue) return;
-    if (await shouldShowExplainer()) {
+    final gen = _generation;
+    final show = await shouldShowExplainer();
+    // Signed out (or a new access token) meanwhile: not this session's.
+    if (show && gen == _generation && _current != null) {
       _explainerDue = true;
       notifyListeners();
     }

@@ -212,4 +212,64 @@ void main() {
     await expectLater(queued, throwsA(isA<ApiException>()));
     expect(fired, 0);
   });
+
+  // Review fix 1 (spec §6.2): below Android 13 there is no runtime prompt;
+  // firebase_messaging reports `denied` whenever notifications are off and
+  // requestPermission cannot ask, so only the phone's settings help.
+  test('Android 12 and older: notifications off means the settings, and '
+      'no explainer', () async {
+    final s = await signedInSession();
+    fcm.status = AuthorizationStatus.denied;
+    final push = pushService(
+      messaging: fcm,
+      log: log,
+      platform: 'android',
+      androidSdk: 31,
+    );
+    await push.onSignedIn(s);
+    expect(await push.permission(), PushPermission.denied);
+    expect(push.consumeExplainerDue(), isFalse);
+    expect(await push.shouldShowExplainer(), isFalse);
+  });
+
+  test('Android 13+: denied may ask again, deniedPermanently means the '
+      'settings', () async {
+    final s = await signedInSession();
+    final push = pushService(
+      messaging: fcm,
+      log: log,
+      platform: 'android',
+      androidSdk: 33,
+    );
+    await push.onSignedIn(s);
+    fcm.status = AuthorizationStatus.denied;
+    expect(await push.permission(), PushPermission.notAsked);
+    fcm.status = AuthorizationStatus.deniedPermanently;
+    expect(await push.permission(), PushPermission.denied);
+  });
+
+  // Review fix 2: the explainer flag belongs to the session it was found for.
+  test('a sign-out while the explainer check runs leaves no explainer due',
+      () async {
+    final s = await signedInSession();
+    final push = pushService(messaging: fcm, log: log, platform: 'ios');
+    s.onSessionClearing = push.onSessionCleared;
+    final gate = Completer<void>();
+    fcm.statusGate = gate;
+    final signingIn = push.onSignedIn(s);
+    await flush();
+    await s.signOut();
+    gate.complete();
+    await signingIn;
+    expect(push.consumeExplainerDue(), isFalse);
+  });
+
+  test('an explainer due but not shown yet is dropped at sign-out', () async {
+    final s = await signedInSession();
+    final push = pushService(messaging: fcm, log: log, platform: 'ios');
+    s.onSessionClearing = push.onSessionCleared;
+    await push.onSignedIn(s);
+    await s.signOut();
+    expect(push.consumeExplainerDue(), isFalse);
+  });
 }

@@ -7,6 +7,7 @@ import 'package:omni_hr/models/push_prefs.dart';
 import 'package:omni_hr/screens/profile/notification_settings_screen.dart';
 import 'package:omni_hr/services/omni_mobile_api.dart';
 import 'package:omni_hr/services/push_service.dart';
+import 'package:omni_hr/widgets/primary_button.dart';
 
 import '../services/push_fakes.dart';
 
@@ -22,12 +23,16 @@ void main() {
     settingsOpened = 0;
   });
 
-  Future<PushService> signedIn({String platform = 'ios'}) async {
+  Future<PushService> signedIn({
+    String platform = 'ios',
+    int androidSdk = 34,
+  }) async {
     final s = await signedInSession();
     final push = pushService(
       messaging: fcm,
       log: log,
       platform: platform,
+      androidSdk: androidSdk,
       openSettings: () async => settingsOpened++,
     );
     await push.onSignedIn(s);
@@ -170,5 +175,67 @@ void main() {
     expect(row(tester, 'news').value, isFalse);
     expect(row(tester, 'approvals').onChanged, isNotNull);
     expect(find.text('No internet connection. Check your network and try again.'), findsOneWidget);
+  });
+
+  // Review fix 1 (spec §6.2): Android below 13 has no runtime prompt.
+  testWidgets('Android 12 (SDK 31), notifications off: Open settings', (tester) async {
+    fcm.status = AuthorizationStatus.denied;
+    await open(tester, await signedIn(platform: 'android', androidSdk: 31));
+    expect(find.text('Notifications are off'), findsOneWidget);
+    expect(find.text('Turn on notifications'), findsNothing);
+    await tester.tap(find.text('Open settings'));
+    await tester.pumpAndSettle();
+    expect(settingsOpened, 1);
+    expect(fcm.requests, 0);
+  });
+
+  testWidgets('Android 13 (SDK 33), refused once: Turn on notifications', (tester) async {
+    fcm.status = AuthorizationStatus.denied;
+    await open(tester, await signedIn(platform: 'android', androidSdk: 33));
+    expect(find.text('Turn on notifications'), findsOneWidget);
+    expect(find.text('Open settings'), findsNothing);
+  });
+
+  testWidgets('Android 13 (SDK 33), refused for good: Open settings', (tester) async {
+    fcm.status = AuthorizationStatus.deniedPermanently;
+    await open(tester, await signedIn(platform: 'android', androidSdk: 33));
+    expect(find.text('Open settings'), findsOneWidget);
+    expect(find.text('Turn on notifications'), findsNothing);
+  });
+
+  // Review fix 3: one system prompt at a time.
+  testWidgets('Turn on notifications waits while the system prompt is up', (tester) async {
+    fcm.status = AuthorizationStatus.notDetermined;
+    fcm.afterRequest = AuthorizationStatus.authorized;
+    await open(tester, await signedIn());
+    final gate = Completer<void>();
+    fcm.requestGate = gate;
+    await tester.tap(find.text('Turn on notifications'));
+    await tester.pump();
+    final button = tester.widget<PrimaryButton>(find.byType(PrimaryButton));
+    expect(button.onPressed, isNull);
+    expect(button.loading, isTrue);
+    await tester.tap(find.byType(PrimaryButton));
+    await tester.pump();
+    expect(fcm.requests, 1);
+    gate.complete();
+    await tester.pumpAndSettle();
+    expect(fcm.requests, 1);
+    expect(find.text('Notifications are off'), findsNothing);
+  });
+
+  // Review fix 4: a failed push/prefs/get, then a retry that works.
+  testWidgets('a failed load says why; Try again loads the switches', (tester) async {
+    log.prefsError = ApiException('network_error');
+    await open(tester, await signedIn());
+    expect(find.text('No internet connection. Check your network and try again.'), findsOneWidget);
+    expect(find.text('Try again'), findsOneWidget);
+    expect(find.byType(SwitchListTile), findsNothing);
+    log.prefsError = null;
+    await tester.tap(find.text('Try again'));
+    await tester.pumpAndSettle();
+    expect(find.text('Try again'), findsNothing);
+    expect(row(tester, 'news').value, isFalse);
+    expect(row(tester, 'security').value, isTrue);
   });
 }

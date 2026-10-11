@@ -50,6 +50,11 @@ class FakeMessaging implements PushMessaging {
   final List<Object> tokenErrors = [];
   AuthorizationStatus status = AuthorizationStatus.authorized;
   AuthorizationStatus afterRequest = AuthorizationStatus.authorized;
+
+  /// The next authorizationStatus / requestPermission waits for it (each
+  /// used once, then cleared).
+  Completer<void>? statusGate;
+  Completer<void>? requestGate;
   RemoteMessage? initial;
   final refresh = StreamController<String>.broadcast(sync: true);
   final messages = StreamController<RemoteMessage>.broadcast(sync: true);
@@ -88,11 +93,19 @@ class FakeMessaging implements PushMessaging {
   Future<RemoteMessage?> getInitialMessage() async => initial;
 
   @override
-  Future<AuthorizationStatus> authorizationStatus() async => status;
+  Future<AuthorizationStatus> authorizationStatus() async {
+    final gate = statusGate;
+    statusGate = null;
+    if (gate != null) await gate.future;
+    return status;
+  }
 
   @override
   Future<AuthorizationStatus> requestPermission() async {
     requests++;
+    final gate = requestGate;
+    requestGate = null;
+    if (gate != null) await gate.future;
     status = afterRequest;
     return status;
   }
@@ -237,6 +250,7 @@ PushService pushService({
   FakeNative? pushNative,
   NotificationService? notifications,
   String platform = 'android',
+  int androidSdk = 34,
   Future<void> Function()? openSettings,
   List<Duration> apnsRetryDelays = const [
     Duration.zero,
@@ -252,6 +266,7 @@ PushService pushService({
       FakePushApi(log, baseUrl: t.baseUrl, db: t.db, token: t.token),
   notifications: notifications,
   platform: platform,
+  androidSdk: () async => androidSdk,
   openSettings: openSettings ?? () async {},
   apnsRetryDelays: apnsRetryDelays,
   callTimeout: callTimeout,

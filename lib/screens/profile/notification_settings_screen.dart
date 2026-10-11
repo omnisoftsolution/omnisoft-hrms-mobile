@@ -37,6 +37,10 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
   /// so two overlapping saves could undo each other).
   bool _saving = false;
 
+  /// The system prompt (or the settings page) is being opened: the button
+  /// waits, so one tap is one request.
+  bool _asking = false;
+
   @override
   void initState() {
     super.initState();
@@ -90,12 +94,18 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
   }
 
   Future<void> _turnOn() async {
-    if (_permission == PushPermission.denied) {
-      await _push.openSystemSettings();
-      return;
+    if (_asking) return;
+    setState(() => _asking = true);
+    try {
+      if (_permission == PushPermission.denied) {
+        await _push.openSystemSettings();
+        return;
+      }
+      final permission = await _push.requestPermission();
+      if (mounted) setState(() => _permission = permission);
+    } finally {
+      if (mounted) setState(() => _asking = false);
     }
-    final permission = await _push.requestPermission();
-    if (mounted) setState(() => _permission = permission);
   }
 
   Future<void> _toggle(String group, bool on) async {
@@ -269,7 +279,8 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
             const SizedBox(height: 16),
             PrimaryButton(
               label: denied ? 'Open settings' : 'Turn on notifications',
-              onPressed: _turnOn,
+              loading: _asking,
+              onPressed: _asking ? null : _turnOn,
             ),
           ],
         ),
