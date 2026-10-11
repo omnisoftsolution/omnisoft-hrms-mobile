@@ -92,6 +92,13 @@ flutter_launcher_icons:
 
 flutter:
   uses-material-design: true
+  config:
+    # iOS plugins through CocoaPods only (push, 1.33.0). With Swift Package
+    # Manager on (Flutter 3.44 default) Firebase links its own static
+    # GoogleUtilities/GoogleDataTransport/Promises next to ML Kit's
+    # CocoaPods frameworks: 31 ObjC classes defined twice. Through CocoaPods
+    # both share one copy.
+    enable-swift-package-manager: false
   assets:
     - assets/images/
     - assets/models/

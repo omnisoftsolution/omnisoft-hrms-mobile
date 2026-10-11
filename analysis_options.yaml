@@ -9,13 +9,6 @@
 # packages, and plugins designed to encourage good coding practices.
 include: package:flutter_lints/flutter.yaml
 
-analyzer:
-  # Flutter 3.44's Swift Package Manager integration copies plugin sources
-  # (firebase_messaging, 1.33.0) into build/ios|macos/SourcePackages on every
-  # `pub get`; they are build output, not this app's code.
-  exclude:
-    - build/**
-
 linter:
   # The lint rules applied to this project can be customized in the
   # section below to disable rules from the `package:flutter_lints/flutter.yaml`
