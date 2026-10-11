@@ -490,16 +490,29 @@ class PushService extends ChangeNotifier {
     }
   }
 
-  /// App back in the foreground: retry a registration that failed.
+  /// App back in the foreground: retry a registration that failed, and set
+  /// the iOS badge to the bell's unread count (spec §6.5; 0 signed out).
   Future<void> onResumed() async {
     final s = _session;
-    if (s == null || !s.isLoggedIn) return;
+    if (s == null || !s.isLoggedIn) {
+      await _native.setBadge(0);
+      return;
+    }
     if (_current != null &&
         _registered == null &&
         !_settled &&
         _inFlight == null) {
       unawaited(register());
     }
+    await _syncBadge();
+  }
+
+  /// Re-polls the bell and sets the iOS badge to its unread count.
+  Future<void> _syncBadge() async {
+    final bell = _notifications;
+    if (bell == null) return;
+    await bell.refreshNow();
+    await _native.setBadge(bell.unreadCount);
   }
 
   /// A push that arrived while the app is open (spec §6.4). Only this
@@ -528,7 +541,9 @@ class PushService extends ChangeNotifier {
       notifyListeners();
       return;
     }
-    await _notifications?.refreshNow();
+    // iOS shows no banner (and applies no aps.badge) while the app is open:
+    // set the badge from the fresh unread count ourselves.
+    await _syncBadge();
   }
 
   /// Reminders that arrived since HomeShell last asked, newest first.

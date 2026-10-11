@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../core/theme.dart';
 import '../../models/notification_record.dart';
 import '../../services/notification_service.dart';
+import '../../services/push_native.dart';
 import 'notification_tap.dart';
 
 export 'notification_tap.dart' show ReviewAnswerPoster;
@@ -49,9 +50,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) => context.read<NotificationService>().refreshList(),
-    );
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final svc = context.read<NotificationService>();
+      await svc.refreshList();
+      // Opening the bell clears Omni HR's system notifications and sets
+      // the iOS badge to the bell's unread count (spec 2026-10-11 §6.5).
+      await PushNative.instance.clearDelivered();
+      await PushNative.instance.setBadge(svc.unreadCount);
+    });
   }
 
   /// The shared bell handler (notification_tap.dart), also used by push
