@@ -75,6 +75,7 @@ class FakeApi extends OmniMobileApi {
   Object? attachmentError;
   String approveResult = 'validate1';
   Completer<String>? approveGate;
+  Completer<String>? refuseGate;
   final List<String> calls = [];
 
   @override
@@ -103,6 +104,7 @@ class FakeApi extends OmniMobileApi {
   }) async {
     calls.add('refuse:$leaveId:$expectedState:$reason');
     if (refuseError != null) throw refuseError!;
+    if (refuseGate != null) return refuseGate!.future;
     return 'refuse';
   }
 
@@ -301,15 +303,23 @@ void main() {
     expect(refuseButton, findsNothing);
   });
 
-  testWidgets('both buttons are locked while Approve is in flight',
-      (tester) async {
+  testWidgets(
+      'while Approve is in flight both buttons are locked and Approve says '
+      '"Approving…" with a spinner', (tester) async {
     api.approveGate = Completer<String>();
     await tester.pumpWidget(host(api, session, popped));
     await open(tester);
     await tapVisible(tester, approveButton);
     await tester.pump();
 
-    expect(tester.widget<FilledButton>(approveButton).onPressed, isNull);
+    // The server can take several seconds (Odoo emails the followers
+    // before it answers): the tap must visibly register.
+    final approving = find.widgetWithText(FilledButton, 'Approving…');
+    expect(approving, findsOneWidget);
+    expect(find.descendant(
+            of: approving, matching: find.byType(CircularProgressIndicator)),
+        findsOneWidget);
+    expect(tester.widget<FilledButton>(approving).onPressed, isNull);
     expect(tester.widget<OutlinedButton>(refuseButton).onPressed, isNull);
     expect(popped, isEmpty);
 
@@ -399,6 +409,32 @@ void main() {
     expect(tester.widget<FilledButton>(approveButton).onPressed, isNotNull);
     expect(api.calls, ['get:148', 'approve:148:confirm']);
     expect(popped, isEmpty);
+  });
+
+  testWidgets(
+      'while Refuse is in flight the sheet says "Refusing…" with a spinner',
+      (tester) async {
+    api.refuseGate = Completer<String>();
+    await tester.pumpWidget(host(api, session, popped));
+    await open(tester);
+    await tapVisible(tester, refuseButton);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'Coverage issue');
+    await tester.pump();
+    await tester.tap(sheetRefuseButton);
+    await tester.pump();
+
+    final refusing = find.widgetWithText(FilledButton, 'Refusing…');
+    expect(refusing, findsOneWidget);
+    expect(find.descendant(
+            of: refusing, matching: find.byType(CircularProgressIndicator)),
+        findsOneWidget);
+    expect(tester.widget<FilledButton>(refusing).onPressed, isNull);
+
+    api.refuseGate!.complete('refuse');
+    await tester.pumpAndSettle();
+    expect(find.text('Refused'), findsOneWidget);
+    expect(popped, [true]);
   });
 
   testWidgets('Refuse goes through the reason sheet', (tester) async {
