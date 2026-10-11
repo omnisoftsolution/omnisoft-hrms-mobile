@@ -425,7 +425,11 @@ class PushService extends ChangeNotifier {
       // Checked again after every await: the session may be gone.
       if (token == null || token.isEmpty || gen != _generation) return;
       // Last check before sending: still this session, tenant and routing.
-      if (!_stillLive(target)) return;
+      if (!_stillLive(target)) {
+        debugPrint('push: session changed (sign-out, token or routing); '
+            'not registering');
+        return;
+      }
       final call = _apiBuilder(target).pushRegister(token, _platform);
       final landed = call.then<void>((_) {}, onError: (Object _) {});
       _onWire.add(landed);
