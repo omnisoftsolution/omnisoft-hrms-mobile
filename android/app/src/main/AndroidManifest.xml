@@ -5,6 +5,9 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
+    <!-- Push notifications (1.33.0): Android 13+ asks for this from Home's
+         explainer or Profile → Notifications, never at start-up. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
     <!-- Strip permissions auto-injected by plugins (file_picker,
          image_picker, camera, open_filex) that the app does not use.
@@ -78,6 +81,15 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- Push notifications (1.33.0): status-bar icon and accent for the
+             notifications FCM shows while the app is in the background. A
+             full-colour launcher icon would render as a white square. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_stat_notify" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/omni_notification" />
         <!-- Disable Impeller (Vulkan) and use Skia instead. flutter_pdfview
              (AndroidView platform view) renders blank/transparent when
              composited through Impeller on this device. Skia handles

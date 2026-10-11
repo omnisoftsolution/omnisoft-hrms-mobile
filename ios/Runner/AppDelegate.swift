@@ -19,5 +19,10 @@ import UIKit
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "FaceEmbedderPlugin") {
       FaceEmbedderPlugin.register(with: registrar)
     }
+    // 'omnihr/push': remove delivered notifications and set the badge
+    // (push notifications, spec 2026-10-11 §6.1). See PushPlugin.swift.
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "PushPlugin") {
+      PushPlugin.register(with: registrar)
+    }
   }
 }

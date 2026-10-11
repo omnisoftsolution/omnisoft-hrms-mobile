@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "547950667962",
+    "project_id": "omni-hr-omnisoft",
+    "storage_bucket": "omni-hr-omnisoft.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:547950667962:android:7a1383034d5721117b7a83",
+        "android_client_info": {
+          "package_name": "com.omnisoft.omnihr"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAWrdEEVk9W_z30emjBZVO1FJhf9Eemm78"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
