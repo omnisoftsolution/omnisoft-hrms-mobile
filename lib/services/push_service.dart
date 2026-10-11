@@ -507,12 +507,41 @@ class PushService extends ChangeNotifier {
     await _syncBadge();
   }
 
-  /// Re-polls the bell and sets the iOS badge to its unread count.
+  /// Re-polls the bell and sets the iOS badge to its unread count — unless
+  /// the session ended meanwhile (the count is then another session's).
   Future<void> _syncBadge() async {
     final bell = _notifications;
     if (bell == null) return;
+    final same = _sameSignedInSession();
     await bell.refreshNow();
+    if (!same()) return;
     await _native.setBadge(bell.unreadCount);
+  }
+
+  /// True while the session signed in now is still the app's: false after
+  /// a sign-out (the generation moves before the token is cleared) or a
+  /// new access token.
+  bool Function() _sameSignedInSession() {
+    final gen = _generation;
+    return () => gen == _generation && (_session?.isLoggedIn ?? false);
+  }
+
+  /// The bell opened (spec §6.5): after [refresh], clear Omni HR's
+  /// delivered notifications and set the iOS badge to [unread]. Nothing is
+  /// touched when the session ended meanwhile (a sign-out's clean-up has
+  /// cleared the badge) or the bell was closed ([stillOpen] false).
+  Future<void> onBellOpened({
+    required Future<void> Function() refresh,
+    required int Function() unread,
+    bool Function()? stillOpen,
+  }) async {
+    final same = _sameSignedInSession();
+    await refresh();
+    bool go() => same() && (stillOpen?.call() ?? true);
+    if (!go()) return;
+    await _native.clearDelivered();
+    if (!go()) return;
+    await _native.setBadge(unread());
   }
 
   /// A push that arrived while the app is open (spec §6.4). Only this

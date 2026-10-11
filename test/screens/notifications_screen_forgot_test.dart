@@ -5,6 +5,7 @@ import 'package:omni_hr/models/notification_record.dart';
 import 'package:omni_hr/screens/home/my_day/declaration_sheet.dart';
 import 'package:omni_hr/screens/notifications/notifications_screen.dart';
 import 'package:omni_hr/services/notification_service.dart';
+import 'package:omni_hr/services/push_service.dart';
 
 /// A notification list the test sets directly: no session, no polling.
 class _FakeNotifications extends NotificationService {
@@ -109,8 +110,12 @@ void main() {
   });
 
   Widget host(_FakeNotifications svc, {Object? failWith}) =>
-      ChangeNotifierProvider<NotificationService>.value(
-        value: svc,
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<NotificationService>.value(value: svc),
+          // Signed out: opening the bell touches no badge.
+          ChangeNotifierProvider<PushService>(create: (_) => PushService()),
+        ],
         child: MaterialApp(
           home: NotificationsScreen(
             onMyDayTap: () => taps.add('myday'),

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 
 import 'push_fakes.dart';
@@ -57,5 +59,60 @@ void main() {
     });
     expect(bell.refreshes, 1);
     expect(native.calls, ['badge 2']);
+  });
+
+  test('a sign-out while the resume re-poll is pending: no stale badge '
+      'afterwards', () async {
+    final s = await signedInSession();
+    final native = FakeNative();
+    final bell = FakeNotifications()..unread = 3;
+    final push = pushService(
+      messaging: FakeMessaging(),
+      log: PushApiLog(),
+      pushNative: native,
+      notifications: bell,
+    );
+    s.onSessionClearing = push.onSessionCleared;
+    await push.onSignedIn(s);
+    native.calls.clear();
+    final gate = Completer<void>();
+    bell.refreshGate = gate;
+    final resumed = push.onResumed();
+    await flush();
+    await s.signOut();
+    gate.complete();
+    await resumed;
+    await flush();
+    expect(native.calls, isNot(contains('badge 3')));
+    expect(native.calls.last, 'badge 0');
+  });
+
+  test('a sign-out while a foreground notice re-polls: no stale badge '
+      'afterwards', () async {
+    final s = await signedInSession();
+    final native = FakeNative();
+    final bell = FakeNotifications()..unread = 2;
+    final push = pushService(
+      messaging: FakeMessaging(),
+      log: PushApiLog(),
+      pushNative: native,
+      notifications: bell,
+    );
+    s.onSessionClearing = push.onSessionCleared;
+    await push.onSignedIn(s);
+    native.calls.clear();
+    final gate = Completer<void>();
+    bell.refreshGate = gate;
+    final handled = push.handleForeground(<String, dynamic>{
+      'kind': 'leave_approved',
+      'company_code': 'ACME',
+    });
+    await flush();
+    await s.signOut();
+    gate.complete();
+    await handled;
+    await flush();
+    expect(native.calls, isNot(contains('badge 2')));
+    expect(native.calls.last, 'badge 0');
   });
 }

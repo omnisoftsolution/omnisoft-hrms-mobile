@@ -434,7 +434,8 @@ Spec: connector repo `docs/superpowers/specs/2026-10-11-push-notifications-desig
   channel per group from lib/core/push_groups.dart). Android status-bar icon `@drawable/ic_stat_notify` (kept from
   the resource shrinker by res/raw/keep.xml).
 - `PushService` (lib/services/push_service.dart): registers the FCM token whenever the session's access token
-  changes (sign-in, refresh, app start), on onTokenRefresh and on resume after a failure; iOS `apns-token-not-set`
+  changes (sign-in, refresh, app start), except the token being signed out (`_retiredToken`: it is never
+  re-registered, even if the session still shows it), on onTokenRefresh and on resume after a failure; iOS `apns-token-not-set`
   is retried 3 times (2 s, 3 s, 5 s). Every push call uses `PushTarget` (a snapshot of base URL, db and token taken
   when the token arrived) plus a generation counter: never read `SessionService` fields inside a push call — Settings
   → Company saves the new company *before* `signOut()`, and a routing change under the same token registers nothing.
@@ -448,7 +449,8 @@ Spec: connector repo `docs/superpowers/specs/2026-10-11-push-notifications-desig
   count (iOS applies no `aps.badge` while the app is open); reminder → `pushArrivalSnackBar` ("Open" → My
   day); `remove` → `applyRemove` (foreground and `firebaseBackgroundHandler`, which first calls
   `DartPluginRegistrant.ensureInitialized()` and reloads SharedPreferences before reading `company_code`).
-- Taps: `PushService.consumePendingTap()` in HomeShell → `popAbove` (closes Profile / Payslips / the bell / the
+- Taps: `PushService.sessionStillCurrent()` lets HomeShell drop a `notifications/get` answer that arrives after a
+  sign-out or a new access token. `PushService.consumePendingTap()` in HomeShell → `popAbove` (closes Profile / Payslips / the bell / the
   explainer on the root navigator) → `openPushTap` (lib/screens/notifications/notification_tap.dart): reminders →
   Home; notices → `notifications/get` → `handleNotificationTap` (the bell's handler, shared with NotificationsScreen),
   else the bell (announcements, system, 404, offline).
@@ -459,8 +461,10 @@ Spec: connector repo `docs/superpowers/specs/2026-10-11-push-notifications-desig
   push_available, the status is `notDetermined` and `push_explainer_seen` is unset.
   Profile → Notifications (lib/screens/profile/notification_settings_screen.dart) only when push_available; mute
   saves are serialized (`savePrefs`) and every switch waits while one saves.
-- Badge: bell open → clearDelivered + setBadge(unread); resume → refresh + setBadge(unread) (0 signed out);
-  foreground notice → refresh + setBadge(unread).
+- Badge: bell open (`PushService.onBellOpened`) → clearDelivered + setBadge(unread); resume → refresh +
+  setBadge(unread) (0 signed out); foreground notice → refresh + setBadge(unread). Each takes the generation
+  before its await and sets nothing if the session ended meanwhile (a sign-out's own clean-up already set the
+  badge to 0); the bell also skips it when closed meanwhile.
 - Tests: `test/services/push_*_test.dart`, `test/services/session_push_hook_test.dart`,
   `test/core/push_groups_test.dart`, `test/screens/notification_tap_test.dart`, `test/screens/company_switch_push_test.dart`,
   `test/screens/notification_settings_screen_test.dart`, `test/screens/notifications_screen_push_test.dart`,

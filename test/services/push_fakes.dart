@@ -278,11 +278,17 @@ class FakeNotifications extends NotificationService {
   int refreshes = 0;
   int unread = 0;
 
+  /// The next refreshNow waits for it (used once, then cleared).
+  Completer<void>? refreshGate;
+
   @override
   int get unreadCount => unread;
 
   @override
   Future<void> refreshNow() async {
     refreshes++;
+    final gate = refreshGate;
+    refreshGate = null;
+    if (gate != null) await gate.future;
   }
 }
