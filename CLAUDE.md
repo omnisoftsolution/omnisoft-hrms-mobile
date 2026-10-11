@@ -458,9 +458,13 @@ Spec: connector repo `docs/superpowers/specs/2026-10-11-push-notifications-desig
   notifies when it ends. With nothing to tear down (signed out already, nothing on the wire: Clear Company on the
   login screen, a late invalid_session) the hook only clears delivered + badge and returns at once — no deleteToken.
 - `SessionService` sign-outs: concurrent `clearSession()` calls join one in-flight sign-out (a call from inside the
-  hook — marked by a zone — returns at once instead of waiting for itself; `logout()` waits for a running one). The
-  fields are wiped only if no new access token was saved while the hook ran (`_authEpoch`): a sign-in completed
-  meanwhile is newer and stays. An `auth/refresh` that was on the wire when a sign-out of a signed-in session
+  hook — marked by a zone — returns at once instead of waiting for itself; `logout()` waits for a running one, and a
+  `clearSession()` during `logout()` joins it). The fields are wiped only if no new access token was saved while the
+  hook ran (`_authEpoch`, re-checked inside the persistence queue): a sign-in completed meanwhile is newer and stays.
+  **Every write/removal of the stored session goes through one queue (`_persisting`)** — saveSession, refresh,
+  /me updates, kiosk flag, saveCompany, the wipe, logout's wipe — so an older wipe never deletes a newer sign-in's
+  keys. Never call a locked method from inside a `_persisting` body (it would wait for itself); the idle queue runs
+  at once and keeps no completed future (a cross-zone future hangs fake-async widget tests). An `auth/refresh` that was on the wire when a sign-out of a signed-in session
   started is dropped (`RefreshOutcome.failed`). `refreshAccessToken` itself is only called by LoginScreen (Face ID).
 - Receiving: a push whose `company_code` is not the session's is ignored, and so is every foreground push while no
   push session is active (signed out, or a sign-out running). Foreground notice →
@@ -475,7 +479,9 @@ Spec: connector repo `docs/superpowers/specs/2026-10-11-push-notifications-desig
 - Taps: the launch message (`getInitialMessage`) is looked up in the background with a 3 s timeout — `init()`
   never holds `runApp`; its tap waits in `consumePendingTap` like any other. `PushService.sessionStillCurrent()`
   lets HomeShell drop a `notifications/get` answer that arrives after a sign-out or a new access token, and
-  `LatestTap` drops an older tap's answer once a newer tap arrived. `PushService.consumePendingTap()` in HomeShell
+  `LatestTap` drops an older tap's answer once a newer tap arrived (the same check is passed into
+  `handleNotificationTap(stillCurrent:)` and asked again after `markRead`; the bell passes none).
+  `PushService.consumePendingTap()` in HomeShell
   → `popAbove` (closes Profile / Payslips / the bell / the explainer on the root navigator) → `openPushTap`
   (lib/screens/notifications/notification_tap.dart): reminders → Home; notices → `notifications/get` →
   `handleNotificationTap` (the bell's handler, shared with NotificationsScreen), else the bell (announcements,
