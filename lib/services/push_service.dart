@@ -122,6 +122,7 @@ class PushService extends ChangeNotifier {
     ],
     Duration callTimeout = const Duration(seconds: 5),
     Duration signOutCap = const Duration(seconds: 2),
+    Duration teardownWaitCap = const Duration(seconds: 30),
   }) : _messaging = messaging,
        _native = pushNative ?? PushNative.instance,
        _apiBuilder = apiBuilder ?? _targetApi,
@@ -133,7 +134,8 @@ class PushService extends ChangeNotifier {
        _openSettings = openSettings ?? _openAppSettings,
        _apnsRetryDelays = apnsRetryDelays,
        _callTimeout = callTimeout,
-       _signOutCap = signOutCap;
+       _signOutCap = signOutCap,
+       _teardownWaitCap = teardownWaitCap;
 
   /// prefs: Home's explainer was shown on this phone (spec §6.2: once).
   static const explainerSeenKey = 'push_explainer_seen';
@@ -152,6 +154,11 @@ class PushService extends ChangeNotifier {
   /// How long a sign-out waits for the push side (spec §6.3); the rest of
   /// the teardown finishes in the background ([_teardown]).
   final Duration _signOutCap;
+
+  /// Safety cap on how long a registration waits for an earlier sign-out's
+  /// teardown (its real deleteToken). Past it the registration goes on and
+  /// registers again, with a fresh token, once the teardown has ended.
+  final Duration _teardownWaitCap;
   final List<StreamSubscription<Object?>> _subs = [];
 
   /// The bell; a notice arriving in the foreground re-polls it.
@@ -168,18 +175,28 @@ class PushService extends ChangeNotifier {
   /// The signed-in session as of its last access token; null signed out.
   PushTarget? _current;
 
-  /// [_current] once its push/register succeeded (null otherwise).
-  PushTarget? _registered;
+  /// The FCM token push/register last accepted for [_current] (null: not
+  /// registered in this generation — resume retries).
+  String? _registeredToken;
 
   /// Bumped on every new access token and every sign-out. A call started
   /// in an older generation stores and sends nothing more.
   int _generation = 0;
 
-  /// The registration running now (deduplicates resume retries).
-  Future<void>? _inFlight;
+  /// The registration worker: one push/register at a time per generation.
+  /// [_again] asks it for one more round (a token refresh while a request
+  /// is on the wire queues exactly one follow-up, with the newest token).
+  Completer<void>? _worker;
+  int _workerGeneration = -1;
+  bool _again = false;
 
-  /// A push/register request already sent; sign-out lets it land first.
-  Future<void>? _onWire;
+  /// Every push/register request already sent, from any generation. A
+  /// sign-out lets them all land before it unregisters; a registration of
+  /// a newer generation lets them land before it sends its own.
+  final Set<Future<void>> _onWire = {};
+
+  /// The sign-out hook is running: no access token is adopted meanwhile.
+  bool _clearing = false;
 
   /// The access token of the session being (or last) signed out. The
   /// session keeps reporting it as signed in until the sign-out hook
@@ -192,8 +209,10 @@ class PushService extends ChangeNotifier {
   /// Resume and token refreshes leave it; the next access token retries.
   bool _settled = false;
 
-  /// The last sign-out's unregister + deleteToken, still running in the
-  /// background after the sign-out returned.
+  /// The sign-outs' unregister + deleteToken, still running in the
+  /// background after the sign-out returned. Holds the real deleteToken
+  /// (not a timed-out wait), so a registration after it gets a token FCM
+  /// will not delete under it.
   Future<void>? _teardown;
   PushPrefs? _prefs;
   List<PushArrival> _arrivals = const [];
@@ -213,6 +232,10 @@ class PushService extends ChangeNotifier {
 
   /// The tenant sends pushes: gates Profile → Notifications (§6.6).
   bool get available => _prefs?.pushAvailable == true;
+
+  /// The FCM token push/register last accepted for the signed-in session.
+  @visibleForTesting
+  String? get registeredToken => _registeredToken;
 
   /// Android channels, the FCM token stream, foreground messages and taps
   /// (including the one that launched the app). Call once at start-up,
@@ -256,6 +279,7 @@ class PushService extends ChangeNotifier {
       _session = s;
       s.addListener(_onSessionChanged);
     }
+    if (_clearing || s.isClearing) return;
     if (!s.isLoggedIn || s.token == _retiredToken) return;
     if (s.token != _current?.token) _adopt(s);
     await register();
@@ -266,10 +290,12 @@ class PushService extends ChangeNotifier {
   /// the same token is Settings → Company saving the new company just
   /// before it signs out: registering then would send the old tenant's
   /// token to the new tenant (spec §6.3), so it is ignored. So is the token
-  /// being signed out ([_retiredToken]).
+  /// being signed out ([_retiredToken]), and anything while a sign-out
+  /// runs: SessionService notifies again when it has ended, and a sign-in
+  /// that completed meanwhile (and survived it) is adopted then.
   void _onSessionChanged() {
     final s = _session;
-    if (s == null || !s.isLoggedIn) return;
+    if (s == null || _clearing || s.isClearing || !s.isLoggedIn) return;
     if (s.token == _current?.token || s.token == _retiredToken) return;
     _adopt(s);
     unawaited(register());
@@ -278,32 +304,62 @@ class PushService extends ChangeNotifier {
   void _adopt(SessionService s) {
     _generation++;
     _current = PushTarget.of(s);
-    _registered = null;
+    _registeredToken = null;
     _retiredToken = null;
     _settled = false;
   }
 
   void _onFcmTokenRefresh() {
-    if (_current == null || _settled) return;
-    _registered = null;
+    if (_current == null || _settled || _clearing) return;
+    _registeredToken = null;
     unawaited(register());
   }
 
   /// `push/register` with the current FCM token for the session snapshot
   /// (spec §6.3), then reads the user's prefs. Never throws. Overtaken by a
-  /// sign-out or a new access token, it writes nothing.
+  /// sign-out or a new access token, it writes nothing. Registrations run
+  /// one at a time: a call while one is running asks for one more round,
+  /// which reads the newest FCM token.
   Future<void> register() async {
     final m = _messaging;
-    final target = _current;
-    if (m == null || target == null) return;
+    if (m == null || _current == null) return;
     final gen = _generation;
-    final run = _registerOnce(m, target, gen);
-    _inFlight = run;
-    await run;
-    if (identical(_inFlight, run)) _inFlight = null;
-    if (gen != _generation) return;
+    await _registration(m);
+    if (gen != _generation || _current == null) return;
     await refreshPrefs();
     await _checkExplainer();
+  }
+
+  /// A registration round from this generation's worker; starts the
+  /// worker when it is not running. Completes when the worker is idle.
+  Future<void> _registration(PushMessaging m) {
+    final gen = _generation;
+    _again = true;
+    final running = _worker;
+    if (running != null && _workerGeneration == gen) return running.future;
+    final done = Completer<void>();
+    _worker = done;
+    _workerGeneration = gen;
+    unawaited(_work(m, gen, done));
+    return done.future;
+  }
+
+  bool get _registering => _worker != null && _workerGeneration == _generation;
+
+  Future<void> _work(PushMessaging m, int gen, Completer<void> done) async {
+    try {
+      // An older generation's worker stops at once; it never takes the
+      // newer generation's round.
+      while (gen == _generation && _again) {
+        _again = false;
+        final target = _current;
+        if (target == null) break;
+        await _registerOnce(m, target, gen);
+      }
+    } finally {
+      if (identical(_worker, done)) _worker = null;
+      done.complete();
+    }
   }
 
   Future<void> _registerOnce(
@@ -312,36 +368,76 @@ class PushService extends ChangeNotifier {
     int gen,
   ) async {
     try {
-      // A quick sign-in right after a sign-out: the old teardown's
-      // deleteToken must not kill the token this registration fetches.
-      final teardown = _teardown;
-      if (teardown != null) {
-        try {
-          await teardown.timeout(_callTimeout);
-        } catch (_) {
-          // Slow: go on; a later token rotation arrives via onTokenRefresh.
-        }
-        if (gen != _generation) return;
-      }
+      await _afterEarlierCalls(gen);
+      if (gen != _generation) return;
       final token = await _fcmToken(m, gen);
       // Checked again after every await: the session may be gone.
       if (token == null || token.isEmpty || gen != _generation) return;
+      // Last check before sending: still this session, tenant and routing.
+      if (!_stillLive(target)) return;
       final call = _apiBuilder(target).pushRegister(token, _platform);
-      _onWire = call;
+      final landed = call.then<void>((_) {}, onError: (Object _) {});
+      _onWire.add(landed);
       try {
         await call;
       } finally {
-        if (identical(_onWire, call)) _onWire = null;
+        _onWire.remove(landed);
       }
-      if (gen == _generation) _registered = target;
+      if (gen == _generation) _registeredToken = token;
     } catch (e) {
       // Offline, a 409, or iOS still without its APNs token after the
       // retries: onTokenRefresh or the next resume tries again. A legacy
       // sign-in or an older connector: only the next access token does.
       if (gen != _generation) return;
+      _registeredToken = null;
       if (_isPermanent(e)) _settled = true;
       _forwardInvalidSession(e, gen);
     }
+  }
+
+  /// Before a registration sends: an older generation's push/register
+  /// still on the wire lands first (bounded by the call timeout), and an
+  /// earlier sign-out's teardown — its real deleteToken — has ended, so
+  /// the token fetched next is not deleted under it. Past
+  /// [_teardownWaitCap] the registration goes on and registers again once
+  /// the teardown has ended (the FCM token is then a fresh one).
+  Future<void> _afterEarlierCalls(int gen) async {
+    final wire = _onWire.toList();
+    if (wire.isNotEmpty) {
+      try {
+        await Future.wait(wire).timeout(_callTimeout);
+      } catch (_) {
+        // Slow: the server answers them in any order; go on.
+      }
+    }
+    final teardown = _teardown;
+    if (teardown == null) return;
+    try {
+      await teardown.timeout(_teardownWaitCap);
+    } on TimeoutException {
+      debugPrint('push: the last sign-out is still deleting the FCM token; '
+          'registering now and again when it ends');
+      unawaited(
+        teardown.then((_) {
+          if (gen != _generation || _current == null) return;
+          _registeredToken = null;
+          unawaited(register());
+        }),
+      );
+    }
+  }
+
+  /// The snapshot is still the live session: same access token and
+  /// routing, signed in, no sign-out running.
+  bool _stillLive(PushTarget t) {
+    final s = _session;
+    return !_clearing &&
+        s != null &&
+        !s.isClearing &&
+        s.isLoggedIn &&
+        s.token == t.token &&
+        s.clientUrl == t.baseUrl &&
+        s.clientDb == t.db;
   }
 
   /// `session_required` (a legacy sign-in) or an HTML 404 (a connector
@@ -415,59 +511,82 @@ class PushService extends ChangeNotifier {
   /// delivered notifications and the badge, deletes the FCM token so the
   /// old tenant's token dies even if the server never heard. Never throws.
   /// The sign-out waits at most [_signOutCap]; the rest finishes in the
-  /// background (every call in it uses the snapshot), each network step
-  /// bounded by the call timeout.
+  /// background (every call in it uses the snapshot): the unregister after
+  /// every push/register on the wire has landed (bounded by the call
+  /// timeout), and the real deleteToken, which the next registration waits
+  /// for. No access token is adopted while this runs.
+  ///
+  /// Nothing to tear down — signed out already (Clear Company on the login
+  /// screen, a late invalid_session) and nothing on the wire: only the
+  /// local clean-up, and it returns at once; the FCM token is kept.
   Future<void> onSessionCleared() async {
     final target = _current;
-    final onWire = _onWire;
-    _retiredToken = target?.token ?? _session?.token;
-    _generation++;
-    final gen = _generation;
-    _current = null;
-    _registered = null;
-    _settled = false;
-    _arrivals = const [];
-    _pendingTap = null;
-    _explainerDue = false;
-    if (_prefs != null) {
-      _prefs = null;
-      notifyListeners();
+    final onWire = _onWire.toList();
+    if (target == null &&
+        onWire.isEmpty &&
+        !(_session?.isLoggedIn ?? false)) {
+      unawaited(_native.clearDelivered().then((_) => _native.setBadge(0)));
+      return;
     }
-    final teardown = _tearDown(target, onWire, gen);
-    _teardown = teardown;
-    unawaited(
-      teardown.whenComplete(() {
-        if (identical(_teardown, teardown)) _teardown = null;
-      }),
-    );
+    _clearing = true;
     try {
-      await teardown.timeout(_signOutCap);
-    } catch (_) {
-      // Slow network: the sign-out goes on; the teardown keeps running.
+      _retiredToken = target?.token ?? _session?.token;
+      _generation++;
+      _current = null;
+      _registeredToken = null;
+      _settled = false;
+      _again = false;
+      _arrivals = const [];
+      _pendingTap = null;
+      _explainerDue = false;
+      if (_prefs != null) {
+        _prefs = null;
+        notifyListeners();
+      }
+      final teardown = _tearDown(target, onWire);
+      // A teardown still running from an earlier sign-out is waited for
+      // too: the next registration needs both deleteTokens done.
+      final earlier = _teardown;
+      final all = earlier == null
+          ? teardown
+          : Future.wait([earlier, teardown]).then<void>((_) {});
+      _teardown = all;
+      unawaited(
+        all.whenComplete(() {
+          if (identical(_teardown, all)) _teardown = null;
+        }),
+      );
+      try {
+        await teardown.timeout(_signOutCap);
+      } catch (_) {
+        // Slow network: the sign-out goes on; the teardown keeps running.
+      }
+    } finally {
+      _clearing = false;
     }
   }
 
   /// Unregister and deleteToken side by side, plus the local clean-up.
-  Future<void> _tearDown(
-    PushTarget? target,
-    Future<void>? onWire,
-    int gen,
-  ) async {
+  /// Never throws.
+  Future<void> _tearDown(PushTarget? target, List<Future<void>> onWire) async {
     await Future.wait([
       _native.clearDelivered().then((_) => _native.setBadge(0)),
       _unregister(target, onWire),
-      _deleteFcmToken(gen),
+      _deleteFcmToken(),
     ]);
   }
 
-  Future<void> _unregister(PushTarget? target, Future<void>? onWire) async {
-    // A push/register already sent lands first, so the unregister cannot
-    // overtake it on the server.
-    if (onWire != null) {
+  Future<void> _unregister(
+    PushTarget? target,
+    List<Future<void>> onWire,
+  ) async {
+    // Every push/register already sent lands first, so the unregister
+    // cannot overtake one on the server.
+    if (onWire.isNotEmpty) {
       try {
-        await onWire.timeout(_callTimeout);
+        await Future.wait(onWire).timeout(_callTimeout);
       } catch (_) {
-        // Failed or slow: deleteToken still kills the token.
+        // Slow: deleteToken still kills the token.
       }
     }
     if (target == null) return;
@@ -479,12 +598,14 @@ class PushService extends ChangeNotifier {
     }
   }
 
-  Future<void> _deleteFcmToken(int gen) async {
+  /// The real deleteToken, not bounded: a timed-out wait would let the
+  /// next registration fetch the token this is still deleting. The
+  /// sign-out itself waits at most [_signOutCap].
+  Future<void> _deleteFcmToken() async {
     final m = _messaging;
-    // A new session already took over: its token must live.
-    if (m == null || gen != _generation) return;
+    if (m == null) return;
     try {
-      await m.deleteToken().timeout(_callTimeout);
+      await m.deleteToken();
     } catch (_) {
       // Offline: FCM keeps the old token until the next deleteToken.
     }
@@ -499,9 +620,9 @@ class PushService extends ChangeNotifier {
       return;
     }
     if (_current != null &&
-        _registered == null &&
+        _registeredToken == null &&
         !_settled &&
-        _inFlight == null) {
+        !_registering) {
       unawaited(register());
     }
     await _syncBadge();

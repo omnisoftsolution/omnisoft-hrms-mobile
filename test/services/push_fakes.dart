@@ -114,6 +114,10 @@ class FakeMessaging implements PushMessaging {
 /// What the fake tenant was asked, and how it answers.
 class PushApiLog {
   final List<String> calls = [];
+
+  /// Each push/register that reached the server, in the order it landed
+  /// (`register <access token> <fcm token>`): the server keeps the last.
+  final List<String> landed = [];
   Object? registerError;
   Object? unregisterError;
 
@@ -161,6 +165,7 @@ class FakePushApi extends OmniMobileApi {
     if (gate != null) await gate.future;
     final e = log.registerError;
     if (e != null) throw e;
+    log.landed.add('register $token $fcmToken');
   }
 
   @override
@@ -259,6 +264,7 @@ PushService pushService({
   ],
   Duration callTimeout = const Duration(seconds: 5),
   Duration signOutCap = const Duration(seconds: 2),
+  Duration teardownWaitCap = const Duration(seconds: 30),
 }) => PushService(
   messaging: messaging,
   pushNative: pushNative ?? FakeNative(),
@@ -271,6 +277,7 @@ PushService pushService({
   apnsRetryDelays: apnsRetryDelays,
   callTimeout: callTimeout,
   signOutCap: signOutCap,
+  teardownWaitCap: teardownWaitCap,
 );
 
 /// The bell as PushService sees it: counts re-polls, fixed unread count.

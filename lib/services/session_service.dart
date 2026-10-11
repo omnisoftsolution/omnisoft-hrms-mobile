@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -37,6 +39,35 @@ class SessionService extends ChangeNotifier {
   /// are swallowed: a sign-out never fails because of it.
   Future<void> Function()? onSessionClearing;
   bool _inClearingHook = false;
+
+  /// Marks the zone [onSessionClearing] runs in: a clearSession started
+  /// from inside it (an invalid_session answer while the hook runs) must
+  /// not wait for the sign-out it is part of.
+  static const _clearingHookZone = #omniSessionClearingHook;
+
+  /// The [clearSession] running now; a second call joins it.
+  Future<void>? _clearRun;
+
+  /// Sign-outs ([clearSession], [logout]) running now.
+  int _clearings = 0;
+
+  /// Bumped by every new access token. A sign-out wipes the session only
+  /// if none arrived while its hook ran (a sign-in that completed
+  /// meanwhile is newer than the sign-out and stays).
+  int _authEpoch = 0;
+
+  /// Bumped when a sign-out of a signed-in session starts. An
+  /// `auth/refresh` that was on the wire then is superseded: its answer
+  /// belongs to the session being signed out.
+  int _signOutsStarted = 0;
+
+  /// True from the start of a sign-out until its fields are wiped (or
+  /// kept for a newer sign-in). PushService adopts no access token
+  /// meanwhile; a notify follows when it ends.
+  bool get isClearing => _clearings > 0;
+
+  bool get _inOwnClearingHook =>
+      _inClearingHook && Zone.current[_clearingHookZone] == true;
 
   // Keys: SaaS routing (kept across logout)
   static const _keySaasUrl = 'saas_url';
@@ -514,6 +545,7 @@ class SessionService extends ChangeNotifier {
   /// only returns a new access token — the rest of the session is
   /// untouched).
   Future<void> _saveAccessToken(String accessToken, DateTime? expiresAt) async {
+    _authEpoch++;
     _accessToken = accessToken;
     _expiresAt = expiresAt;
     final prefs = await SharedPreferences.getInstance();
@@ -718,19 +750,39 @@ class SessionService extends ChangeNotifier {
   /// Clear only the auth session keys. SaaS routing stays so re-login
   /// doesn't require re-entering the company code. Runs
   /// [onSessionClearing] first, while the session is still intact.
-  Future<void> clearSession() async {
-    await _runClearingHook();
-    await _clearSessionFields();
+  ///
+  /// One at a time: a second call while one runs (two invalid_session
+  /// answers) joins it instead of wiping the session early. A call from
+  /// inside the hook returns at once — the running sign-out finishes the
+  /// job. The fields are wiped only if no new access token arrived while
+  /// the hook ran: a sign-in completed meanwhile is newer and stays.
+  Future<void> clearSession() {
+    if (_inOwnClearingHook) return Future<void>.value();
+    return _clearRun ??= _clear();
   }
 
-  /// [onSessionClearing], at most once at a time: a clearSession started
-  /// from inside the hook (an invalid_session answer) skips it.
+  Future<void> _clear() async {
+    _clearings++;
+    try {
+      final epoch = _authEpoch;
+      if (_accessToken.isNotEmpty) _signOutsStarted++;
+      await _runClearingHook();
+      if (_authEpoch == epoch) await _clearSessionFields(notify: false);
+    } finally {
+      _clearRun = null;
+      _clearings--;
+      notifyListeners();
+    }
+  }
+
+  /// [onSessionClearing], at most once at a time, in a zone that marks it
+  /// (see [clearSession]).
   Future<void> _runClearingHook() async {
     final hook = onSessionClearing;
     if (hook == null || _inClearingHook) return;
     _inClearingHook = true;
     try {
-      await hook();
+      await runZoned(hook, zoneValues: {_clearingHookZone: true});
     } catch (_) {
       // Best effort — the sign-out goes on.
     } finally {
@@ -738,7 +790,7 @@ class SessionService extends ChangeNotifier {
     }
   }
 
-  Future<void> _clearSessionFields() async {
+  Future<void> _clearSessionFields({bool notify = true}) async {
     _accessToken = '';
     _expiresAt = null;
     _userId = 0;
@@ -805,7 +857,7 @@ class SessionService extends ChangeNotifier {
     await prefs.remove(_keyEmployeeTimeOffApprover);
     await prefs.remove(_keyEmployeeAttendanceApprover);
     await prefs.remove(_keyEmployeeExpenseApprover);
-    notifyListeners();
+    if (notify) notifyListeners();
   }
 
   /// Exchange a device refresh token for a new access session via
@@ -837,8 +889,13 @@ class SessionService extends ChangeNotifier {
         ? refreshToken
         : _refreshToken;
     if (token.isEmpty) return RefreshOutcome.invalid;
+    final signOuts = _signOutsStarted;
     try {
       final res = await api.refresh(refreshToken: token, deviceId: deviceId);
+      // A sign-out started while this was on the wire: the answer belongs
+      // to the session being signed out, so it is dropped (the user signs
+      // in again).
+      if (_signOutsStarted != signOuts) return RefreshOutcome.failed;
       final expiresAtStr = res['expires_at']?.toString() ?? '';
       final expiresAt =
           expiresAtStr.isNotEmpty ? DateTime.tryParse(expiresAtStr) : null;
@@ -1021,20 +1078,29 @@ class SessionService extends ChangeNotifier {
   /// Full reset (clears SaaS routing too). Used when the user wants to
   /// switch companies entirely.
   Future<void> logout() async {
-    // Push first: it needs the old company's URL and token.
-    await _runClearingHook();
-    _saasUrl = '';
-    _companyCode = '';
-    _clientUrl = '';
-    _clientDb = '';
-    _identityCapable = false;
-    await _clearSessionFields();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_keySaasUrl);
-    await prefs.remove(_keyCompanyCode);
-    await prefs.remove(_keyClientUrl);
-    await prefs.remove(_keyClientDb);
-    await prefs.remove(_keyIdentityCapable);
+    // A sign-out already running finishes first.
+    final running = _clearRun;
+    if (running != null && !_inOwnClearingHook) await running;
+    _clearings++;
+    try {
+      if (_accessToken.isNotEmpty) _signOutsStarted++;
+      // Push first: it needs the old company's URL and token.
+      await _runClearingHook();
+      _saasUrl = '';
+      _companyCode = '';
+      _clientUrl = '';
+      _clientDb = '';
+      _identityCapable = false;
+      await _clearSessionFields(notify: false);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_keySaasUrl);
+      await prefs.remove(_keyCompanyCode);
+      await prefs.remove(_keyClientUrl);
+      await prefs.remove(_keyClientDb);
+      await prefs.remove(_keyIdentityCapable);
+    } finally {
+      _clearings--;
+    }
     onLogout?.call();
     notifyListeners();
   }
