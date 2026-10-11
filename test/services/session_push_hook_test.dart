@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:omni_hr/services/session_service.dart';
 
 import 'push_fakes.dart';
 
@@ -85,6 +86,74 @@ void main() {
     expect(s.isLoggedIn, isTrue);
     expect(s.token, 'tok-b');
     expect(s.userLogin, 'budi');
+  });
+
+  // Fix round 2 (Codex r2 MAJOR): the wipe and a sign-in never interleave
+  // their storage writes.
+  test('a sign-in while the wipe is deleting storage: B is what a fresh '
+      'SessionService loads afterwards', () async {
+    final s = await signedInSession();
+    final wiping = Completer<void>();
+    final release = Completer<void>();
+    s.debugWipeStoragePause = () {
+      wiping.complete();
+      return release.future;
+    };
+    final out = s.clearSession();
+    await wiping.future;
+    var signedIn = false;
+    final signIn = s
+        .saveSession(
+          accessToken: 'tok-b',
+          userId: 2,
+          userLogin: 'budi',
+          userName: 'Budi',
+          employeeId: 2,
+          employeeName: 'Budi',
+        )
+        .then((_) => signedIn = true);
+    await flush();
+    release.complete();
+    await out;
+    await signIn;
+    expect(signedIn, isTrue);
+    expect(s.token, 'tok-b');
+    final reloaded = SessionService();
+    await reloaded.load();
+    expect(reloaded.token, 'tok-b');
+    expect(reloaded.userLogin, 'budi');
+    expect(reloaded.employeeName, 'Budi');
+    expect(reloaded.isLoggedIn, isTrue);
+  });
+
+  test('logout joins a clearSession already running, and a clearSession '
+      'during logout joins it: the hook runs once each', () async {
+    final s = await signedInSession();
+    final hooks = [Completer<void>(), Completer<void>()];
+    var runs = 0;
+    s.onSessionClearing = () async {
+      runs++;
+      await hooks[runs - 1].future;
+    };
+    final clear = s.clearSession();
+    final reset = s.logout();
+    await flush();
+    expect(runs, 1);
+    hooks[0].complete();
+    await clear;
+    await flush();
+    // logout's own hook is running now; an invalid_session clear joins it.
+    expect(runs, 2);
+    final late = s.clearSession();
+    var lateDone = false;
+    unawaited(late.then((_) => lateDone = true));
+    await flush();
+    expect(lateDone, isFalse);
+    hooks[1].complete();
+    await Future.wait([reset, late]);
+    expect(runs, 2);
+    expect(s.hasCompany, isFalse);
+    expect(s.isLoggedIn, isFalse);
   });
 
   test('a clearSession started inside the hook does not run it again', () async {

@@ -66,6 +66,11 @@ class SessionService extends ChangeNotifier {
   /// meanwhile; a notify follows when it ends.
   bool get isClearing => _clearings > 0;
 
+  /// Test seam: awaited by a sign-out's wipe right before it deletes the
+  /// stored session (secure storage, then SharedPreferences).
+  @visibleForTesting
+  Future<void> Function()? debugWipeStoragePause;
+
   bool get _inOwnClearingHook =>
       _inClearingHook && Zone.current[_clearingHookZone] == true;
 
@@ -360,7 +365,7 @@ class SessionService extends ChangeNotifier {
     String companyName = '',
     String companyLogoB64 = '',
     bool showConnectionDetails = false,
-  }) async {
+  }) => _persisting(() async {
     // A different company (or tenant) may run a pre-identity connector:
     // forget what the previous one supported until it answers again.
     final companyChanged =
@@ -408,7 +413,7 @@ class SessionService extends ChangeNotifier {
     await prefs.setBool(_keyShowConnectionDetails, _showConnectionDetails);
     await prefs.setBool(_keyIdentityCapable, _identityCapable);
     notifyListeners();
-  }
+  });
 
   /// The SaaS URL a company lookup uses: [saasUrl] when given (the
   /// company-code screen's typed URL — used as typed, even empty, so
@@ -522,23 +527,53 @@ class SessionService extends ChangeNotifier {
       employeeExpenseApprover:
           employee['expense_approver_name']?.toString() ?? '',
     );
-    await _saveAttendanceKioskOnly(employee);
-    _authSource = res['auth_source']?.toString() ?? '';
-    _deviceLabel = _labelOf(res);
-    final rt = res['refresh_token']?.toString() ?? '';
-    final rx = res['refresh_expires_at']?.toString() ?? '';
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_kAuthSource, _authSource);
-    await prefs.setString(_kDeviceLabel, _deviceLabel);
-    if (_authSource.isNotEmpty) await _markIdentityCapable(prefs);
-    if (rt.isNotEmpty) {
-      _refreshToken = rt;
-      _refreshExpiresAt = rx.isNotEmpty ? DateTime.tryParse(rx) : null;
-      await _secure.write(key: _kRefreshToken, value: rt);
-      await prefs.setString(_kRefreshExpiresAt, rx);
-    }
+    // The rest belongs to this sign-in only: a sign-out (or another
+    // sign-in) that got the lock first wins, and nothing more is stored.
+    final epoch = _authEpoch;
+    await _persisting(() async {
+      if (_authEpoch != epoch) return;
+      await _writeAttendanceKioskOnly(employee);
+      _authSource = res['auth_source']?.toString() ?? '';
+      _deviceLabel = _labelOf(res);
+      final rt = res['refresh_token']?.toString() ?? '';
+      final rx = res['refresh_expires_at']?.toString() ?? '';
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_kAuthSource, _authSource);
+      await prefs.setString(_kDeviceLabel, _deviceLabel);
+      if (_authSource.isNotEmpty) await _markIdentityCapable(prefs);
+      if (rt.isNotEmpty) {
+        _refreshToken = rt;
+        _refreshExpiresAt = rx.isNotEmpty ? DateTime.tryParse(rx) : null;
+        await _secure.write(key: _kRefreshToken, value: rt);
+        await prefs.setString(_kRefreshExpiresAt, rx);
+      }
+    });
     notifyListeners();
   }
+
+  /// One queue for every write or removal of the persisted session
+  /// (secure storage + SharedPreferences): a sign-in, the sign-out wipe,
+  /// /me updates and logout never interleave their storage calls, so an
+  /// older sign-out cannot delete keys a newer sign-in just stored. Never
+  /// call a locked method from inside [body] (it would wait for itself).
+  /// An idle queue runs [body] at once: no completed future is kept, so
+  /// nothing waits on another zone's microtask queue (widget tests run
+  /// in a fake-async zone).
+  Future<T> _persisting<T>(Future<T> Function() body) {
+    final previous = _persistTail;
+    final run = previous == null ? body() : previous.then((_) => body());
+    final tail = run.then<void>((_) {}, onError: (Object _) {});
+    _persistTail = tail;
+    unawaited(
+      tail.then((_) {
+        if (identical(_persistTail, tail)) _persistTail = null;
+      }),
+    );
+    return run;
+  }
+
+  /// The last write queued; null when the queue is idle.
+  Future<void>? _persistTail;
 
   /// Persist just the access token + expiry. Shared by [saveSession]
   /// (full /login payload) and [refreshAccessToken] (/auth/refresh
@@ -582,7 +617,7 @@ class SessionService extends ChangeNotifier {
     String employeeTimeOffApprover = '',
     String employeeAttendanceApprover = '',
     String employeeExpenseApprover = '',
-  }) async {
+  }) => _persisting(() async {
     await _saveAccessToken(accessToken, expiresAt);
     _userId = userId;
     _userLogin = userLogin;
@@ -626,7 +661,7 @@ class SessionService extends ChangeNotifier {
     await prefs.setString(
         _keyEmployeeExpenseApprover, employeeExpenseApprover);
     notifyListeners();
-  }
+  });
 
   /// Refresh employee + approver fields from a /me response without
   /// touching the token or expiresAt. Used by
@@ -655,7 +690,7 @@ class SessionService extends ChangeNotifier {
     String? employeeTimeOffApprover,
     String? employeeAttendanceApprover,
     String? employeeExpenseApprover,
-  }) async {
+  }) => _persisting(() async {
     final prefs = await SharedPreferences.getInstance();
     if (userId != null && userId > 0) {
       _userId = userId;
@@ -734,11 +769,15 @@ class SessionService extends ChangeNotifier {
           _keyEmployeeExpenseApprover, employeeExpenseApprover);
     }
     notifyListeners();
-  }
+  });
 
   /// `employee.attendance_kiosk_only` from a /login or /me body. A
   /// missing key (connector before 2.51.0) reads as false.
-  Future<void> _saveAttendanceKioskOnly(Map<String, dynamic> employee) async {
+  Future<void> _saveAttendanceKioskOnly(Map<String, dynamic> employee) =>
+      _persisting(() => _writeAttendanceKioskOnly(employee));
+
+  /// [_saveAttendanceKioskOnly] for a caller already holding the lock.
+  Future<void> _writeAttendanceKioskOnly(Map<String, dynamic> employee) async {
     final value = employee['attendance_kiosk_only'] == true;
     final changed = value != _attendanceKioskOnly;
     _attendanceKioskOnly = value;
@@ -767,7 +806,11 @@ class SessionService extends ChangeNotifier {
       final epoch = _authEpoch;
       if (_accessToken.isNotEmpty) _signOutsStarted++;
       await _runClearingHook();
-      if (_authEpoch == epoch) await _clearSessionFields(notify: false);
+      // Checked inside the persistence lock: a sign-in that stored itself
+      // first is kept; one that comes later waits until the wipe is done.
+      await _persisting(() async {
+        if (_authEpoch == epoch) await _clearSessionFields(notify: false);
+      });
     } finally {
       _clearRun = null;
       _clearings--;
@@ -820,6 +863,7 @@ class SessionService extends ChangeNotifier {
     _leaveApprovalsPendingCount = 0;
     _lastMeRefresh = null;
     final prefs = await SharedPreferences.getInstance();
+    await debugWipeStoragePause?.call();
     try {
       await _secure.delete(key: _keyAccessToken);
     } catch (_) {
@@ -895,42 +939,51 @@ class SessionService extends ChangeNotifier {
       // A sign-out started while this was on the wire: the answer belongs
       // to the session being signed out, so it is dropped (the user signs
       // in again).
-      if (_signOutsStarted != signOuts) return RefreshOutcome.failed;
       final expiresAtStr = res['expires_at']?.toString() ?? '';
       final expiresAt =
           expiresAtStr.isNotEmpty ? DateTime.tryParse(expiresAtStr) : null;
-      await _saveAccessToken(res['access_token']?.toString() ?? '', expiresAt);
-      // /auth/refresh exists only on identity connectors and names the
-      // auth source; record it so the identity tiles show even if the
-      // follow-up /me fails.
-      final src = res['auth_source'];
-      if (src is String && src.isNotEmpty) {
-        _authSource = src;
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString(_kAuthSource, src);
-        await _markIdentityCapable(prefs);
-      }
-      if (token != _refreshToken) {
-        // Face ID's token after a sign-out: adopt it as the session's.
-        // refresh_expires_at is unknown here, so it is left as it was.
-        _refreshToken = token;
-        try {
-          await _secure.write(key: _kRefreshToken, value: token);
-        } catch (_) {
-          // Secure-storage write failed — the in-memory token is set.
+      final saved = await _persisting(() async {
+        // Checked inside the lock, so no sign-out wipe can run between
+        // the check and the save.
+        if (_signOutsStarted != signOuts) return false;
+        await _saveAccessToken(
+            res['access_token']?.toString() ?? '', expiresAt);
+        // /auth/refresh exists only on identity connectors and names the
+        // auth source; record it so the identity tiles show even if the
+        // follow-up /me fails.
+        final src = res['auth_source'];
+        if (src is String && src.isNotEmpty) {
+          _authSource = src;
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString(_kAuthSource, src);
+          await _markIdentityCapable(prefs);
         }
-      }
+        if (token != _refreshToken) {
+          // Face ID's token after a sign-out: adopt it as the session's.
+          // refresh_expires_at is unknown here, so it is left as it was.
+          _refreshToken = token;
+          try {
+            await _secure.write(key: _kRefreshToken, value: token);
+          } catch (_) {
+            // Secure-storage write failed — the in-memory token is set.
+          }
+        }
+        return true;
+      });
+      if (!saved) return RefreshOutcome.failed;
       notifyListeners();
       return RefreshOutcome.ok;
     } on ApiException catch (e) {
       if (e.errorCode != 'refresh_invalid') return RefreshOutcome.failed;
-      _refreshToken = '';
-      try {
-        await _secure.delete(key: _kRefreshToken);
-      } catch (_) {
-        // Secure-storage delete failed (exotic OS/Keychain error) — the
-        // in-memory token is already cleared above.
-      }
+      await _persisting(() async {
+        _refreshToken = '';
+        try {
+          await _secure.delete(key: _kRefreshToken);
+        } catch (_) {
+          // Secure-storage delete failed (exotic OS/Keychain error) — the
+          // in-memory token is already cleared above.
+        }
+      });
       notifyListeners();
       return RefreshOutcome.invalid;
     } catch (_) {
@@ -1015,7 +1068,7 @@ class SessionService extends ChangeNotifier {
   /// No-op when the map lacks `auth_source` — a legacy connector that
   /// predates App Identity never sends it, so `supportsIdentity` must
   /// stay whatever it already was rather than flipping to false.
-  Future<void> updateFromMe(Map<String, dynamic> me) async {
+  Future<void> updateFromMe(Map<String, dynamic> me) => _persisting(() async {
     if (!me.containsKey('auth_source')) return;
     _authSource = me['auth_source']?.toString() ?? '';
     _deviceLabel = _labelOf(me);
@@ -1024,7 +1077,7 @@ class SessionService extends ChangeNotifier {
     await prefs.setString(_kDeviceLabel, _deviceLabel);
     if (_authSource.isNotEmpty) await _markIdentityCapable(prefs);
     notifyListeners();
-  }
+  });
 
   /// Store the `leave_approvals` block of a raw `/me` response:
   /// `{enabled: bool, pending_count: int}`. A response without the key
@@ -1032,7 +1085,7 @@ class SessionService extends ChangeNotifier {
   /// approver": disabled, count 0. Unlike [updateFromMe] this does not
   /// keep the old value when the key is missing, because a missing key
   /// is the old connector's way of saying there is nothing to approve.
-  Future<void> updateLeaveApprovalsFromMe(Map<String, dynamic> me) async {
+  Future<void> updateLeaveApprovalsFromMe(Map<String, dynamic> me) => _persisting(() async {
     final raw = me['leave_approvals'];
     var enabled = false;
     var count = 0;
@@ -1049,7 +1102,7 @@ class SessionService extends ChangeNotifier {
     await prefs.setBool(_kLeaveApprovalsEnabled, enabled);
     await prefs.setInt(_kLeaveApprovalsPendingCount, count);
     if (changed) notifyListeners();
-  }
+  });
 
   /// `device.label` from a /login or /me body. Odoo serialises an empty
   /// Char as `false`, which must read as '' (not the string "false").
@@ -1076,32 +1129,48 @@ class SessionService extends ChangeNotifier {
   }
 
   /// Full reset (clears SaaS routing too). Used when the user wants to
-  /// switch companies entirely.
+  /// switch companies entirely. A sign-out already running finishes
+  /// first; a [clearSession] while this runs joins it. Unlike
+  /// [clearSession] the wipe is unconditional (the user asked for it).
   Future<void> logout() async {
-    // A sign-out already running finishes first.
-    final running = _clearRun;
-    if (running != null && !_inOwnClearingHook) await running;
+    if (!_inOwnClearingHook) {
+      for (var running = _clearRun; running != null; running = _clearRun) {
+        await running;
+      }
+    }
+    final run = _logout();
+    _clearRun = run;
+    try {
+      await run;
+    } finally {
+      if (identical(_clearRun, run)) _clearRun = null;
+    }
+    onLogout?.call();
+    notifyListeners();
+  }
+
+  Future<void> _logout() async {
     _clearings++;
     try {
       if (_accessToken.isNotEmpty) _signOutsStarted++;
       // Push first: it needs the old company's URL and token.
       await _runClearingHook();
-      _saasUrl = '';
-      _companyCode = '';
-      _clientUrl = '';
-      _clientDb = '';
-      _identityCapable = false;
-      await _clearSessionFields(notify: false);
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(_keySaasUrl);
-      await prefs.remove(_keyCompanyCode);
-      await prefs.remove(_keyClientUrl);
-      await prefs.remove(_keyClientDb);
-      await prefs.remove(_keyIdentityCapable);
+      await _persisting(() async {
+        _saasUrl = '';
+        _companyCode = '';
+        _clientUrl = '';
+        _clientDb = '';
+        _identityCapable = false;
+        await _clearSessionFields(notify: false);
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove(_keySaasUrl);
+        await prefs.remove(_keyCompanyCode);
+        await prefs.remove(_keyClientUrl);
+        await prefs.remove(_keyClientDb);
+        await prefs.remove(_keyIdentityCapable);
+      });
     } finally {
       _clearings--;
     }
-    onLogout?.call();
-    notifyListeners();
   }
 }
