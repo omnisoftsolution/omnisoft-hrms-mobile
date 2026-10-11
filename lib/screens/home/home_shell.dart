@@ -49,6 +49,9 @@ class HomeShellState extends State<HomeShell> {
   NotificationService? _notifSvc;
   PushService? _push;
 
+  /// Two push taps whose fetches overlap: only the latest opens anything.
+  final _pushTaps = LatestTap();
+
   @override
   void initState() {
     super.initState();
@@ -172,16 +175,18 @@ class HomeShellState extends State<HomeShell> {
   /// (under this shell's messenger), else the bell. Whatever covers the
   /// tabs (Profile, Payslips, the bell, the explainer — root-navigator
   /// pages) is closed first. An answer that comes back after a sign-out or
-  /// a new access token, or after this shell is gone, opens nothing.
+  /// a new access token, after this shell is gone, or after a newer tap,
+  /// opens nothing (the latest tap wins).
   Future<void> _openPushTap(PushService push, Map<String, dynamic> data) {
     final current = push.sessionStillCurrent();
+    final latest = _pushTaps.next();
     popAbove(context);
     return openPushTap(
       data,
       fetch: push.fetchNotice,
       openHome: navigateToMyDay,
       openBell: openNotifications,
-      stillCurrent: () => mounted && current(),
+      stillCurrent: () => mounted && current() && latest(),
       runHandler: (n) async {
         final ctx = _myDayKey.currentContext;
         if (ctx == null || !ctx.mounted) return openNotifications();

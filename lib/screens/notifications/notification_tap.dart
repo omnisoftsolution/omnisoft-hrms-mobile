@@ -182,10 +182,15 @@ ReviewAnswerPoster _reviewAnswer(SessionService session) =>
         );
 
 /// Whether [handleNotificationTap] has somewhere to take this notice; the
-/// rest (announcements, system notices, a notice without its id) open the
-/// bell when tapped from a push — the app has no announcement screen in v1.
+/// rest (announcements, system notices, a notice without its id, an
+/// unanswered HR question without usable options) open the bell when
+/// tapped from a push — the app has no announcement screen in v1.
 bool tapsThroughHandler(NotificationRecord n) {
-  if (n.isAttendanceQuery || n.isDeclarationApplied) return true;
+  if (n.isAttendanceQuery) {
+    // Answered: "You already answered". Options: the answer sheet.
+    return n.answered || AskOption.listFrom(n.payload['options']).isNotEmpty;
+  }
+  if (n.isDeclarationApplied) return true;
   if (n.isApprovalRequestKind || n.isLeaveKind) return n.leaveIdHint != null;
   if (n.isExpenseKind) return n.expenseIdHint != null;
   return false;
@@ -219,6 +224,18 @@ Future<void> openPushTap(
   if (stillCurrent != null && !stillCurrent()) return;
   if (n == null || !tapsThroughHandler(n)) return openBell();
   return runHandler(n);
+}
+
+/// Push taps whose `notifications/get` overlap: only the latest one opens
+/// anything (HomeShell). [next] is called per tap; its check stays true
+/// until a newer tap arrives.
+class LatestTap {
+  int _seq = 0;
+
+  bool Function() next() {
+    final mine = ++_seq;
+    return () => mine == _seq;
+  }
 }
 
 /// Closes every page the root navigator shows above the page holding

@@ -101,8 +101,30 @@ void main() {
       expect(tapsThroughHandler(_n(1, 'leave_approved', payload: const {'leave_id': 1})), isTrue);
       expect(tapsThroughHandler(_n(1, 'leave_first_approved', payload: const {'leave_id': 1})), isTrue);
       expect(tapsThroughHandler(_n(1, 'expense_refused', payload: const {'expense_id': 1})), isTrue);
-      expect(tapsThroughHandler(_n(1, 'attendance_query')), isTrue);
+      expect(
+        tapsThroughHandler(
+          _n(1, 'attendance_query', payload: const {
+            'options': [
+              {'code': 'yes', 'label': 'Yes'},
+            ],
+          }),
+        ),
+        isTrue,
+      );
+      expect(tapsThroughHandler(_n(1, 'attendance_query', answered: true)), isTrue);
       expect(tapsThroughHandler(_n(1, 'attendance_declaration_applied')), isTrue);
+    });
+
+    // Review fix round 1 (Codex 8): the handler can neither open the answer
+    // sheet nor say "already answered" — the bell shows it instead.
+    test('an unanswered HR question without options goes to the bell', () {
+      expect(tapsThroughHandler(_n(1, 'attendance_query')), isFalse);
+      expect(
+        tapsThroughHandler(
+          _n(1, 'attendance_query', payload: const {'options': <Object>[]}),
+        ),
+        isFalse,
+      );
     });
 
     test('announcements, system notices and missing ids go to the bell', () {
@@ -197,6 +219,37 @@ void main() {
         );
       }
       expect(did, isEmpty);
+    });
+
+    // Review fix round 1 (Codex 8): two taps whose fetches overlap — only
+    // the latest one opens anything (HomeShell's LatestTap guard).
+    test('two taps at once: the latest wins, the older answer is dropped',
+        () async {
+      final taps = LatestTap();
+      final slow = Completer<NotificationRecord>();
+      final first = taps.next();
+      final older = open(
+        {'kind': 'leave_approval_requested', 'notification_id': '47'},
+        (id) => slow.future,
+        stillCurrent: first,
+      );
+      final second = taps.next();
+      await open(
+        {'kind': 'leave_approval_requested', 'notification_id': '48'},
+        (id) async => _n(id, 'leave_approval_requested', payload: const {'leave_id': 3}),
+        stillCurrent: second,
+      );
+      slow.complete(_n(47, 'leave_approval_requested', payload: const {'leave_id': 4}));
+      await older;
+      expect(did, ['handler 48']);
+    });
+
+    test('an unanswered HR question without options opens the bell', () async {
+      await open(
+        {'kind': 'attendance_query', 'notification_id': '49'},
+        (id) async => _n(id, 'attendance_query'),
+      );
+      expect(did, ['bell']);
     });
 
     test('a current session routes as usual', () async {
