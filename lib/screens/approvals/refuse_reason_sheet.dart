@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/error_messages.dart';
 import '../../core/theme.dart';
+import '../../widgets/busy_button_label.dart';
 
 /// Limits the connector enforces on a refusal reason (after trimming).
 const int kRefuseReasonMin = 3;
@@ -158,11 +159,18 @@ class _RefuseReasonSheetState extends State<RefuseReasonSheet> {
                     style: FilledButton.styleFrom(
                       backgroundColor: AppTheme.error,
                       foregroundColor: AppTheme.onPrimary,
+                      // In flight: keep the colours (see BusyButtonLabel).
+                      disabledBackgroundColor: _busy ? AppTheme.error : null,
+                      disabledForegroundColor:
+                          _busy ? AppTheme.onPrimary : null,
                       shape: const StadiumBorder(),
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
                     onPressed: (_valid && !_busy) ? _submit : null,
-                    child: const Text('Refuse'),
+                    child: BusyButtonLabel(
+                        busy: _busy,
+                        label: 'Refuse',
+                        busyLabel: 'Refusing…'),
                   ),
                 ),
               ],

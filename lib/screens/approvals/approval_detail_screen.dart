@@ -9,6 +9,7 @@ import '../../models/approval_detail.dart';
 import '../../models/leave_record.dart' show LeaveAttachment;
 import '../../services/omni_mobile_api.dart';
 import '../../services/session_service.dart';
+import '../../widgets/busy_button_label.dart';
 import '../../widgets/employee_avatar.dart';
 import '../../widgets/error_state_view.dart';
 import '../../widgets/file_viewer.dart';
@@ -151,6 +152,8 @@ class _ApprovalDetailScreenState extends State<ApprovalDetailScreen> {
           ? 'Approved · now waiting for HR'
           : 'Approved');
     } catch (e) {
+      // Stop "Approving…" before the error is shown, not after it closes.
+      if (mounted) setState(() => _busy = false);
       await _onDecisionError(e);
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -324,11 +327,20 @@ class _ApprovalDetailScreenState extends State<ApprovalDetailScreen> {
                         style: FilledButton.styleFrom(
                           backgroundColor: AppTheme.primary,
                           foregroundColor: AppTheme.onPrimary,
+                          // In flight: keep the button's colours so the
+                          // spinner reads as "working", not "disabled".
+                          disabledBackgroundColor:
+                              _busy ? AppTheme.primary : null,
+                          disabledForegroundColor:
+                              _busy ? AppTheme.onPrimary : null,
                           shape: const StadiumBorder(),
                           padding: const EdgeInsets.symmetric(vertical: 16),
                         ),
                         onPressed: _busy ? null : _approve,
-                        child: const Text('Approve'),
+                        child: BusyButtonLabel(
+                            busy: _busy,
+                            label: 'Approve',
+                            busyLabel: 'Approving…'),
                       ),
                     ),
                 ],

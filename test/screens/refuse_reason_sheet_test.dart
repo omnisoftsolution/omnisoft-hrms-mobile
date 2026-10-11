@@ -109,7 +109,10 @@ void main() {
     await tester.tap(refuseButton);
     await tester.pump();
 
-    expect(enabled<FilledButton>(tester, refuseButton), isFalse);
+    // In flight the button reads "Refusing…" (with a spinner).
+    final refusing = find.widgetWithText(FilledButton, 'Refusing…');
+    expect(refusing, findsOneWidget);
+    expect(enabled<FilledButton>(tester, refusing), isFalse);
     expect(enabled<OutlinedButton>(tester, cancelButton), isFalse);
     expect(closed, isEmpty);
 
