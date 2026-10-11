@@ -53,11 +53,15 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final svc = context.read<NotificationService>();
       // Opening the bell clears Omni HR's system notifications and sets
-      // the iOS badge to the bell's unread count (spec 2026-10-11 §6.5);
+      // the iOS badge to the bell's unread count (spec 2026-10-11 §6.5) —
+      // the badge only when the list came (not a cached count offline);
       // PushService skips both if the session ended or the bell closed
       // while the list loaded.
       await context.read<PushService>().onBellOpened(
-        refresh: svc.refreshList,
+        refresh: () async {
+          await svc.refreshList();
+          return svc.lastError == null;
+        },
         unread: () => svc.unreadCount,
         stillOpen: () => mounted,
       );

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omni_hr/services/push_service.dart';
@@ -128,9 +130,52 @@ void main() {
   });
 
   test('background: our remove is applied, using the stored company code', () async {
-    SharedPreferences.setMockInitialValues({'company_code': 'ACME'});
+    SharedPreferences.setMockInitialValues({
+      'company_code': 'ACME',
+      PushService.signedInKey: true,
+    });
     await handleBackgroundData(removal(), pushNative: native);
     expect(native.calls, ['remove approve:77', 'cancel approve:77', 'badge 3']);
+  });
+
+  test('background: a remove while signed out takes the notification off '
+      'but sets no badge (the company code survives a sign-out)', () async {
+    SharedPreferences.setMockInitialValues({'company_code': 'ACME'});
+    await handleBackgroundData(removal(), pushNative: native);
+    expect(native.calls, ['remove approve:77', 'cancel approve:77']);
+  });
+
+  test('signed out: a remove in the foreground does nothing', () async {
+    final push = await started(token: null);
+    await push.handleForeground(removal());
+    expect(native.calls, isEmpty);
+  });
+
+  test('while the sign-out hook runs: a remove, a notice or a reminder in '
+      'the foreground does nothing', () async {
+    final s = await signedInSession();
+    log.unregisterGate = Completer<void>();
+    final push = pushService(
+      messaging: fcm,
+      log: log,
+      pushNative: native,
+      notifications: bell,
+      callTimeout: const Duration(seconds: 3),
+      signOutCap: const Duration(seconds: 3),
+    );
+    s.onSessionClearing = push.onSessionCleared;
+    await push.onSignedIn(s);
+    final out = s.signOut();
+    await flush();
+    native.calls.clear();
+    await push.handleForeground(removal());
+    await push.handleForeground(notice());
+    await push.handleForeground(reminder());
+    expect(native.calls, isEmpty);
+    expect(bell.refreshes, 0);
+    expect(push.consumeArrivals(), isEmpty);
+    log.unregisterGate!.complete();
+    await out;
   });
 
   test('background: another company\'s remove and any show are ignored', () async {
@@ -149,12 +194,20 @@ void main() {
     SharedPreferences.setMockInitialValues({'company_code': 'PRINTART'});
     expect(cached.getString('company_code'), 'ACME');
     Future<String> code() => storedCompanyCode(open: () async => cached);
-    await handleBackgroundData(removal(), pushNative: native, companyCode: code);
+    // Signed in (the marker is read the same way; here it is stubbed).
+    Future<bool> signedIn() async => true;
+    await handleBackgroundData(
+      removal(),
+      pushNative: native,
+      companyCode: code,
+      signedIn: signedIn,
+    );
     expect(native.calls, isEmpty);
     await handleBackgroundData(
       removal(company: 'PRINTART'),
       pushNative: native,
       companyCode: code,
+      signedIn: signedIn,
     );
     expect(native.calls, ['remove approve:77', 'cancel approve:77', 'badge 3']);
   });

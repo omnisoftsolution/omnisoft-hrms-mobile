@@ -97,16 +97,18 @@ class NotificationService extends ChangeNotifier {
 
   /// Re-poll now: a push arrived while the app is open (spec 2026-10-11
   /// §6.4). Same path as the 60 s timer, so the arrival snackbar follows.
-  /// Does nothing before [start].
-  Future<void> refreshNow() => _refreshUnread();
+  /// Does nothing before [start]. True only when a fresh unread count was
+  /// fetched (false before [start], signed out or offline): the iOS badge
+  /// is set from [unreadCount] only then.
+  Future<bool> refreshNow() => _refreshUnread();
 
   /// Lightweight unread-count probe used by the periodic timer.
   /// When the unread count *increases* after we've already polled at
   /// least once, fetches the full list and queues the freshest unread
-  /// item for the HomeShell snackbar listener.
-  Future<void> _refreshUnread() async {
+  /// item for the HomeShell snackbar listener. True when the count came.
+  Future<bool> _refreshUnread() async {
     final api = _api();
-    if (api == null) return;
+    if (api == null) return false;
     try {
       final c = await api.getUnreadNotificationCount();
       _pollsSinceStart++;
@@ -123,8 +125,10 @@ class NotificationService extends ChangeNotifier {
         // The server orders DESC: the first unread items are the new ones.
         queueArrivals(_items, increase: increase);
       }
+      return true;
     } catch (_) {
       // ignore — keep old count
+      return false;
     }
   }
 

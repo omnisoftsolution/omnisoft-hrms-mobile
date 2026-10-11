@@ -145,6 +145,10 @@ class PushService extends ChangeNotifier {
   /// prefs: Home's explainer was shown on this phone (spec §6.2: once).
   static const explainerSeenKey = 'push_explainer_seen';
 
+  /// prefs: a session is signed in (set when its access token is adopted,
+  /// removed at sign-out). The background handler sets a badge only then.
+  static const signedInKey = 'push_signed_in';
+
   final PushMessaging? _messaging;
   final PushNative _native;
   final PushApiBuilder _apiBuilder;
@@ -202,6 +206,9 @@ class PushService extends ChangeNotifier {
 
   /// The sign-out hook is running: no access token is adopted meanwhile.
   bool _clearing = false;
+
+  /// A `push/prefs/get` retry started on resume (deduplicates it).
+  Future<void>? _prefsRetry;
 
   /// The access token of the session being (or last) signed out. The
   /// session keeps reporting it as signed in until the sign-out hook
@@ -326,6 +333,22 @@ class PushService extends ChangeNotifier {
     _registeredToken = null;
     _retiredToken = null;
     _settled = false;
+    unawaited(_markSignedIn(true));
+  }
+
+  /// [signedInKey] for the background handler. Writes are issued in call
+  /// order (a sign-out's removal before the next sign-in's set).
+  static Future<void> _markSignedIn(bool on) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (on) {
+        await prefs.setBool(signedInKey, true);
+      } else {
+        await prefs.remove(signedInKey);
+      }
+    } catch (e) {
+      debugPrint('push: signed-in marker not saved (${e.runtimeType})');
+    }
   }
 
   void _onFcmTokenRefresh() {
@@ -544,10 +567,12 @@ class PushService extends ChangeNotifier {
     if (target == null &&
         onWire.isEmpty &&
         !(_session?.isLoggedIn ?? false)) {
+      unawaited(_markSignedIn(false));
       unawaited(_native.clearDelivered().then((_) => _native.setBadge(0)));
       return;
     }
     _clearing = true;
+    unawaited(_markSignedIn(false));
     try {
       _retiredToken = target?.token ?? _session?.token;
       _generation++;
@@ -630,75 +655,108 @@ class PushService extends ChangeNotifier {
     }
   }
 
-  /// App back in the foreground: retry a registration that failed, and set
-  /// the iOS badge to the bell's unread count (spec §6.5; 0 signed out).
+  /// App back in the foreground: retry a registration that failed (or the
+  /// prefs read after one that worked), and set the iOS badge to the
+  /// bell's unread count (spec §6.5; 0 signed out). Nothing while a
+  /// sign-out runs.
   Future<void> onResumed() async {
     final s = _session;
     if (s == null || !s.isLoggedIn) {
       await _native.setBadge(0);
       return;
     }
-    if (_current != null &&
-        _registeredToken == null &&
-        !_settled &&
-        !_registering) {
-      unawaited(register());
+    if (_current == null || _clearing) return;
+    if (!_settled && !_registering) {
+      if (_registeredToken == null) {
+        // register() reads the prefs after it.
+        unawaited(register());
+      } else if (_prefs == null) {
+        unawaited(_retryPrefs());
+      }
     }
     await _syncBadge();
   }
 
-  /// Re-polls the bell and sets the iOS badge to its unread count — unless
-  /// the session ended meanwhile (the count is then another session's).
+  /// `push/prefs/get` failed after the registration worked: without the
+  /// answer neither the explainer nor Profile → Notifications can show.
+  /// Asked again on resume while unknown, then the explainer is checked.
+  Future<void> _retryPrefs() => _prefsRetry ??= () async {
+    try {
+      await refreshPrefs();
+      await _checkExplainer();
+    } finally {
+      _prefsRetry = null;
+    }
+  }();
+
+  /// Re-polls the bell and sets the iOS badge to its unread count — only
+  /// when a count was fetched (not 0 before the bell's first poll, not a
+  /// stale count offline) and the session is still the one signed in (the
+  /// count is otherwise another session's).
   Future<void> _syncBadge() async {
     final bell = _notifications;
     if (bell == null) return;
     final same = _sameSignedInSession();
-    await bell.refreshNow();
     if (!same()) return;
+    final fetched = await bell.refreshNow();
+    if (!fetched || !same()) return;
     await _native.setBadge(bell.unreadCount);
   }
 
-  /// True while the session signed in now is still the app's: false after
-  /// a sign-out (the generation moves before the token is cleared) or a
-  /// new access token.
+  /// True while the session signed in now is still the app's push
+  /// session: false after a sign-out starts (the generation moves before
+  /// the token is cleared), while its hook runs, or after a new access
+  /// token.
   bool Function() _sameSignedInSession() {
     final gen = _generation;
-    return () => gen == _generation && (_session?.isLoggedIn ?? false);
+    return () =>
+        gen == _generation &&
+        _current != null &&
+        !_clearing &&
+        (_session?.isLoggedIn ?? false);
   }
 
   /// The bell opened (spec §6.5): after [refresh], clear Omni HR's
-  /// delivered notifications and set the iOS badge to [unread]. Nothing is
-  /// touched when the session ended meanwhile (a sign-out's clean-up has
-  /// cleared the badge) or the bell was closed ([stillOpen] false).
+  /// delivered notifications and — when [refresh] answered true (the list
+  /// came) — set the iOS badge to [unread]. Nothing is touched when the
+  /// session ended meanwhile (a sign-out's clean-up has cleared the badge)
+  /// or the bell was closed ([stillOpen] false).
   Future<void> onBellOpened({
-    required Future<void> Function() refresh,
+    required Future<bool> Function() refresh,
     required int Function() unread,
     bool Function()? stillOpen,
   }) async {
     final same = _sameSignedInSession();
-    await refresh();
+    final fetched = await refresh();
     bool go() => same() && (stillOpen?.call() ?? true);
     if (!go()) return;
     await _native.clearDelivered();
-    if (!go()) return;
+    if (!fetched || !go()) return;
     await _native.setBadge(unread());
   }
 
   /// A push that arrived while the app is open (spec §6.4). Only this
-  /// tenant's pushes count. No system banner: a notice re-polls the bell
-  /// (its arrival snackbar follows), a reminder is queued for HomeShell's
-  /// snackbar, a `remove` takes the notification off and applies the badge.
+  /// tenant's pushes count, and only while a push session is active (not
+  /// signed out, no sign-out running). No system banner: a notice re-polls
+  /// the bell (its arrival snackbar follows), a reminder is queued for
+  /// HomeShell's snackbar, a `remove` takes the notification off and
+  /// applies the badge.
   Future<void> handleForeground(
     Map<String, dynamic> data, {
     String? title,
     String? body,
   }) async {
     final s = _session;
-    if (s == null || !s.isLoggedIn || !isForThisTenant(data, s.companyCode)) {
+    if (s == null ||
+        !s.isLoggedIn ||
+        _current == null ||
+        _clearing ||
+        !isForThisTenant(data, s.companyCode)) {
       return;
     }
     if (data['action'] == 'remove') {
-      await applyRemove(data, _native);
+      final same = _sameSignedInSession();
+      await applyRemove(data, _native, mayBadge: () async => same());
       return;
     }
     final kind = data['kind']?.toString() ?? '';
@@ -945,18 +1003,23 @@ bool isForThisTenant(Map<String, dynamic> data, String companyCode) {
 
 /// A `remove` push (spec §6.4): take the notification about its `omni_key`
 /// off the phone (iOS by identifier = apns-collapse-id, Android by tag) and
-/// apply its badge (iOS). Best effort (§10).
+/// apply its badge (iOS). Best effort (§10). [mayBadge] is asked after the
+/// removal steps: the badge is set only while it still answers true (the
+/// session that owns the badge is still signed in).
 Future<void> applyRemove(
   Map<String, dynamic> data,
-  PushNative pushNative,
-) async {
+  PushNative pushNative, {
+  Future<bool> Function()? mayBadge,
+}) async {
   final key = data['omni_key']?.toString() ?? '';
   if (key.isNotEmpty) {
     await pushNative.removeDelivered([key]);
     await pushNative.cancelTag(key);
   }
   final badge = int.tryParse(data['badge']?.toString() ?? '');
-  if (badge != null) await pushNative.setBadge(badge);
+  if (badge == null) return;
+  if (mayBadge != null && !await mayBadge()) return;
+  await pushNative.setBadge(badge);
 }
 
 /// The signed-in company code as SessionService stored it — the background
@@ -972,19 +1035,37 @@ Future<String> storedCompanyCode({
   return prefs.getString(SessionService.companyCodePrefsKey) ?? '';
 }
 
+/// [PushService.signedInKey], re-read like [storedCompanyCode]: the company
+/// code survives an ordinary sign-out, this marker does not.
+Future<bool> storedSignedIn({
+  Future<SharedPreferences> Function()? open,
+}) async {
+  final prefs = await (open ?? SharedPreferences.getInstance)();
+  await prefs.reload();
+  return prefs.getBool(PushService.signedInKey) ?? false;
+}
+
 /// A data message while the app is in the background or closed. Only
 /// `remove` needs work (the system shows `show` pushes itself), and only
-/// for this phone's tenant — checked before anything is cancelled.
+/// for this phone's tenant — checked before anything is cancelled. Its
+/// badge is applied only while a session is signed in (checked again
+/// after the removal, with the tenant).
 @visibleForTesting
 Future<void> handleBackgroundData(
   Map<String, dynamic> data, {
   PushNative? pushNative,
   Future<String> Function()? companyCode,
+  Future<bool> Function()? signedIn,
 }) async {
   if (data['action'] != 'remove') return;
-  final code = await (companyCode ?? storedCompanyCode)();
-  if (!isForThisTenant(data, code)) return;
-  await applyRemove(data, pushNative ?? PushNative.instance);
+  final code = companyCode ?? storedCompanyCode;
+  if (!isForThisTenant(data, await code())) return;
+  final session = signedIn ?? storedSignedIn;
+  await applyRemove(
+    data,
+    pushNative ?? PushNative.instance,
+    mayBadge: () async => await session() && isForThisTenant(data, await code()),
+  );
 }
 
 /// FCM's background entry point (registered in main). Android runs it in

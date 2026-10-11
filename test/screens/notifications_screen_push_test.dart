@@ -28,8 +28,11 @@ class _Bell extends NotificationService {
   @override
   bool get loading => false;
 
+  /// What the last refreshList left behind (null: the list came).
+  String? error;
+
   @override
-  String? get lastError => null;
+  String? get lastError => error;
 
   @override
   Future<void> refreshList() async {
@@ -85,6 +88,15 @@ void main() {
     await tester.pumpWidget(app(const NotificationsScreen()));
     await tester.pumpAndSettle();
     expect(native.calls, ['clear', 'badge 1']);
+  });
+
+  testWidgets('a bell that could not load (offline) clears delivered '
+      'notifications but leaves the badge alone', (tester) async {
+    await signedIn(tester);
+    bell.error = 'network_error';
+    await tester.pumpWidget(app(const NotificationsScreen()));
+    await tester.pumpAndSettle();
+    expect(native.calls, ['clear']);
   });
 
   testWidgets('a sign-out while the bell loads: no stale badge afterwards', (

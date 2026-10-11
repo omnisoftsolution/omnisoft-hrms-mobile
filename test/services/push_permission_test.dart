@@ -29,6 +29,29 @@ void main() {
     expect(push.consumeExplainerDue(), isFalse);
   });
 
+  // Review fix round 1 (Codex 5).
+  test('a prefs read that failed after the registration worked is retried '
+      'on resume (no new registration), then the explainer is checked', () async {
+    final s = await signedInSession();
+    log.prefsError = ApiException('network_error');
+    final push = pushService(messaging: fcm, log: log, platform: 'ios');
+    await push.onSignedIn(s);
+    expect(push.prefs, isNull);
+    expect(push.consumeExplainerDue(), isFalse);
+    log.prefsError = null;
+    log.calls.clear();
+    await push.onResumed();
+    await flush();
+    expect(log.calls, ['prefs/get']);
+    expect(push.available, isTrue);
+    expect(push.consumeExplainerDue(), isTrue);
+    // Known now: the next resume asks nothing.
+    log.calls.clear();
+    await push.onResumed();
+    await flush();
+    expect(log.calls, isEmpty);
+  });
+
   test('once shown it never comes back (next app start included)', () async {
     final s = await signedInSession();
     final push = pushService(messaging: fcm, log: log, platform: 'ios');

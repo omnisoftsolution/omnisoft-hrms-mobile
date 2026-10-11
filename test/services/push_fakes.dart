@@ -300,11 +300,16 @@ class FakeNotifications extends NotificationService {
   @override
   int get unreadCount => unread;
 
+  /// What refreshNow answers: false = no count fetched (not started yet,
+  /// offline).
+  bool fetched = true;
+
   @override
-  Future<void> refreshNow() async {
+  Future<bool> refreshNow() async {
     refreshes++;
     final gate = refreshGate;
     refreshGate = null;
     if (gate != null) await gate.future;
+    return fetched;
   }
 }
