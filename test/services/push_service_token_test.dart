@@ -26,6 +26,8 @@ void main() {
     native = FakeNative();
   });
 
+  tearDown(() => OmniMobileApi.onInvalidSession = null);
+
   Iterable<String> registers() => log.calls.where((c) => c.startsWith('register'));
 
   test('registers the FCM token at app start when signed in, then reads prefs', () async {
@@ -327,5 +329,272 @@ void main() {
     await push.onSignedIn(s);
     expect(fcm.getTokenCalls, 1);
     expect(registers(), isEmpty);
+  });
+
+  // -- Review fixes (A2 r1) --
+
+  test('session changes while the sign-out hook waits register nothing '
+      '(neither the old token nor the new company)', () async {
+    final s = await signedInSession();
+    log.unregisterGate = Completer<void>();
+    final push = pushService(messaging: fcm, log: log, pushNative: native);
+    s.onSessionClearing = push.onSessionCleared;
+    await push.init();
+    await push.onSignedIn(s);
+    log.calls.clear();
+    final out = s.signOut();
+    await flush();
+    expect(log.calls, ['unregister https://acme.test tok-1']);
+    // refreshSubscription / refreshMe answer while the unregister waits;
+    // the session still holds tok-1 until the hook returns.
+    await s.saveCompany(
+      saasUrl: 'https://saas.test',
+      companyCode: 'BETA',
+      clientUrl: 'https://beta.test',
+      clientDb: 'beta',
+    );
+    await s.updateLeaveApprovalsFromMe({
+      'leave_approvals': {'enabled': true, 'pending_count': 2},
+    });
+    await push.onResumed();
+    fcm.refresh.add('fcm-2');
+    await flush();
+    expect(registers(), isEmpty);
+    log.unregisterGate!.complete();
+    await out;
+    await push.onResumed();
+    fcm.refresh.add('fcm-3');
+    await flush();
+    expect(registers(), isEmpty);
+    expect(s.isLoggedIn, isFalse);
+  });
+
+  test('a hanging network holds the sign-out no longer than the cap; '
+      'unregister and deleteToken run side by side', () async {
+    final s = await signedInSession();
+    log.unregisterGate = Completer<void>();
+    final push = pushService(
+      messaging: fcm,
+      log: log,
+      pushNative: native,
+      callTimeout: const Duration(seconds: 3),
+      signOutCap: const Duration(milliseconds: 50),
+    );
+    s.onSessionClearing = push.onSessionCleared;
+    await push.init();
+    await push.onSignedIn(s);
+    final sw = Stopwatch()..start();
+    await s.clearSession();
+    sw.stop();
+    expect(sw.elapsed, lessThan(const Duration(seconds: 2)));
+    expect(s.isLoggedIn, isFalse);
+    expect(fcm.deleteCalls, 1);
+    expect(native.calls, containsAllInOrder(['clear', 'badge 0']));
+  });
+
+  test('sign-out lets a push/register already on the wire land first, '
+      'then unregisters', () async {
+    final s = await signedInSession();
+    final wire = Completer<void>();
+    log.registerGate = wire;
+    final push = pushService(messaging: fcm, log: log, pushNative: native);
+    s.onSessionClearing = push.onSessionCleared;
+    await push.init();
+    unawaited(push.onSignedIn(s));
+    await flush();
+    expect(log.calls, ['register https://acme.test tok-1 fcm-1 android']);
+    final out = s.clearSession();
+    await flush();
+    expect(log.calls.where((c) => c.startsWith('unregister')), isEmpty);
+    wire.complete();
+    await out;
+    expect(log.calls, [
+      'register https://acme.test tok-1 fcm-1 android',
+      'unregister https://acme.test tok-1',
+    ]);
+  });
+
+  test('a push/register on the wire that never answers holds the sign-out '
+      'no longer than the cap', () async {
+    final s = await signedInSession();
+    log.registerGate = Completer<void>();
+    final push = pushService(
+      messaging: fcm,
+      log: log,
+      pushNative: native,
+      callTimeout: const Duration(seconds: 3),
+      signOutCap: const Duration(milliseconds: 50),
+    );
+    s.onSessionClearing = push.onSessionCleared;
+    await push.init();
+    unawaited(push.onSignedIn(s));
+    await flush();
+    final sw = Stopwatch()..start();
+    await s.clearSession();
+    sw.stop();
+    expect(sw.elapsed, lessThan(const Duration(seconds: 2)));
+    expect(s.isLoggedIn, isFalse);
+  });
+
+  test("B signing in right after A waits for A's teardown, so A's "
+      "deleteToken never kills B's fresh token", () async {
+    final s = await signedInSession();
+    final push = pushService(
+      messaging: fcm,
+      log: log,
+      pushNative: native,
+      callTimeout: const Duration(seconds: 3),
+      signOutCap: const Duration(milliseconds: 50),
+    );
+    s.onSessionClearing = push.onSessionCleared;
+    await push.init();
+    await push.onSignedIn(s);
+    log.calls.clear();
+    final deleting = Completer<void>();
+    fcm.deleteGate = deleting;
+    // Returns after the cap; FCM's deleteToken is still running.
+    await s.signOut();
+    await s.saveCompany(
+      saasUrl: 'https://saas.test',
+      companyCode: 'BETA',
+      clientUrl: 'https://beta.test',
+      clientDb: 'beta',
+    );
+    await s.saveSession(
+      accessToken: 'tok-b',
+      userId: 2,
+      userLogin: 'budi',
+      userName: 'Budi',
+      employeeId: 2,
+      employeeName: 'Budi',
+    );
+    await flush();
+    expect(registers(), isEmpty);
+    deleting.complete();
+    await flush();
+    expect(registers(), ['register https://beta.test tok-b fcm-new-1 android']);
+  });
+
+  test('an invalid_session answer for an older generation signs nobody out',
+      () async {
+    var fired = 0;
+    OmniMobileApi.onInvalidSession = () => fired++;
+    final s = await signedInSession();
+    final wire = Completer<void>();
+    log.registerGate = wire;
+    log.registerError = ApiException('invalid_session');
+    final push = pushService(
+      messaging: fcm,
+      log: log,
+      pushNative: native,
+      callTimeout: const Duration(seconds: 3),
+      signOutCap: const Duration(milliseconds: 50),
+    );
+    s.onSessionClearing = push.onSessionCleared;
+    await push.init();
+    unawaited(push.onSignedIn(s));
+    await flush();
+    await s.clearSession();
+    wire.complete();
+    await flush();
+    expect(fired, 0);
+    // The same for a prefs answer that arrives after a sign-out.
+    log.registerError = null;
+    log.prefsError = ApiException('invalid_session');
+    await s.saveSession(
+      accessToken: 'tok-2',
+      userId: 1,
+      userLogin: 'siti',
+      userName: 'Siti',
+      employeeId: 1,
+      employeeName: 'Siti',
+    );
+    await flush();
+    expect(fired, 1);
+    final gate = Completer<void>();
+    log.prefsGetGate = gate;
+    final pending = push.refreshPrefs();
+    await flush();
+    await s.clearSession();
+    gate.complete();
+    await pending;
+    expect(fired, 1);
+  });
+
+  test('an invalid_session answer for the current session still signs out '
+      '(register and prefs)', () async {
+    var fired = 0;
+    OmniMobileApi.onInvalidSession = () => fired++;
+    final s = await signedInSession();
+    log.registerError = ApiException('invalid_session');
+    final push = pushService(messaging: fcm, log: log, pushNative: native);
+    await push.init();
+    await push.onSignedIn(s);
+    expect(fired, 1);
+    log.prefsError = ApiException('invalid_session');
+    await push.refreshPrefs();
+    expect(fired, 2);
+  });
+
+  for (final c in <String, ApiException>{
+    'session_required (a legacy sign-in)': ApiException('session_required'),
+    'an HTML 404 (an older connector)': ApiException(
+      'server_error',
+      data: {'http_status': 404},
+    ),
+  }.entries) {
+    test('${c.key} is settled: no retry on resume or token refresh; the '
+        'next access token tries again', () async {
+      final s = await signedInSession();
+      log.registerError = c.value;
+      final push = pushService(messaging: fcm, log: log, pushNative: native);
+      await push.init();
+      await push.onSignedIn(s);
+      log.registerError = null;
+      log.calls.clear();
+      await push.onResumed();
+      fcm.refresh.add('fcm-1');
+      await flush();
+      expect(registers(), isEmpty);
+      await s.saveSession(
+        accessToken: 'tok-2',
+        userId: 1,
+        userLogin: 'siti',
+        userName: 'Siti',
+        employeeId: 1,
+        employeeName: 'Siti',
+      );
+      await flush();
+      expect(registers(), ['register https://acme.test tok-2 fcm-1 android']);
+    });
+  }
+
+  test('a server failure (500) is not settled: resume retries', () async {
+    final s = await signedInSession();
+    log.registerError = ApiException(
+      'server_error',
+      data: {'http_status': 500},
+    );
+    final push = pushService(messaging: fcm, log: log, pushNative: native);
+    await push.init();
+    await push.onSignedIn(s);
+    log.registerError = null;
+    log.calls.clear();
+    await push.onResumed();
+    await flush();
+    expect(registers(), ['register https://acme.test tok-1 fcm-1 android']);
+  });
+
+  test('an error on the FCM token stream is ignored', () async {
+    final s = await signedInSession();
+    final push = pushService(messaging: fcm, log: log, pushNative: native);
+    await push.init();
+    await push.onSignedIn(s);
+    log.calls.clear();
+    fcm.refresh.addError(StateError('token stream failed'));
+    await flush();
+    fcm.refresh.add('fcm-2');
+    await flush();
+    expect(registers(), ['register https://acme.test tok-1 fcm-1 android']);
   });
 }

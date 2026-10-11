@@ -41,6 +41,10 @@ class FakeMessaging implements PushMessaging {
   /// The next getToken waits for it (used once, then cleared).
   Completer<void>? tokenGate;
 
+  /// The next deleteToken waits for it before the new token exists (used
+  /// once, then cleared).
+  Completer<void>? deleteGate;
+
   /// Thrown by the next getToken calls, in order (iOS before APNs answered).
   final List<Object> tokenErrors = [];
   AuthorizationStatus status = AuthorizationStatus.authorized;
@@ -63,7 +67,11 @@ class FakeMessaging implements PushMessaging {
   @override
   Future<void> deleteToken() async {
     deleteCalls++;
-    token = 'fcm-new-$deleteCalls';
+    final n = deleteCalls;
+    final gate = deleteGate;
+    deleteGate = null;
+    if (gate != null) await gate.future;
+    token = 'fcm-new-$n';
   }
 
   @override
@@ -94,6 +102,9 @@ class PushApiLog {
   final List<String> calls = [];
   Object? registerError;
   Object? unregisterError;
+
+  /// The next push/register waits for it after it was sent (used once).
+  Completer<void>? registerGate;
 
   /// Set to a never-completing completer to make unregister hang.
   Completer<void>? unregisterGate;
@@ -128,6 +139,9 @@ class FakePushApi extends OmniMobileApi {
   @override
   Future<void> pushRegister(String fcmToken, String platform) async {
     log.calls.add('register $baseUrl $token $fcmToken $platform');
+    final gate = log.registerGate;
+    log.registerGate = null;
+    if (gate != null) await gate.future;
     final e = log.registerError;
     if (e != null) throw e;
   }
@@ -221,6 +235,7 @@ PushService pushService({
     Duration.zero,
   ],
   Duration callTimeout = const Duration(seconds: 5),
+  Duration signOutCap = const Duration(seconds: 2),
 }) => PushService(
   messaging: messaging,
   pushNative: pushNative ?? FakeNative(),
@@ -229,4 +244,5 @@ PushService pushService({
   platform: platform,
   apnsRetryDelays: apnsRetryDelays,
   callTimeout: callTimeout,
+  signOutCap: signOutCap,
 );

@@ -384,24 +384,36 @@ class OmniMobileApi {
   }
 
   // -- Push notifications (connector 2.63.0, spec 2026-10-11 §4.1) --
+  //
+  // All four are quiet (no onInvalidSession / onKioskOnly): PushService
+  // runs them on a session snapshot that may already be gone, and forwards
+  // invalid_session itself only when the snapshot is still the current
+  // session.
 
   /// Puts this phone's FCM token on the signed-in session. A legacy sign-in
   /// answers 400 `session_required`; an older connector an HTML 404.
   Future<void> pushRegister(String token, String platform) async {
-    await _post('/push/register', {'token': token, 'platform': platform});
+    await _send(
+      '/push/register',
+      {'token': token, 'platform': platform},
+      fireHooks: false,
+    );
   }
 
-  /// Takes the token off the session. Quiet: never signs the user out.
+  /// Takes the token off the session. Never signs the user out.
   Future<void> pushUnregister() async {
     await _send('/push/unregister', const {}, fireHooks: false);
   }
 
-  Future<PushPrefs> pushPrefsGet() async =>
-      PushPrefs.fromJson(await _post('/push/prefs/get'));
+  Future<PushPrefs> pushPrefsGet() async => PushPrefs.fromJson(
+    await _send('/push/prefs/get', null, fireHooks: false),
+  );
 
   /// Replaces the user's mutes; answers like [pushPrefsGet].
   Future<PushPrefs> pushPrefsSet(List<String> muted) async =>
-      PushPrefs.fromJson(await _post('/push/prefs/set', {'muted': muted}));
+      PushPrefs.fromJson(
+        await _send('/push/prefs/set', {'muted': muted}, fireHooks: false),
+      );
 
   // -- Attendance --
 
