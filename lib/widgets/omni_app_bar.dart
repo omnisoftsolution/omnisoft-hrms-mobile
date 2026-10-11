@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -103,9 +105,8 @@ class OmniAppBar extends StatelessWidget implements PreferredSizeWidget {
       // rootNavigator: true so Notifications renders above HomeShell —
       // same reason as the Profile push above. A routable tap pops back
       // to the tabs, then HomeShell switches tab (HomeShell.openNotifications,
-      // shared with push taps).
-      // ignore: discarded_futures — the bell opens on the root navigator
-      shell.openNotifications();
+      // shared with push taps). Fire-and-forget: the bell is its own page.
+      unawaited(shell.openNotifications());
       return;
     }
     // Outside the shell (a screen pushed on the root navigator, e.g.

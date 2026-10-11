@@ -15,6 +15,10 @@
 
 default_platform(:ios)
 
+# CocoaPods (run by flutter build ios / pod install) needs a UTF-8 locale;
+# a non-interactive shell may have none.
+ENV['LANG'] ||= 'en_US.UTF-8'
+
 # App Store Connect API key — referenced both by xcodebuild auth
 # flags (xcargs) and by the app_store_connect_api_key fastlane
 # action (which puts it into shared lane context for downstream

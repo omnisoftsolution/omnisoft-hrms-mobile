@@ -132,6 +132,30 @@ void main() {
     expect(push.consumePendingTap(), isNull);
   });
 
+  // Review fix round 1 (ledger A4): the _current == null guard.
+  test('a tap while the sign-out hook runs only opens the app', () async {
+    final s = await signedInSession();
+    log.unregisterGate = Completer<void>();
+    final push = pushService(
+      messaging: fcm,
+      log: log,
+      callTimeout: const Duration(seconds: 3),
+      signOutCap: const Duration(seconds: 3),
+    );
+    s.onSessionClearing = push.onSessionCleared;
+    await push.onSignedIn(s);
+    await push.init();
+    final out = s.signOut();
+    await flush();
+    expect(s.isLoggedIn, isTrue);
+    push.handleTap(tapData());
+    fcm.opened.add(RemoteMessage(data: tapData()));
+    expect(push.consumePendingTap(), isNull);
+    log.unregisterGate!.complete();
+    await out;
+    expect(push.consumePendingTap(), isNull);
+  });
+
   test('fetchNotice goes through notifications/get', () async {
     log.notices[41] = NotificationRecord(id: 41, kind: 'leave_approval_requested', title: 'Approval needed');
     final push = await started();

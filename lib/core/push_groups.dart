@@ -69,3 +69,8 @@ const pushGroups = <PushGroup>[
 const reminderPushKinds = {'remind_check_in', 'remind_check_out'};
 
 bool isReminderKind(String kind) => reminderPushKinds.contains(kind);
+
+/// A reminder's title when the push carries none: the connector's own
+/// wording (omni_mobile_push_reminder.py `TITLES`).
+String reminderTitle(String kind) =>
+    kind == 'remind_check_out' ? 'Still at work?' : 'Time to check in';

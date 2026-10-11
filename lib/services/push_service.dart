@@ -261,7 +261,8 @@ class PushService extends ChangeNotifier {
     _subs.add(
       m.onTokenRefresh.listen(
         (_) => _onFcmTokenRefresh(),
-        onError: (Object e) => debugPrint('push: token refresh failed ($e)'),
+        onError: (Object e) =>
+            debugPrint('push: token refresh failed (${e.runtimeType})'),
       ),
     );
     _subs.add(
@@ -273,9 +274,17 @@ class PushService extends ChangeNotifier {
             body: msg.notification?.body,
           ),
         ),
+        onError: (Object e) =>
+            debugPrint('push: foreground message failed (${e.runtimeType})'),
       ),
     );
-    _subs.add(m.onMessageOpenedApp.listen((msg) => handleTap(msg.data)));
+    _subs.add(
+      m.onMessageOpenedApp.listen(
+        (msg) => handleTap(msg.data),
+        onError: (Object e) =>
+            debugPrint('push: opened message failed (${e.runtimeType})'),
+      ),
+    );
     unawaited(_launchMessage(m));
   }
 
@@ -761,8 +770,11 @@ class PushService extends ChangeNotifier {
     }
     final kind = data['kind']?.toString() ?? '';
     if (isReminderKind(kind)) {
+      final heading = title == null || title.trim().isEmpty
+          ? reminderTitle(kind)
+          : title;
       _arrivals = [
-        PushArrival(kind: kind, title: title ?? '', body: body ?? ''),
+        PushArrival(kind: kind, title: heading, body: body ?? ''),
         ..._arrivals,
       ];
       notifyListeners();

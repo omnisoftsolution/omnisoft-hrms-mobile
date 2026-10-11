@@ -90,6 +90,13 @@
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_color"
             android:resource="@color/omni_notification" />
+        <!-- Fallback channel when a push names none or one that does not
+             exist yet (e.g. a group added server-side before an app update);
+             otherwise FCM would create a "Miscellaneous" channel. Created
+             by PushNative.createChannels (lib/core/push_groups.dart). -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="requests" />
         <!-- Disable Impeller (Vulkan) and use Skia instead. flutter_pdfview
              (AndroidView platform view) renders blank/transparent when
              composited through Impeller on this device. Skia handles

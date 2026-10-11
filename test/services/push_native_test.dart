@@ -30,6 +30,30 @@ class FakeTray extends AndroidTray {
   }
 }
 
+/// An Android tray whose every call fails (plugin not ready, OEM quirk).
+class ThrowingTray extends AndroidTray {
+  ThrowingTray();
+
+  int calls = 0;
+
+  Never _fail() {
+    calls++;
+    throw StateError('tray failed');
+  }
+
+  @override
+  Future<void> init() async => _fail();
+
+  @override
+  Future<void> createChannel(PushGroup group) async => _fail();
+
+  @override
+  Future<void> cancel(String tag) async => _fail();
+
+  @override
+  Future<void> cancelAll() async => _fail();
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   const channel = MethodChannel('omnihr/push');
@@ -96,6 +120,17 @@ void main() {
       'cancel leave:12',
       'cancelAll',
     ]);
+  });
+
+  test('Android: a failing tray never throws, and one failing channel does '
+      'not stop the others', () async {
+    final tray = ThrowingTray();
+    final n = PushNative(platform: TargetPlatform.android, tray: tray);
+    await n.createChannels();
+    await n.cancelTag('leave:12');
+    await n.clearDelivered();
+    // init + one channel per group + cancel + cancelAll were all tried.
+    expect(tray.calls, 1 + pushGroups.length + 2);
   });
 
   test('a missing native side never throws', () async {

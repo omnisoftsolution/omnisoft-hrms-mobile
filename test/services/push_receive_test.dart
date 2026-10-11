@@ -60,8 +60,8 @@ void main() {
     return push;
   }
 
-  test('a notice in the foreground re-polls the bell at once (its usual '
-      'arrival snackbar follows), no system banner', () async {
+  test('a notice in the foreground re-polls the bell at once and queues no '
+      'push snackbar (the bell\'s own arrival snackbar follows)', () async {
     final push = await started();
     fcm.messages.add(
       RemoteMessage(
@@ -95,6 +95,36 @@ void main() {
     expect(arrivals.single.body, 'Your shift started at 09:00. Tap to check in.');
     expect(push.consumeArrivals(), isEmpty);
     expect(bell.refreshes, 0);
+  });
+
+  // Review fix round 1 (ledger A3): the connector always sends a title,
+  // but an empty one must not leave an empty bold line.
+  test('a reminder without a title gets its kind\'s title (the connector '
+      'wording)', () async {
+    final push = await started();
+    await push.handleForeground(reminder(), title: '', body: 'Tap to check in.');
+    await push.handleForeground(
+      {...reminder(), 'kind': 'remind_check_out'},
+      body: 'Tap to check out.',
+    );
+    final arrivals = push.consumeArrivals();
+    expect(arrivals.map((a) => a.title), ['Still at work?', 'Time to check in']);
+  });
+
+  test('an error on the foreground message or opened-app stream is ignored',
+      () async {
+    final push = await started();
+    fcm.messages.addError(StateError('message stream failed'));
+    fcm.opened.addError(StateError('opened stream failed'));
+    await flush();
+    fcm.messages.add(
+      RemoteMessage(
+        data: reminder(),
+        notification: const RemoteNotification(title: 'Time to check in'),
+      ),
+    );
+    await flush();
+    expect(push.consumeArrivals().single.kind, 'remind_check_in');
   });
 
   test('another company\'s push is ignored in the foreground', () async {
