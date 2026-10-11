@@ -123,6 +123,7 @@ class PushService extends ChangeNotifier {
     Duration callTimeout = const Duration(seconds: 5),
     Duration signOutCap = const Duration(seconds: 2),
     Duration teardownWaitCap = const Duration(seconds: 30),
+    Duration initialMessageTimeout = const Duration(seconds: 3),
   }) : _messaging = messaging,
        _native = pushNative ?? PushNative.instance,
        _apiBuilder = apiBuilder ?? _targetApi,
@@ -135,7 +136,11 @@ class PushService extends ChangeNotifier {
        _apnsRetryDelays = apnsRetryDelays,
        _callTimeout = callTimeout,
        _signOutCap = signOutCap,
-       _teardownWaitCap = teardownWaitCap;
+       _teardownWaitCap = teardownWaitCap,
+       _initialMessageTimeout = initialMessageTimeout;
+
+  /// How long start-up listens for the message that launched the app.
+  final Duration _initialMessageTimeout;
 
   /// prefs: Home's explainer was shown on this phone (spec §6.2: once).
   static const explainerSeenKey = 'push_explainer_seen';
@@ -239,7 +244,9 @@ class PushService extends ChangeNotifier {
 
   /// Android channels, the FCM token stream, foreground messages and taps
   /// (including the one that launched the app). Call once at start-up,
-  /// after [onSignedIn].
+  /// after [onSignedIn]. The launch message is looked up in the background
+  /// (main awaits this before runApp): its tap waits in [consumePendingTap]
+  /// for HomeShell, as any tap does.
   Future<void> init() async {
     final m = _messaging;
     if (m == null) return;
@@ -262,11 +269,23 @@ class PushService extends ChangeNotifier {
       ),
     );
     _subs.add(m.onMessageOpenedApp.listen((msg) => handleTap(msg.data)));
+    unawaited(_launchMessage(m));
+  }
+
+  /// The tap that launched the app, if any. FlutterFire answers once its
+  /// launch bookkeeping ran; if it never does, start-up must not care: give
+  /// up after [_initialMessageTimeout].
+  Future<void> _launchMessage(PushMessaging m) async {
     try {
-      final initial = await m.getInitialMessage();
+      final initial = await m.getInitialMessage().timeout(
+        _initialMessageTimeout,
+      );
       if (initial != null) handleTap(initial.data);
-    } catch (_) {
-      // No launch message: nothing to open.
+    } on TimeoutException {
+      debugPrint('push: no launch message within '
+          '${_initialMessageTimeout.inSeconds} s');
+    } catch (e) {
+      debugPrint('push: launch message lookup failed (${e.runtimeType})');
     }
   }
 

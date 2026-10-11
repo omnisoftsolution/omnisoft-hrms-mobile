@@ -89,8 +89,15 @@ class FakeMessaging implements PushMessaging {
   @override
   Stream<RemoteMessage> get onMessageOpenedApp => opened.stream;
 
+  /// When set, getInitialMessage answers with it (instead of [initial]).
+  Completer<RemoteMessage?>? initialGate;
+
   @override
-  Future<RemoteMessage?> getInitialMessage() async => initial;
+  Future<RemoteMessage?> getInitialMessage() async {
+    final gate = initialGate;
+    if (gate != null) return gate.future;
+    return initial;
+  }
 
   @override
   Future<AuthorizationStatus> authorizationStatus() async {
@@ -265,6 +272,7 @@ PushService pushService({
   Duration callTimeout = const Duration(seconds: 5),
   Duration signOutCap = const Duration(seconds: 2),
   Duration teardownWaitCap = const Duration(seconds: 30),
+  Duration initialMessageTimeout = const Duration(seconds: 3),
 }) => PushService(
   messaging: messaging,
   pushNative: pushNative ?? FakeNative(),
@@ -278,6 +286,7 @@ PushService pushService({
   callTimeout: callTimeout,
   signOutCap: signOutCap,
   teardownWaitCap: teardownWaitCap,
+  initialMessageTimeout: initialMessageTimeout,
 );
 
 /// The bell as PushService sees it: counts re-polls, fixed unread count.

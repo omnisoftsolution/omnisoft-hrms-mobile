@@ -55,6 +55,9 @@ void main() async {
   );
   session.onSessionClearing = push.onSessionCleared;
   unawaited(push.onSignedIn(session));
+  // Channels and listeners only; the launch message (a tapped push) is
+  // looked up in the background, so a stalled lookup never holds the
+  // first frame.
   await push.init();
 
   runApp(

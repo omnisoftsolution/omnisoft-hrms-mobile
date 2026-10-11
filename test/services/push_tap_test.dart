@@ -71,9 +71,44 @@ void main() {
   test('taps come from onMessageOpenedApp and from the launch message', () async {
     fcm.initial = RemoteMessage(data: tapData());
     final push = await started();
+    // The launch message is looked up in the background (init() does not
+    // wait for it).
+    await flush();
     expect(push.consumePendingTap()?['kind'], 'leave_approval_requested');
     fcm.opened.add(RemoteMessage(data: {...tapData(), 'notification_id': '42'}));
     expect(push.consumePendingTap()?['notification_id'], '42');
+  });
+
+  // Review fix round 1 (Opus M1 / Codex 7): the launch message is looked
+  // up in the background; start-up never waits for it.
+  test('a launch-message lookup that never answers does not hold init()',
+      () async {
+    fcm.initialGate = Completer<RemoteMessage?>();
+    final s = await signedInSession();
+    final push = pushService(
+      messaging: fcm,
+      log: log,
+      initialMessageTimeout: const Duration(milliseconds: 50),
+    );
+    await push.onSignedIn(s);
+    await push.init().timeout(const Duration(seconds: 1));
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    expect(push.consumePendingTap(), isNull);
+  });
+
+  test('a launch message that answers after init() returned still opens, '
+      'once', () async {
+    final launch = Completer<RemoteMessage?>();
+    fcm.initialGate = launch;
+    final s = await signedInSession();
+    final push = pushService(messaging: fcm, log: log);
+    await push.onSignedIn(s);
+    await push.init().timeout(const Duration(seconds: 1));
+    expect(push.consumePendingTap(), isNull);
+    launch.complete(RemoteMessage(data: tapData()));
+    await flush();
+    expect(push.consumePendingTap()?['notification_id'], '41');
+    expect(push.consumePendingTap(), isNull);
   });
 
   test('a tap tells HomeShell (notifyListeners)', () async {
