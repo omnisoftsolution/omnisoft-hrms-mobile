@@ -49,6 +49,10 @@ class ApprovalItem {
   final String secondApproverName;
   final String refusalReason;
 
+  /// Who the request waits for now (`waiting_for`, connector 2.62.0+).
+  /// Null from older connectors, which keep the step-based chip.
+  final WaitingFor? waitingFor;
+
   const ApprovalItem({
     required this.id,
     this.employeeId = 0,
@@ -77,6 +81,7 @@ class ApprovalItem {
     this.firstApproverName = '',
     this.secondApproverName = '',
     this.refusalReason = '',
+    this.waitingFor,
   });
 
   factory ApprovalItem.fromJson(Map<String, dynamic> j) {
@@ -110,14 +115,17 @@ class ApprovalItem {
       firstApproverName: strOf(mapOf(j['first_approver'])['name']),
       secondApproverName: strOf(mapOf(j['second_approver'])['name']),
       refusalReason: strOf(j['refusal_reason']),
+      waitingFor: WaitingFor.fromJson(j['waiting_for']),
     );
   }
 
   /// Still waiting for a decision (To Approve or Second Approval).
   bool get isPending => state == 'confirm' || state == 'validate1';
 
-  /// Chip on a Pending row.
+  /// Chip on a Pending row: who it waits for (2.62.0+), else the step.
   String get stepLabel {
+    final w = waitingFor;
+    if (w != null) return w.label;
     if (assignedToMe) return 'Your approval';
     return step == 'hr_approval' ? 'HR approval' : 'Manager approval';
   }
@@ -182,4 +190,47 @@ class ApprovalItem {
   /// 2.0 -> '2', 0.5 -> '0.5'.
   static String fmtNum(double v) =>
       v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(1);
+}
+
+/// Who a pending request waits for now: `waiting_for` on the pending,
+/// recent and get rows (connector 2.62.0+, spec 2026-10-10 §3.2).
+class WaitingFor {
+  /// manager | hr.
+  final String role;
+
+  /// Display names of the people whose turn it is. Empty for an HR step
+  /// without notified officers ("any Time Off officer").
+  final List<String> names;
+
+  /// This user is one of them (mirrors `assigned_to_me`).
+  final bool you;
+
+  const WaitingFor({required this.role, this.names = const [], this.you = false});
+
+  /// Null when the connector sent no `waiting_for` (older than 2.62.0)
+  /// or something that is not an object.
+  static WaitingFor? fromJson(dynamic j) {
+    if (j is! Map) return null;
+    final raw = j['names'] is List ? j['names'] as List : const [];
+    return WaitingFor(
+      role: ApprovalItem.strOf(j['role']),
+      names: raw
+          .map((e) => ApprovalItem.strOf(e).trim())
+          .where((s) => s.isNotEmpty)
+          .toList(),
+      you: j['you'] == true,
+    );
+  }
+
+  /// 'Your approval', 'Waiting for Kelvin (manager)',
+  /// 'Waiting for Willy +1 (HR)', 'Waiting for HR', 'Waiting for manager'.
+  /// Only the first word of the first name is shown.
+  String get label {
+    if (you) return 'Your approval';
+    final hr = role == 'hr';
+    if (names.isEmpty) return hr ? 'Waiting for HR' : 'Waiting for manager';
+    final first = names.first.split(RegExp(r'\s+')).first;
+    final more = names.length > 1 ? ' +${names.length - 1}' : '';
+    return 'Waiting for $first$more (${hr ? 'HR' : 'manager'})';
+  }
 }

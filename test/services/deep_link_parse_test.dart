@@ -111,6 +111,58 @@ void main() {
     });
   });
 
+  group('add-phone links (k=add, connector 2.62.0+)', () {
+    test('omnihr form', () {
+      final a = parseActivationLink(Uri.parse(
+          'omnihr://activate?k=add&c=NOVAWORKS&t=Zx81kQ&l=budi.s'))!;
+      expect(a.kind, ActivationKind.addPhone);
+      expect(a.isAddPhone, isTrue);
+      expect(a.companyCode, 'NOVAWORKS');
+      expect(a.token, 'Zx81kQ');
+      expect(a.login, 'budi.s');
+    });
+    test('https fragment and query forms', () {
+      for (final s in [
+        'https://h.example/omni/activate#k=add&c=NOVAWORKS&t=T&l=budi.s',
+        'https://h.example/omni/activate?k=add&c=NOVAWORKS&t=T&l=budi.s',
+      ]) {
+        final a = parseActivationLink(Uri.parse(s))!;
+        expect(a.isAddPhone, isTrue, reason: s);
+        expect(a.token, 'T', reason: s);
+        expect(a.login, 'budi.s', reason: s);
+      }
+    });
+    test('no k, or an empty k, is an invite', () {
+      expect(parseActivationLink(Uri.parse('omnihr://activate?c=N&t=T'))!.kind,
+          ActivationKind.invite);
+      expect(
+          parseActivationLink(Uri.parse('omnihr://activate?k=&c=N&t=T'))!
+              .isAddPhone,
+          isFalse);
+    });
+    test('an unknown k is not opened (its token never reaches a route)', () {
+      expect(parseActivationLink(Uri.parse('omnihr://activate?k=reset&c=N&t=T')),
+          isNull);
+      expect(
+          parseActivationLink(
+              Uri.parse('https://h.example/omni/activate#k=ADD&c=N&t=T')),
+          isNull);
+    });
+    test('add links still need c and t', () {
+      expect(parseActivationLink(Uri.parse('omnihr://activate?k=add&c=N')),
+          isNull);
+      expect(
+          parseActivationLink(
+              Uri.parse('https://h.example/omni/activate#k=add&t=T')),
+          isNull);
+    });
+    test('the scanner accepts an add-phone QR', () {
+      final r = classifyScan(
+          'https://h.example/omni/activate#k=add&c=NOVAWORKS&t=T&l=budi.s');
+      expect((r as InviteScan).args.isAddPhone, isTrue);
+    });
+  });
+
   group('classifyScan', () {
     test('invite in both forms, whitespace trimmed', () {
       expect(classifyScan('  omnihr://activate?c=NOVAWORKS&t=T\n'),

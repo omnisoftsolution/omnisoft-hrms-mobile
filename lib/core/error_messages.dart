@@ -18,6 +18,23 @@ import '../services/omni_mobile_api.dart';
 /// refreshed and an older copy is still on screen".
 const myDayRefreshFailed = 'my_day_refresh_failed';
 
+/// Where an error happened, for the codes whose words depend on the call.
+enum ErrorContext {
+  /// Every screen except Add this phone (the default).
+  general,
+
+  /// Add this phone, before `auth/add_device` was posted (the SaaS company
+  /// lookup): nothing reached the company's server yet.
+  addPhoneLookup,
+
+  /// Add this phone, `auth/add_device` posted.
+  addPhone,
+
+  /// Add this phone, posted again after an earlier answer was lost: an
+  /// `invalid_code` now probably means the phone was already added.
+  addPhoneAfterLostAnswer,
+}
+
 /// App Identity error codes that [friendlyErrorCode] owns.
 const _identityCodes = {
   'account_locked',
@@ -33,6 +50,12 @@ const _identityCodes = {
   'login_taken',
   'device_verification_unavailable',
   'email_send_failed',
+  // Add this phone (connector 2.62.0, auth/add_device).
+  'invalid_code',
+  'invalid_credentials',
+  'not_active',
+  'seat_limit_exceeded',
+  'rate_limit_exceeded',
 };
 
 /// Human message for an App Identity error code. [retryAfter] (seconds)
@@ -68,6 +91,19 @@ String friendlyErrorCode(String code, {int? retryAfter}) {
     case 'email_send_failed':
       return "We couldn't send the email right now. Try again in a few "
           'minutes, or ask HR for a new QR code.';
+    case 'invalid_code':
+      return 'That add-phone code is not right or has expired. '
+          'Ask HR for a new one.';
+    case 'invalid_credentials':
+      return 'Invalid login or password.';
+    case 'not_active':
+      return 'Your Omni HR account is not active yet. Activate it with the '
+          'invite from HR first.';
+    case 'seat_limit_exceeded':
+      return 'Your organization has reached its mobile seat limit. Contact '
+          'your administrator to request access.';
+    case 'rate_limit_exceeded':
+      return 'Too many attempts. Try again in a few minutes.';
     default:
       return 'Something went wrong ($code). Please try again.';
   }
@@ -77,7 +113,20 @@ String friendlyErrorCode(String code, {int? retryAfter}) {
 /// contains one) to a friendly, human message. Falls back to a generic
 /// message for anything unrecognized — it will not echo raw exception
 /// text unless that text is a short, obviously-safe snake_case code.
-String friendlyError(Object e) {
+///
+/// [context] gives the few codes whose meaning depends on the call their
+/// own words (see [ErrorContext]); the default keeps every other caller's
+/// text unchanged. [addPhoneCompany] (add-phone contexts only) names the
+/// company being switched to, so sign-in guidance points at it.
+String friendlyError(
+  Object e, {
+  ErrorContext context = ErrorContext.general,
+  String? addPhoneCompany,
+}) {
+  if (e is ApiException && context != ErrorContext.general) {
+    final text = _addPhoneMessage(e, context, addPhoneCompany);
+    if (text != null) return text;
+  }
   if (e is ApiException && _identityCodes.contains(e.errorCode)) {
     return friendlyErrorCode(
       e.errorCode,
@@ -268,6 +317,65 @@ String friendlyError(Object e) {
 }
 
 const _genericMessage = 'Something went wrong. Please try again.';
+
+/// Add this phone (`auth/add_device`) words: only the codes whose meaning
+/// differs on this call; null = the usual [friendlyError] text.
+String? _addPhoneMessage(
+    ApiException e, ErrorContext context, String? company) {
+  final sent = context != ErrorContext.addPhoneLookup;
+  switch (e.errorCode) {
+    case 'unknown_route':
+      return _addPhoneUnavailable;
+    case 'server_error':
+      // A connector older than 2.62.0 has no auth/add_device: Odoo
+      // answers with an HTML 404. Any other status is a real failure.
+      if (sent && e.data?['http_status'] == 404) return _addPhoneUnavailable;
+    case 'mobile_not_enabled':
+      return 'App access is off for you. Ask HR.';
+    case 'timeout':
+    case 'network_error':
+      // The server may have added the phone (and spent the pair) before
+      // the answer was lost, or the phone was offline and nothing was sent
+      // (the transport cannot tell): both ways out are given. The form
+      // stays usable, so the same code can also be retried.
+      // While switching company, the phone (if added) belongs to the new
+      // one, which is not saved on this phone yet.
+      if (sent) {
+        return company == null
+            ? 'If this phone was added, sign in with your app login and '
+                'password. $_askHrIfSignInFails'
+            : 'If this phone was added, choose $company and sign in. '
+                '$_askHrIfSignInFails';
+      }
+    case 'invalid_code':
+      // The lost answer was probably a success that spent the pair, or the
+      // earlier attempt never left the phone and the code is really bad.
+      if (context == ErrorContext.addPhoneAfterLostAnswer) {
+        return company == null
+            ? 'This phone may already be added. Sign in with your app '
+                'login and password. $_askHrIfSignInFails'
+            : 'This phone may already be added to $company. Choose that '
+                'company and sign in. $_askHrIfSignInFails';
+      }
+  }
+  return null;
+}
+
+const _addPhoneUnavailable =
+    "Adding a phone isn't available for your company yet. Ask HR.";
+
+const _askHrIfSignInFails = "If sign-in doesn't work, ask HR for a new code.";
+
+/// True when the answer to a request was lost (`timeout`,
+/// `network_error`): after a sent `auth/add_device`, the server may have
+/// acted. Not a message: the text still comes from [friendlyError].
+/// `network_error` stays in: `OmniMobileApi._post` collapses every
+/// transport failure into it, and the http package reports a refused
+/// connect and a reset after the body was sent as the same
+/// SocketException, so "never sent" cannot be told apart reliably.
+bool isLostAnswerError(Object e) =>
+    e is ApiException &&
+    (e.errorCode == 'timeout' || e.errorCode == 'network_error');
 
 /// `leave/cancel` and `leave/modify` codes that mean the request is no
 /// longer what the History list shows: decided (`not_cancellable`,

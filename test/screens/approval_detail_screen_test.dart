@@ -14,6 +14,7 @@ Map<String, dynamic> detailJson({
   bool canApprove = true,
   bool canRefuse = true,
   List<Map<String, dynamic>> attachments = const [],
+  Map<String, dynamic>? waitingFor,
 }) =>
     {
       'id': 148,
@@ -41,6 +42,7 @@ Map<String, dynamic> detailJson({
       'create_date': '2026-10-01 02:00:00',
       'can_approve': canApprove,
       'can_refuse': canRefuse,
+      'waiting_for': ?waitingFor,
       'name': 'Family trip',
       'attachments': attachments,
       'balance_after': {'unit': 'day', 'total': 14.0, 'remaining': 10.0},
@@ -194,6 +196,54 @@ void main() {
     expect(approveButton, findsOneWidget);
     expect(refuseButton, findsOneWidget);
     expect(api.calls, ['get:148']);
+  });
+
+  testWidgets('the current step says who the request is waiting for',
+      (tester) async {
+    api = FakeApi(detailJson(waitingFor: {
+      'role': 'manager',
+      'names': ['Christine Ng'],
+      'you': false,
+    }));
+    await tester.pumpWidget(host(api, session, popped));
+    await open(tester);
+
+    expect(find.text('Waiting for Christine (manager)'), findsOneWidget);
+    expect(find.text('Manager approval'), findsNothing);
+    expect(find.text('HR approval'), findsOneWidget);
+  });
+
+  testWidgets(
+      'narrow phone, large text (360 dp, 1.3x): a long current-step title '
+      'does not overflow and the candidates keep real width', (tester) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    api = FakeApi(detailJson(waitingFor: {
+      'role': 'manager',
+      'names': ['Christopher Lee', 'Ann Lim'],
+      'you': false,
+    }));
+    await tester.pumpWidget(ChangeNotifierProvider<SessionService>.value(
+      value: session,
+      child: MaterialApp(
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context)
+              .copyWith(textScaler: const TextScaler.linear(1.3)),
+          child: child!,
+        ),
+        home: ApprovalDetailScreen(leaveId: 148, apiBuilder: (_) => api),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    final title = find.text('Waiting for Christopher +1 (manager)');
+    await tester.ensureVisible(title);
+    await tester.pumpAndSettle();
+
+    // A RenderFlex overflow would be reported here.
+    expect(tester.takeException(), isNull);
+    expect(title, findsOneWidget);
+    expect(tester.getSize(find.text('Christine Ng')).width, greaterThan(100));
   });
 
   testWidgets('Approve sends the state seen, toasts, pops and refreshes /me',

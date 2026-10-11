@@ -9,10 +9,8 @@ import 'services/omni_mobile_api.dart';
 import 'services/session_service.dart';
 import 'services/biometric_auth_service.dart';
 import 'services/deep_link_service.dart';
-import 'screens/activation/activation_screen.dart';
-import 'screens/company_code/company_code_screen.dart';
-import 'screens/home/home_shell.dart';
-import 'screens/login/login_screen.dart';
+import 'screens/activation/link_route.dart';
+import 'screens/session_gate.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -63,9 +61,10 @@ class _OmniHrAppState extends State<OmniHrApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    // Invite links (omnihr://activate) open the activation screen on
-    // top of whatever the session Consumer below is showing — on a cold
-    // start (initial link) or while the app is running.
+    // Invite and add-phone links (omnihr://activate, k=add for add-phone)
+    // open the activation or Add this phone screen on top of whatever the
+    // session Consumer below is showing — on a cold start (initial link)
+    // or while the app is running.
     _deepLinks.listen(_openActivation);
     // Cold-start refresh — picks up subscription + employee changes
     // the admin/HR made while the app was closed. Fire-and-forget;
@@ -82,10 +81,7 @@ class _OmniHrAppState extends State<OmniHrApp> with WidgetsBindingObserver {
           .addPostFrameCallback((_) => _openActivation(a));
       return;
     }
-    nav.push(MaterialPageRoute(
-      builder: (_) => ActivationScreen(
-          companyCode: a.companyCode, token: a.token, login: a.login),
-    ));
+    pushActivationLink(nav, a);
   }
 
   @override
@@ -143,17 +139,9 @@ class _OmniHrAppState extends State<OmniHrApp> with WidgetsBindingObserver {
         title: AppConstants.appName,
         theme: AppTheme.lightTheme,
         debugShowCheckedModeBanner: false,
-        // Reactive routing: rebuilds when session state changes.
-        //   no company resolved      → CompanyCodeScreen
-        //   company set, not signed  → LoginScreen
-        //   signed in                → HomeShell
-        home: Consumer<SessionService>(
-          builder: (_, s, _) {
-            if (!s.hasCompany) return const CompanyCodeScreen();
-            if (!s.isLoggedIn) return const LoginScreen();
-            return const HomeShell();
-          },
-        ),
+        // Reactive routing: rebuilds when session state changes
+        // (company code → sign-in → Home; see SessionGate).
+        home: const SessionGate(),
       ),
     );
   }

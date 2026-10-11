@@ -10,6 +10,7 @@ import '../../widgets/labeled_field.dart';
 import '../../widgets/primary_button.dart';
 import '../activation/activation_screen.dart';
 import '../activation/invite_scan_screen.dart';
+import '../activation/link_route.dart';
 import '../login/login_screen.dart';
 
 class CompanyCodeScreen extends StatefulWidget {
@@ -47,10 +48,7 @@ class _CompanyCodeScreenState extends State<CompanyCodeScreen> {
     if (!mounted || outcome == null) return;
     Navigator.of(context).push(MaterialPageRoute(
       builder: (_) => switch (outcome) {
-        ScannedInvite(:final args) => ActivationScreen(
-            companyCode: args.companyCode,
-            token: args.token,
-            login: args.login),
+        ScannedInvite(:final args) => screenForActivationLink(args),
         EnterCodeInstead() => const ActivationScreen(),
       },
     ));

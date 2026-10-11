@@ -197,8 +197,10 @@ class OmniMobileApi {
       // to a synthetic ApiException so _humanize falls through to the
       // friendly default ("Login failed. Please try again or contact
       // your administrator.") instead of leaking <!doctype html> to
-      // the screen.
-      throw ApiException('server_error');
+      // the screen. The status lets a caller tell a missing route (404 on
+      // an older connector) from a real server failure.
+      throw ApiException('server_error',
+          data: {'http_status': response.statusCode});
     }
     if (data['success'] != true) {
       final code = data['error']?.toString();
@@ -255,6 +257,30 @@ class OmniMobileApi {
       deviceLabel: deviceLabel,
       appVersion: appVersion,
       newLogin: newLogin,
+    ),
+  );
+
+  /// Adds this phone to an active App access account (connector 2.62.0):
+  /// HR's add-phone token or code plus the employee's app password. The
+  /// success body is the `/login` payload; other phones stay signed in.
+  Future<Map<String, dynamic>> addDevice({
+    required String login,
+    String? token,
+    String? code,
+    required String password,
+    required String deviceId,
+    String? deviceLabel,
+    String? appVersion,
+  }) => _post(
+    '/auth/add_device',
+    buildAddDeviceBody(
+      login: login,
+      token: token,
+      code: code,
+      password: password,
+      deviceId: deviceId,
+      deviceLabel: deviceLabel,
+      appVersion: appVersion,
     ),
   );
 

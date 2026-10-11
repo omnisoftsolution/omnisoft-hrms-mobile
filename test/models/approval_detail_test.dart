@@ -129,6 +129,84 @@ void main() {
           '0 days left of 14');
     });
 
+    test('waiting_for titles the current step; other steps keep their titles',
+        () {
+      final d = ApprovalDetail.fromJson({
+        'id': 148,
+        'state': 'confirm',
+        'validation_type': 'both',
+        'waiting_for': {
+          'role': 'manager',
+          'names': ['Christine Ng'],
+          'you': false,
+        },
+        'steps': [
+          {
+            'label': 'manager_approval',
+            'status': 'current',
+            'candidates': ['Christine Ng'],
+          },
+          {
+            'label': 'hr_approval',
+            'status': 'next',
+            'candidates': ['Time Off Officers'],
+          },
+        ],
+      });
+      expect(d.item.waitingFor!.label, 'Waiting for Christine (manager)');
+      expect(d.steps[0].title, 'Waiting for Christine (manager)');
+      expect(d.steps[0].subtitle, 'Christine Ng');
+      expect(d.steps[1].title, 'HR approval');
+    });
+
+    test('second step current and mine: "Your approval"', () {
+      final d = ApprovalDetail.fromJson({
+        'id': 149,
+        'state': 'validate1',
+        'validation_type': 'both',
+        'waiting_for': {'role': 'hr', 'names': ['Herianto Ramli'], 'you': true},
+        'steps': [
+          {'label': 'manager_approval', 'status': 'done', 'candidates': []},
+          {'label': 'hr_approval', 'status': 'current', 'candidates': []},
+        ],
+      });
+      expect(d.steps[0].title, 'Manager approval');
+      expect(d.steps[1].title, 'Your approval');
+    });
+
+    test('HR step without officers: "Waiting for HR"', () {
+      final d = ApprovalDetail.fromJson({
+        'id': 150,
+        'state': 'confirm',
+        'validation_type': 'hr',
+        'waiting_for': {'role': 'hr', 'names': [], 'you': false},
+        'steps': [
+          {'label': 'hr_approval', 'status': 'current', 'candidates': []},
+        ],
+      });
+      expect(d.steps.single.title, 'Waiting for HR');
+    });
+
+    test('a request that is no longer pending ignores waiting_for', () {
+      final d = ApprovalDetail.fromJson({
+        'id': 151,
+        'state': 'refuse',
+        'validation_type': 'manager',
+        'waiting_for': {'role': 'manager', 'names': ['Kelvin Tan'], 'you': false},
+        'steps': [
+          {'label': 'manager_approval', 'status': 'current', 'candidates': []},
+        ],
+      });
+      expect(d.steps.single.title, 'Manager approval');
+    });
+
+    test('a step parsed on its own has no waiting_for', () {
+      final s = ApprovalStep.fromJson(
+          {'label': 'hr_approval', 'status': 'current', 'candidates': []});
+      expect(s.waitingFor, isNull);
+      expect(s.title, 'HR approval');
+    });
+
     test('a sparse payload does not throw', () {
       final d = ApprovalDetail.fromJson({'id': 1, 'state': 'confirm'});
       expect(d.note, '');

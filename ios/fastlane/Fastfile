@@ -45,36 +45,30 @@ IPA_OUTPUT_NAME = "omnihr.ipa"
 # this per release. Inlined (not read from a file) so it can't break on a
 # path/cwd surprise during the upload step. TestFlight allows ~4000 chars.
 TESTFLIGHT_CHANGELOG = <<~NOTES.freeze
-  Sign in with your Omni HR account. Activate with the link or QR code
-  from HR, keep Face ID, and manage your signed-in phones under
-  Security and Privacy.
-
-  New in this build (1.26.0):
-  - Activate a phone with the invite link or QR code HR sends you,
-    then use Face ID to sign back in on that phone.
-  - Profile > Security and Privacy > Your devices lists every phone
-    trusted for your account; sign out remotely revokes a lost or old
-    one.
-  - Your Odoo password still works to sign in until you activate your
-    Omni HR account.
-  - Build 87: invite, reset and sign-in code emails now come from
-    "<Company> via Omni HR" <no-reply@omnisoftsolution.com>. If the
-    sign-in code email can't be sent, the app now says so clearly.
-  - Build 88 (1.26.0): employees marked "Attendance on kiosk only" get
-    a new "My day" home (today's status, kiosk punches, things that need
-    their attention) and cannot check in from the phone. Approvers can
-    approve or refuse leave in the app.
+  New in this build (1.32.0, needs connector 2.62.0 on the server):
+  - Leave approvals: the Pending list has two parts, "Waiting for you"
+    and "You can also approve". Each request says who it waits for:
+    "Your approval", "Waiting for Kelvin (manager)" or "Waiting for HR".
+    The request page shows the same on its current step.
+  - Add this phone: HR can give you an add-phone link, QR code or
+    6-digit code (HR presses Add phone on the employee's App Access tab
+    in Odoo). Open the link or scan the QR, or tap "Add this phone" on
+    the sign-in screen and type your login and the code; then type your
+    Omni HR password.
+    Your other phones stay signed in and your password does not change.
 
   Please test:
-  1. In Odoo, tick "Attendance on kiosk only" on your employee, then
-     relaunch the app. Confirm the Home tab shows My day with today's
-     status.
-  2. Punch at the kiosk, then reopen the app (or tap the Home tab) and
-     confirm the punch appears on the My day timeline.
-  3. Approvers: approve a leave request from the Approvals row on My
-     day, then come back and confirm the count went down.
-  4. Untick the box in Odoo, relaunch, and confirm the classic home with
-     the check-in button is back.
+  1. As an approver who works in two companies, open Leave approvals:
+     only your own company's requests (plus requests HR named you for)
+     are listed, in the two parts.
+  2. Check the chip and the request page for a request waiting for you,
+     one waiting for a manager and one waiting for HR.
+  3. In Odoo, press Add phone on an employee's App Access tab. On a
+     second phone, open the link (or scan the QR), type the app
+     password and confirm you land on Home. On the first phone, pull
+     down to refresh: it is still signed in.
+  4. Try a wrong password and a wrong code once each and read the
+     message.
 NOTES
 
 platform :ios do

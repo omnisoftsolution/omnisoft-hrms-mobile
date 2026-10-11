@@ -125,4 +125,103 @@ void main() {
       expect(it.firstApproverName, '');
     });
   });
+
+  group('waiting_for (connector 2.62.0+)', () {
+    Map<String, dynamic> wf(String role, List<Object?> names, bool you) =>
+        {'role': role, 'names': names, 'you': you};
+
+    test('parses role, names and you', () {
+      final it = ApprovalItem.fromJson(
+          sample({'waiting_for': wf('manager', ['Kelvin Tan'], false)}));
+      expect(it.waitingFor, isNotNull);
+      expect(it.waitingFor!.role, 'manager');
+      expect(it.waitingFor!.names, ['Kelvin Tan']);
+      expect(it.waitingFor!.you, isFalse);
+    });
+
+    test('you: "Your approval"', () {
+      expect(
+          ApprovalItem.fromJson(sample(
+                  {'waiting_for': wf('manager', ['Herianto Ramli'], true)}))
+              .stepLabel,
+          'Your approval');
+    });
+
+    test('manager step names the first name of the first person', () {
+      expect(
+          ApprovalItem.fromJson(sample({
+            'assigned_to_me': false,
+            'waiting_for': wf('manager', ['Kelvin Tan'], false),
+          })).stepLabel,
+          'Waiting for Kelvin (manager)');
+    });
+
+    test('more names add +N; an HR step with named officers says HR', () {
+      expect(
+          ApprovalItem.fromJson(sample({
+            'assigned_to_me': false,
+            'step': 'hr_approval',
+            'waiting_for':
+                wf('hr', ['Willy Tanuwiharja', 'Teoh Yit Ngoh'], false),
+          })).stepLabel,
+          'Waiting for Willy +1 (HR)');
+      expect(
+          ApprovalItem.fromJson(sample({
+            'assigned_to_me': false,
+            'waiting_for': wf('manager', ['Kelvin Tan', 'A B', 'C D'], false),
+          })).stepLabel,
+          'Waiting for Kelvin +2 (manager)');
+    });
+
+    test('HR step without notified officers: "Waiting for HR"', () {
+      expect(
+          ApprovalItem.fromJson(sample({
+            'assigned_to_me': false,
+            'step': 'hr_approval',
+            'waiting_for': wf('hr', [], false),
+          })).stepLabel,
+          'Waiting for HR');
+    });
+
+    test('manager step with nobody named: "Waiting for manager"', () {
+      expect(
+          ApprovalItem.fromJson(sample({
+            'assigned_to_me': false,
+            'waiting_for': wf('manager', [], false),
+          })).stepLabel,
+          'Waiting for manager');
+    });
+
+    test('waiting_for wins over assigned_to_me and step', () {
+      expect(
+          ApprovalItem.fromJson(sample({
+            'assigned_to_me': true,
+            'step': 'manager_approval',
+            'waiting_for': wf('hr', [], false),
+          })).stepLabel,
+          'Waiting for HR');
+    });
+
+    test('blank and non-string names are dropped', () {
+      final it = ApprovalItem.fromJson(sample({
+        'waiting_for': wf('manager', ['', '  ', false, null, 'Kelvin Tan'], false),
+      }));
+      expect(it.waitingFor!.names, ['Kelvin Tan']);
+      expect(it.stepLabel, 'Waiting for Kelvin (manager)');
+    });
+
+    test("older connector (no waiting_for, or not a map) keeps today's texts",
+        () {
+      final mine = ApprovalItem.fromJson(sample());
+      expect(mine.waitingFor, isNull);
+      expect(mine.stepLabel, 'Your approval');
+      final hr = ApprovalItem.fromJson(sample({
+        'waiting_for': false,
+        'assigned_to_me': false,
+        'step': 'hr_approval',
+      }));
+      expect(hr.waitingFor, isNull);
+      expect(hr.stepLabel, 'HR approval');
+    });
+  });
 }

@@ -12,8 +12,9 @@ import 'approval_detail_screen.dart';
 
 /// Leave approvals for Time Off Approvers and Officers.
 ///
-/// Pending = the requests Odoo lets this user act on now ("my step"
-/// first). Recent = this user's own decisions of the last 30 days. Both
+/// Pending = the requests Odoo lets this user act on now, in two
+/// sections: "Waiting for you" (`assigned_to_me`) and "You can also
+/// approve". Recent = this user's own decisions of the last 30 days. Both
 /// come from the connector; this screen decides nothing itself.
 class ApprovalsScreen extends StatefulWidget {
   const ApprovalsScreen({super.key, this.apiBuilder, this.initialSegment = 0});
@@ -98,6 +99,11 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
     final recent = _segment == 1;
     final items = recent ? _recent : _pending;
     final ready = !_loading && _error == null;
+    // Pending in two sections, server order kept inside each: what waits
+    // for this user now (assigned_to_me), then what Odoo also lets them
+    // decide.
+    final mine = _pending.where((i) => i.assignedToMe).toList();
+    final others = _pending.where((i) => !i.assignedToMe).toList();
     return Scaffold(
       backgroundColor: AppTheme.surface,
       appBar: AppBar(title: const Text('Leave approvals')),
@@ -152,36 +158,72 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
                   ],
                 ),
               )
-            else
-              Container(
-                decoration: BoxDecoration(
-                  color: AppTheme.surfaceContainerLowest,
-                  borderRadius: BorderRadius.circular(24),
-                  boxShadow: AppTheme.glassShadow,
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: Material(
-                  type: MaterialType.transparency,
-                  child: Column(
-                    children: [
-                      for (var i = 0; i < items.length; i++) ...[
-                        if (i > 0)
-                          const Divider(height: 1, indent: 64, endIndent: 16),
-                        _ApprovalRow(
-                          item: items[i],
-                          recent: recent,
-                          onTap: () => _open(items[i]),
-                        ),
-                      ],
-                    ],
+            else if (recent)
+              _card(items, recent: true)
+            else ...[
+              _sectionTitle('Waiting for you'),
+              if (mine.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(4, 0, 4, 4),
+                  child: Text(
+                    'Nothing waiting for you.',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: AppTheme.onSurfaceVariant,
+                    ),
                   ),
-                ),
-              ),
+                )
+              else
+                _card(mine, recent: false),
+              if (others.isNotEmpty) ...[
+                const SizedBox(height: 20),
+                _sectionTitle('You can also approve'),
+                _card(others, recent: false),
+              ],
+            ],
           ],
         ),
       ),
     );
   }
+
+  /// The white rounded card holding a list of rows.
+  Widget _card(List<ApprovalItem> items, {required bool recent}) => Container(
+    decoration: BoxDecoration(
+      color: AppTheme.surfaceContainerLowest,
+      borderRadius: BorderRadius.circular(24),
+      boxShadow: AppTheme.glassShadow,
+    ),
+    clipBehavior: Clip.antiAlias,
+    child: Material(
+      type: MaterialType.transparency,
+      child: Column(
+        children: [
+          for (var i = 0; i < items.length; i++) ...[
+            if (i > 0) const Divider(height: 1, indent: 64, endIndent: 16),
+            _ApprovalRow(
+              item: items[i],
+              recent: recent,
+              onTap: () => _open(items[i]),
+            ),
+          ],
+        ],
+      ),
+    ),
+  );
+
+  /// Heading above a Pending section.
+  Widget _sectionTitle(String text) => Padding(
+    padding: const EdgeInsets.fromLTRB(4, 4, 4, 8),
+    child: Text(
+      text,
+      style: const TextStyle(
+        fontSize: 13,
+        fontWeight: FontWeight.w700,
+        color: AppTheme.onSurfaceVariant,
+      ),
+    ),
+  );
 }
 
 /// Two-option pill switch (Pending / Recent).
@@ -235,6 +277,87 @@ class _Segments extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+/// The row's first line: the employee name with the step / outcome chip at
+/// the end. A chip that would take more than [_maxChipShare] of the line
+/// (a long "Waiting for Christopher +1 (manager)", a narrow phone, large
+/// text) moves under the name instead, so the name keeps its width and
+/// the chip its words.
+class _NameAndChip extends StatelessWidget {
+  const _NameAndChip({
+    required this.name,
+    required this.chip,
+    required this.color,
+  });
+
+  final String name;
+  final String chip;
+  final Color color;
+
+  static const _maxChipShare = 0.45;
+  static const _gap = 8.0;
+  static const _chipPadding = EdgeInsets.symmetric(horizontal: 10, vertical: 3);
+  static const _nameStyle = TextStyle(
+    fontSize: 14,
+    fontWeight: FontWeight.w700,
+    color: AppTheme.onSurface,
+  );
+
+  TextStyle get _chipStyle =>
+      TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: color);
+
+  @override
+  Widget build(BuildContext context) {
+    final nameText = Text(
+      name,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: _nameStyle,
+    );
+    if (chip.isEmpty) return nameText;
+    final chipBox = Container(
+      padding: _chipPadding,
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        chip,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: _chipStyle,
+      ),
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final painter = TextPainter(
+          text: TextSpan(
+            text: chip,
+            style: DefaultTextStyle.of(context).style.merge(_chipStyle),
+          ),
+          textDirection: Directionality.of(context),
+          textScaler: MediaQuery.textScalerOf(context),
+          maxLines: 1,
+        )..layout();
+        final chipWidth = painter.width + _chipPadding.horizontal;
+        painter.dispose();
+        if (chipWidth + _gap <= constraints.maxWidth * _maxChipShare) {
+          return Row(
+            children: [
+              Expanded(child: nameText),
+              const SizedBox(width: _gap),
+              chipBox,
+            ],
+          );
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [nameText, const SizedBox(height: 4), chipBox],
+        );
+      },
     );
   }
 }
@@ -296,42 +419,10 @@ class _ApprovalRow extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          item.employeeName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                            color: AppTheme.onSurface,
-                          ),
-                        ),
-                      ),
-                      if (chip.isNotEmpty) ...[
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 3,
-                          ),
-                          decoration: BoxDecoration(
-                            color: _chipColor.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: Text(
-                            chip,
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: _chipColor,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
+                  _NameAndChip(
+                    name: item.employeeName,
+                    chip: chip,
+                    color: _chipColor,
                   ),
                   const SizedBox(height: 3),
                   Text(

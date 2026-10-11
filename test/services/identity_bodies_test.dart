@@ -38,4 +38,26 @@ void main() {
         deviceId: 'd', newLogin: '  ');
     expect(c.containsKey('new_login'), isFalse);
   });
+  test('add_device body: lowercased login, token xor code, app password, '
+      'this phone', () {
+    final t = buildAddDeviceBody(login: ' Budi.S ', token: 'T', password: 'pw',
+        deviceId: 'd', deviceLabel: 'Pixel 8', appVersion: '1.32.0');
+    expect(t, {
+      'login': 'budi.s',
+      'token': 'T',
+      'password': 'pw',
+      'device_id': 'd',
+      'device_label': 'Pixel 8',
+      'app_version': '1.32.0',
+    });
+    final c = buildAddDeviceBody(
+        login: 'budi.s', code: '123456', password: 'pw', deviceId: 'd',
+        deviceLabel: '');
+    expect(c, {
+      'login': 'budi.s',
+      'code': '123456',
+      'password': 'pw',
+      'device_id': 'd',
+    });
+  });
 }
