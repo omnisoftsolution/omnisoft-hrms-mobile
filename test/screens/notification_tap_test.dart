@@ -1,0 +1,284 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
+import 'package:omni_hr/models/notification_record.dart';
+import 'package:omni_hr/screens/notifications/notification_tap.dart';
+import 'package:omni_hr/services/notification_service.dart';
+import 'package:omni_hr/services/omni_mobile_api.dart';
+
+class _Bell extends NotificationService {
+  final List<int> marked = [];
+
+  @override
+  Future<void> refreshList() async {}
+
+  @override
+  Future<void> markRead(int id) async {
+    marked.add(id);
+  }
+}
+
+NotificationRecord _n(int id, String kind, {Map<String, dynamic> payload = const {}, bool answered = false}) =>
+    NotificationRecord(id: id, kind: kind, title: 'Notice $id', payload: payload, answered: answered);
+
+void main() {
+  group('handleNotificationTap (the bell handler, shared with push taps)', () {
+    late _Bell bell;
+    late List<String> taps;
+
+    setUp(() {
+      bell = _Bell();
+      taps = [];
+    });
+
+    Widget host(NotificationRecord n) => ChangeNotifierProvider<NotificationService>.value(
+      value: bell,
+      child: MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (ctx) => TextButton(
+              onPressed: () => handleNotificationTap(
+                ctx,
+                n,
+                targets: NotificationTapTargets(
+                  onLeaveTap: (id) => taps.add('leave:$id'),
+                  onExpenseTap: (id) => taps.add('expense:$id'),
+                  onApprovalTap: (id) => taps.add('approval:$id'),
+                  onMyDayTap: () => taps.add('myday'),
+                ),
+              ),
+              child: const Text('TAP'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    Future<void> tap(WidgetTester tester, NotificationRecord n) async {
+      await tester.pumpWidget(host(n));
+      await tester.tap(find.text('TAP'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('Approval needed opens the request', (tester) async {
+      await tap(tester, _n(11, 'leave_approval_requested', payload: const {'leave_id': 148}));
+      expect(bell.marked, [11]);
+      expect(taps, ['approval:148']);
+    });
+
+    testWidgets('a decision on my leave opens my leave', (tester) async {
+      await tap(tester, _n(12, 'leave_refused', payload: const {'leave_id': 9}));
+      expect(taps, ['leave:9']);
+    });
+
+    testWidgets('an expense decision opens Expenses', (tester) async {
+      await tap(tester, _n(13, 'expense_approved', payload: const {'expense_id': 3}));
+      expect(taps, ['expense:3']);
+    });
+
+    testWidgets('HR updated your attendance opens My day', (tester) async {
+      await tap(tester, _n(14, 'attendance_declaration_applied'));
+      expect(taps, ['myday']);
+    });
+
+    testWidgets('an announcement is only marked read', (tester) async {
+      await tap(tester, _n(15, 'announcement', payload: const {'announcement_id': 4}));
+      expect(bell.marked, [15]);
+      expect(taps, isEmpty);
+    });
+
+    testWidgets('an answered HR question says so', (tester) async {
+      await tap(tester, _n(16, 'attendance_query', answered: true));
+      expect(find.text('You already answered this question.'), findsOneWidget);
+    });
+  });
+
+  group('tapsThroughHandler', () {
+    test('kinds the bell handler routes, with their ids', () {
+      expect(tapsThroughHandler(_n(1, 'leave_approval_requested', payload: const {'leave_id': 1})), isTrue);
+      expect(tapsThroughHandler(_n(1, 'leave_approved', payload: const {'leave_id': 1})), isTrue);
+      expect(tapsThroughHandler(_n(1, 'leave_first_approved', payload: const {'leave_id': 1})), isTrue);
+      expect(tapsThroughHandler(_n(1, 'expense_refused', payload: const {'expense_id': 1})), isTrue);
+      expect(tapsThroughHandler(_n(1, 'attendance_query')), isTrue);
+      expect(tapsThroughHandler(_n(1, 'attendance_declaration_applied')), isTrue);
+    });
+
+    test('announcements, system notices and missing ids go to the bell', () {
+      expect(tapsThroughHandler(_n(1, 'announcement')), isFalse);
+      expect(tapsThroughHandler(_n(1, 'system', payload: const {'event': 'device_added'})), isFalse);
+      expect(tapsThroughHandler(_n(1, 'leave_approved')), isFalse);
+      expect(tapsThroughHandler(_n(1, 'expense_approved')), isFalse);
+    });
+  });
+
+  group('openPushTap (spec §6.4)', () {
+    late List<String> did;
+
+    setUp(() => did = []);
+
+    Future<void> open(
+      Map<String, dynamic> data,
+      Future<NotificationRecord> Function(int id) fetch, {
+      bool Function()? stillCurrent,
+    }) => openPushTap(
+      data,
+      fetch: fetch,
+      openHome: () async => did.add('home'),
+      openBell: () async => did.add('bell'),
+      runHandler: (n) async => did.add('handler ${n.id}'),
+      stillCurrent: stillCurrent,
+    );
+
+    Future<NotificationRecord> never(int id) => throw StateError('no fetch expected');
+
+    test('a reminder opens Home without a fetch', () async {
+      await open({'kind': 'remind_check_out', 'notification_id': ''}, never);
+      expect(did, ['home']);
+    });
+
+    test('a routable notice is fetched and runs the bell handler', () async {
+      await open(
+        {'kind': 'leave_approval_requested', 'notification_id': '41'},
+        (id) async => _n(id, 'leave_approval_requested', payload: const {'leave_id': 148}),
+      );
+      expect(did, ['handler 41']);
+    });
+
+    test('an announcement opens the bell', () async {
+      await open({'kind': 'announcement', 'notification_id': '42'}, (id) async => _n(id, 'announcement'));
+      expect(did, ['bell']);
+    });
+
+    test('404 not_found opens the bell', () async {
+      await open(
+        {'kind': 'leave_approved', 'notification_id': '43'},
+        (id) async => throw ApiException('not_found'),
+      );
+      expect(did, ['bell']);
+    });
+
+    test('no network opens the bell', () async {
+      await open(
+        {'kind': 'leave_approved', 'notification_id': '44'},
+        (id) async => throw ApiException('network_error'),
+      );
+      expect(did, ['bell']);
+    });
+
+    test('a notice without an id opens the bell', () async {
+      await open({'kind': 'leave_approved'}, never);
+      expect(did, ['bell']);
+    });
+
+    test('an answer for a session that ended (or got a new access token) '
+        'while it was fetched opens nothing', () async {
+      var current = true;
+      Future<NotificationRecord> Function(int id) endsWhile(
+        Future<NotificationRecord> Function(int id) answer,
+      ) => (id) async {
+        current = false;
+        return answer(id);
+      };
+      for (final fetch in [
+        endsWhile(
+          (id) async =>
+              _n(id, 'leave_approval_requested', payload: const {'leave_id': 1}),
+        ),
+        endsWhile((id) async => _n(id, 'announcement')),
+        endsWhile((id) async => throw ApiException('invalid_session')),
+      ]) {
+        current = true;
+        await open(
+          {'kind': 'leave_approved', 'notification_id': '45'},
+          fetch,
+          stillCurrent: () => current,
+        );
+      }
+      expect(did, isEmpty);
+    });
+
+    test('a current session routes as usual', () async {
+      await open(
+        {'kind': 'leave_approval_requested', 'notification_id': '46'},
+        (id) async => _n(id, 'leave_approval_requested', payload: const {'leave_id': 2}),
+        stillCurrent: () => true,
+      );
+      expect(did, ['handler 46']);
+    });
+  });
+
+  group('a push tap while Profile is open (spec §6.4)', () {
+    /// A page on the root navigator, as OmniAppBar opens Profile and the bell.
+    Route<void> page(String text) => MaterialPageRoute<void>(
+      builder: (_) => Scaffold(body: Text(text)),
+    );
+
+    testWidgets('popAbove closes Profile and the bell above the shell; the '
+        'tap then opens its target on the shell', (tester) async {
+      late BuildContext shell;
+      var opened = '';
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (ctx) {
+              shell = ctx;
+              return const Scaffold(body: Text('SHELL'));
+            },
+          ),
+        ),
+      );
+      final root = Navigator.of(shell, rootNavigator: true);
+      unawaited(root.push(page('PROFILE')));
+      unawaited(root.push(page('BELL')));
+      await tester.pumpAndSettle();
+      expect(find.text('BELL'), findsOneWidget);
+
+      // What HomeShell._openPushTap does: popAbove, then openPushTap.
+      popAbove(shell);
+      await openPushTap(
+        {'kind': 'remind_check_in', 'notification_id': ''},
+        fetch: (_) async => throw StateError('no fetch expected'),
+        openHome: () async => opened = 'home',
+        openBell: () async => opened = 'bell',
+        runHandler: (_) async => opened = 'handler',
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('PROFILE'), findsNothing);
+      expect(find.text('BELL'), findsNothing);
+      expect(find.text('SHELL'), findsOneWidget);
+      expect(opened, 'home');
+    });
+
+    testWidgets('pages below the shell stay; with the shell on top nothing '
+        'is popped', (tester) async {
+      late BuildContext shell;
+      await tester.pumpWidget(
+        const MaterialApp(home: Scaffold(body: Text('LOGIN'))),
+      );
+      final root = tester.state<NavigatorState>(find.byType(Navigator));
+      unawaited(
+        root.push(
+          MaterialPageRoute<void>(
+            builder: (ctx) {
+              shell = ctx;
+              return const Scaffold(body: Text('SHELL'));
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      popAbove(shell);
+      await tester.pumpAndSettle();
+      expect(find.text('SHELL'), findsOneWidget);
+      unawaited(root.push(page('PROFILE')));
+      await tester.pumpAndSettle();
+      popAbove(shell);
+      await tester.pumpAndSettle();
+      expect(find.text('PROFILE'), findsNothing);
+      expect(find.text('SHELL'), findsOneWidget);
+      expect(root.canPop(), isTrue);
+    });
+  });
+}

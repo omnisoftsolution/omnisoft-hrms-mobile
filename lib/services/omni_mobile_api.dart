@@ -375,9 +375,15 @@ class OmniMobileApi {
 
   /// One bell notice by id (a push tap, spec 2026-10-11 §6.4). Throws
   /// ApiException('not_found') when it is gone or not visible to the
-  /// session.
+  /// session. Quiet like the push routes below: PushService asks it on a
+  /// session snapshot and forwards invalid_session itself only while that
+  /// snapshot is the current session.
   Future<NotificationRecord> notificationGet(int id) async {
-    final data = await _post('/notifications/get', {'id': id});
+    final data = await _send(
+      '/notifications/get',
+      {'id': id},
+      fireHooks: false,
+    );
     final n = data['notification'];
     if (n is! Map) throw ApiException('not_found', data: data);
     return NotificationRecord.fromJson(Map<String, dynamic>.from(n));

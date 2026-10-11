@@ -66,12 +66,14 @@ void main() {
     expect(signedOut, 0);
   });
 
-  test('register and the prefs routes leave invalid_session to PushService '
-      '(it signs out only for the current session)', () async {
+  test('register, the prefs routes and notifications/get leave '
+      'invalid_session to PushService (it signs out only for the current '
+      'session)', () async {
     final calls = <Future<Object?> Function()>[
       () => api().pushRegister('fcm-1', 'android'),
       () => api().pushPrefsGet(),
       () => api().pushPrefsSet(['news']),
+      () => api().notificationGet(41),
     ];
     for (final call in calls) {
       await expectLater(
@@ -96,7 +98,7 @@ void main() {
     await expectLater(
       withServer(
         (_) async => json({'success': false, 'error': 'invalid_session'}, 401),
-        () => api().notificationGet(41),
+        () => api().markNotificationsRead(ids: [41]),
       ),
       throwsA(isA<ApiException>()),
     );

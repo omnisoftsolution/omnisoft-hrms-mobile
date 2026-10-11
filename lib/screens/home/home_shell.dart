@@ -9,6 +9,8 @@ import '../approvals/approval_detail_screen.dart';
 import '../expenses/expenses_screen.dart';
 import '../history/history_shell.dart';
 import '../leave/leave_screen.dart';
+import '../notifications/notification_tap.dart';
+import '../notifications/notifications_screen.dart';
 import '../../core/theme.dart';
 import '../../models/notification_record.dart';
 import '../../services/face_recognition_service.dart';
@@ -141,7 +143,8 @@ class HomeShellState extends State<HomeShell> {
   }
 
   /// What PushService handed over: a reminder that arrived while the app
-  /// is open becomes a snackbar whose "Open" goes Home (spec §6.4).
+  /// is open becomes a snackbar whose "Open" goes Home; a tap on a system
+  /// notification is opened (spec §6.4).
   void _onPushChange() {
     final push = _push;
     if (push == null || !mounted) return;
@@ -157,6 +160,40 @@ class HomeShellState extends State<HomeShell> {
           ),
         );
     }
+    final tap = push.consumePendingTap();
+    if (tap != null) unawaited(_openPushTap(push, tap));
+  }
+
+  /// A push tap: reminders → Home; notices → `notifications/get` (on the
+  /// push session snapshot) → the bell's handler run from the Home tab
+  /// (under this shell's messenger), else the bell. Whatever covers the
+  /// tabs (Profile, Payslips, the bell, the explainer — root-navigator
+  /// pages) is closed first. An answer that comes back after a sign-out or
+  /// a new access token, or after this shell is gone, opens nothing.
+  Future<void> _openPushTap(PushService push, Map<String, dynamic> data) {
+    final current = push.sessionStillCurrent();
+    popAbove(context);
+    return openPushTap(
+      data,
+      fetch: push.fetchNotice,
+      openHome: navigateToMyDay,
+      openBell: openNotifications,
+      stillCurrent: () => mounted && current(),
+      runHandler: (n) async {
+        final ctx = _myDayKey.currentContext;
+        if (ctx == null || !ctx.mounted) return openNotifications();
+        await handleNotificationTap(
+          ctx,
+          n,
+          targets: NotificationTapTargets(
+            onLeaveTap: navigateToLeave,
+            onExpenseTap: navigateToExpense,
+            onApprovalTap: navigateToApproval,
+            onMyDayTap: navigateToMyDay,
+          ),
+        );
+      },
+    );
   }
 
   void _onTabTap(int i) {
@@ -239,6 +276,35 @@ class HomeShellState extends State<HomeShell> {
     if (_index != 0) setState(() => _index = 0);
     await WidgetsBinding.instance.endOfFrame;
     await _myDayKey.currentState?.refresh();
+  }
+
+  /// The bell, on the root navigator above the tabs. A routable tap pops
+  /// it and lets this shell switch tab. Opened by the AppBar bell and by a
+  /// push tap whose notice has nowhere else to go (spec 2026-10-11 §6.4).
+  Future<void> openNotifications() async {
+    final nav = Navigator.of(context, rootNavigator: true);
+    await nav.push(
+      MaterialPageRoute(
+        builder: (_) => NotificationsScreen(
+          onLeaveTap: (leaveId) async {
+            nav.pop();
+            await navigateToLeave(leaveId);
+          },
+          onExpenseTap: (expenseId) async {
+            nav.pop();
+            await navigateToExpense(expenseId);
+          },
+          onApprovalTap: (leaveId) async {
+            nav.pop();
+            await navigateToApproval(leaveId);
+          },
+          onMyDayTap: () async {
+            nav.pop();
+            await navigateToMyDay();
+          },
+        ),
+      ),
+    );
   }
 
   /// Wraps the given root screen in its own Navigator so that pushes

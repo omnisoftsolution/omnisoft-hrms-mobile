@@ -125,6 +125,9 @@ class PushApiLog {
   final List<String?> prefsSetTokens = [];
   final Map<int, NotificationRecord> notices = {};
   Object? noticeError;
+
+  /// The next notifications/get waits for it after it was sent (used once).
+  Completer<void>? noticeGate;
 }
 
 class FakePushApi extends OmniMobileApi {
@@ -182,7 +185,10 @@ class FakePushApi extends OmniMobileApi {
 
   @override
   Future<NotificationRecord> notificationGet(int id) async {
-    log.calls.add('notifications/get $id');
+    log.calls.add('notifications/get $id $baseUrl $token');
+    final gate = log.noticeGate;
+    log.noticeGate = null;
+    if (gate != null) await gate.future;
     final e = log.noticeError;
     if (e != null) throw e;
     final n = log.notices[id];

@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/push_groups.dart';
+import '../models/notification_record.dart';
 import '../models/push_prefs.dart';
 import 'notification_service.dart';
 import 'omni_mobile_api.dart';
@@ -172,6 +173,7 @@ class PushService extends ChangeNotifier {
   Future<void>? _teardown;
   PushPrefs? _prefs;
   List<PushArrival> _arrivals = const [];
+  Map<String, dynamic>? _pendingTap;
 
   /// Firebase came up. False: every push feature is off on this run.
   bool get enabled => _messaging != null;
@@ -183,8 +185,9 @@ class PushService extends ChangeNotifier {
   /// The tenant sends pushes: gates Profile → Notifications (§6.6).
   bool get available => _prefs?.pushAvailable == true;
 
-  /// Android channels, the FCM token stream and foreground messages. Call
-  /// once at start-up, after [onSignedIn].
+  /// Android channels, the FCM token stream, foreground messages and taps
+  /// (including the one that launched the app). Call once at start-up,
+  /// after [onSignedIn].
   Future<void> init() async {
     final m = _messaging;
     if (m == null) return;
@@ -206,6 +209,13 @@ class PushService extends ChangeNotifier {
         ),
       ),
     );
+    _subs.add(m.onMessageOpenedApp.listen((msg) => handleTap(msg.data)));
+    try {
+      final initial = await m.getInitialMessage();
+      if (initial != null) handleTap(initial.data);
+    } catch (_) {
+      // No launch message: nothing to open.
+    }
   }
 
   /// Attaches the app's session (synchronously, before the first await)
@@ -387,6 +397,7 @@ class PushService extends ChangeNotifier {
     _registered = null;
     _settled = false;
     _arrivals = const [];
+    _pendingTap = null;
     if (_prefs != null) {
       _prefs = null;
       notifyListeners();
@@ -494,6 +505,57 @@ class PushService extends ChangeNotifier {
     final a = _arrivals;
     _arrivals = const [];
     return a;
+  }
+
+  /// A tap on a system notification (app in the background or closed).
+  /// This tenant's pushes wait for HomeShell ([consumePendingTap]); another
+  /// tenant's push only opens the app (spec §6.4). Signed out, or while a
+  /// sign-out runs, the tap only opens the app.
+  void handleTap(Map<String, dynamic> data) {
+    final s = _session;
+    if (s == null ||
+        !s.isLoggedIn ||
+        _current == null ||
+        !isForThisTenant(data, s.companyCode)) {
+      return;
+    }
+    _pendingTap = Map<String, dynamic>.of(data);
+    notifyListeners();
+  }
+
+  /// The tap HomeShell has not opened yet, once.
+  Map<String, dynamic>? consumePendingTap() {
+    final t = _pendingTap;
+    _pendingTap = null;
+    return t;
+  }
+
+  /// The tapped notice from `notifications/get` (throws on 404 / network),
+  /// asked of the signed-in session's snapshot. The route is quiet: an
+  /// invalid_session answer signs out only while that snapshot is still
+  /// the current session.
+  Future<NotificationRecord> fetchNotice(int id) async {
+    final target = _current;
+    if (target == null) throw ApiException('invalid_session');
+    final gen = _generation;
+    try {
+      return await _apiBuilder(
+        target,
+      ).notificationGet(id).timeout(const Duration(seconds: 10));
+    } catch (e) {
+      _forwardInvalidSession(e, gen);
+      rethrow;
+    }
+  }
+
+  /// A check that stays true while the session signed in now is still the
+  /// app's: false after a sign-out or a new access token. HomeShell asks it
+  /// when a push tap's `notifications/get` is back, so an answer for an
+  /// older session routes nowhere.
+  bool Function() sessionStillCurrent() {
+    final gen = _generation;
+    final signedIn = _current != null;
+    return () => signedIn && gen == _generation;
   }
 
   @override
