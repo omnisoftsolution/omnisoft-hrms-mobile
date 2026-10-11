@@ -4,6 +4,7 @@ import 'dart:ui' show DartPluginRegistrant;
 import 'package:firebase_core/firebase_core.dart' show FirebaseException;
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/push_groups.dart';
@@ -90,6 +91,11 @@ typedef PushApiBuilder = OmniMobileApi Function(PushTarget target);
 OmniMobileApi _targetApi(PushTarget t) =>
     OmniMobileApi(baseUrl: t.baseUrl, db: t.db, token: t.token);
 
+/// The app's page in the phone's settings (same call as the QR scanner).
+Future<void> _openAppSettings() async {
+  await Geolocator.openAppSettings();
+}
+
 /// Push notifications on this phone (spec 2026-10-11 §6): the FCM token's
 /// life on the tenant session (§6.3) and the user's mutes (§6.6).
 ///
@@ -102,6 +108,7 @@ class PushService extends ChangeNotifier {
     PushApiBuilder? apiBuilder,
     NotificationService? notifications,
     String? platform,
+    Future<void> Function()? openSettings,
     List<Duration> apnsRetryDelays = const [
       Duration(seconds: 2),
       Duration(seconds: 3),
@@ -116,9 +123,13 @@ class PushService extends ChangeNotifier {
        _platform =
            platform ??
            (defaultTargetPlatform == TargetPlatform.iOS ? 'ios' : 'android'),
+       _openSettings = openSettings ?? _openAppSettings,
        _apnsRetryDelays = apnsRetryDelays,
        _callTimeout = callTimeout,
        _signOutCap = signOutCap;
+
+  /// prefs: Home's explainer was shown on this phone (spec §6.2: once).
+  static const explainerSeenKey = 'push_explainer_seen';
 
   final PushMessaging? _messaging;
   final PushNative _native;
@@ -138,6 +149,7 @@ class PushService extends ChangeNotifier {
 
   /// The bell; a notice arriving in the foreground re-polls it.
   final NotificationService? _notifications;
+  final Future<void> Function() _openSettings;
 
   SessionService? _session;
 
@@ -174,6 +186,11 @@ class PushService extends ChangeNotifier {
   PushPrefs? _prefs;
   List<PushArrival> _arrivals = const [];
   Map<String, dynamic>? _pendingTap;
+  bool _explainerDue = false;
+
+  /// One `push/prefs/set` at a time (it replaces all mutes): the next one
+  /// starts when this one has finished, failed or not.
+  Future<void> _lastSave = Future<void>.value();
 
   /// Firebase came up. False: every push feature is off on this run.
   bool get enabled => _messaging != null;
@@ -274,6 +291,7 @@ class PushService extends ChangeNotifier {
     if (identical(_inFlight, run)) _inFlight = null;
     if (gen != _generation) return;
     await refreshPrefs();
+    await _checkExplainer();
   }
 
   Future<void> _registerOnce(
@@ -556,6 +574,126 @@ class PushService extends ChangeNotifier {
     final gen = _generation;
     final signedIn = _current != null;
     return () => signedIn && gen == _generation;
+  }
+
+  /// What the phone allows (spec §6.2). firebase_messaging 16.7.0 on
+  /// Android 13+: notDetermined = never asked; denied = refused, but the
+  /// system prompt may be shown again; deniedPermanently = only the phone's
+  /// settings can turn it on. On iOS denied always means the settings.
+  Future<PushPermission> permission() async {
+    final status = await _status();
+    if (status == null) return PushPermission.denied;
+    return switch (status) {
+      AuthorizationStatus.authorized ||
+      AuthorizationStatus.provisional => PushPermission.granted,
+      AuthorizationStatus.notDetermined => PushPermission.notAsked,
+      AuthorizationStatus.denied =>
+        _platform == 'ios' ? PushPermission.denied : PushPermission.notAsked,
+      AuthorizationStatus.deniedPermanently => PushPermission.denied,
+    };
+  }
+
+  /// The system's answer; null without Firebase or when it cannot say.
+  Future<AuthorizationStatus?> _status() async {
+    final m = _messaging;
+    if (m == null) return null;
+    try {
+      return await m.authorizationStatus();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// The system prompt (Android 13+: POST_NOTIFICATIONS). Only the
+  /// explainer's Turn on and Profile → Notifications call it.
+  Future<PushPermission> requestPermission() async {
+    final m = _messaging;
+    if (m == null) return PushPermission.denied;
+    try {
+      await m.requestPermission();
+    } catch (_) {
+      // Reported through permission() below.
+    }
+    return permission();
+  }
+
+  /// The app's page in the phone's settings (after a refusal).
+  Future<void> openSystemSettings() async {
+    try {
+      await _openSettings();
+    } catch (_) {
+      // Nothing else to offer.
+    }
+  }
+
+  /// `push/prefs/set` (spec §4.1): replaces the user's mutes. Throws on
+  /// failure so Profile → Notifications can put the switch back. Saves run
+  /// one at a time in call order, so a slow earlier save can never land
+  /// after a later one and undo it. The session, its generation and a copy
+  /// of the mutes are captured when the save is asked for, not when it
+  /// runs: a save still waiting in the queue when the person signs out is
+  /// dropped, never sent with the next account's token.
+  Future<PushPrefs> savePrefs(Set<String> muted) {
+    final target = _current;
+    final gen = _generation;
+    final copy = Set<String>.of(muted);
+    final run = _lastSave.then((_) => _savePrefs(target, gen, copy));
+    _lastSave = run.then<void>((_) {}, onError: (Object _) {});
+    return run;
+  }
+
+  Future<PushPrefs> _savePrefs(
+    PushTarget? target,
+    int gen,
+    Set<String> muted,
+  ) async {
+    if (target == null || gen != _generation) {
+      throw ApiException('invalid_session');
+    }
+    final PushPrefs saved;
+    try {
+      saved = await _apiBuilder(target).pushPrefsSet(muted.toList()..sort());
+    } catch (e) {
+      // The route is quiet: sign out only if this is still the session.
+      _forwardInvalidSession(e, gen);
+      rethrow;
+    }
+    // Signed out meanwhile: not the current session's prefs.
+    if (gen == _generation) {
+      _prefs = saved;
+      notifyListeners();
+    }
+    return saved;
+  }
+
+  /// Home's explainer (spec §6.2): once per phone, only when the tenant
+  /// sends pushes and the phone was never asked (notDetermined — on
+  /// Android 13+ "denied" means the prompt was already shown).
+  Future<bool> shouldShowExplainer() async {
+    if (!enabled || !available) return false;
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool(explainerSeenKey) ?? false) return false;
+    return await _status() == AuthorizationStatus.notDetermined;
+  }
+
+  Future<void> _checkExplainer() async {
+    if (_explainerDue) return;
+    if (await shouldShowExplainer()) {
+      _explainerDue = true;
+      notifyListeners();
+    }
+  }
+
+  /// HomeShell shows the explainer when this answers true (once).
+  bool consumeExplainerDue() {
+    final due = _explainerDue;
+    _explainerDue = false;
+    return due;
+  }
+
+  Future<void> markExplainerSeen() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(explainerSeenKey, true);
   }
 
   @override

@@ -17,6 +17,7 @@ import '../../services/face_recognition_service.dart';
 import '../../services/holiday_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/push_service.dart';
+import '../../widgets/push_explainer_card.dart';
 import '../../services/session_service.dart';
 
 class HomeShell extends StatefulWidget {
@@ -162,6 +163,8 @@ class HomeShellState extends State<HomeShell> {
     }
     final tap = push.consumePendingTap();
     if (tap != null) unawaited(_openPushTap(push, tap));
+    // Home's one-time explainer (spec §6.2).
+    if (push.consumeExplainerDue()) unawaited(showPushExplainer(context, push));
   }
 
   /// A push tap: reminders → Home; notices → `notifications/get` (on the

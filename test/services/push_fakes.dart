@@ -237,6 +237,7 @@ PushService pushService({
   FakeNative? pushNative,
   NotificationService? notifications,
   String platform = 'android',
+  Future<void> Function()? openSettings,
   List<Duration> apnsRetryDelays = const [
     Duration.zero,
     Duration.zero,
@@ -251,6 +252,7 @@ PushService pushService({
       FakePushApi(log, baseUrl: t.baseUrl, db: t.db, token: t.token),
   notifications: notifications,
   platform: platform,
+  openSettings: openSettings ?? () async {},
   apnsRetryDelays: apnsRetryDelays,
   callTimeout: callTimeout,
   signOutCap: signOutCap,
