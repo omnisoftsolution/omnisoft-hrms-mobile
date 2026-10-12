@@ -690,7 +690,48 @@ class SessionService extends ChangeNotifier {
     String? employeeTimeOffApprover,
     String? employeeAttendanceApprover,
     String? employeeExpenseApprover,
-  }) => _persisting(() async {
+  }) => _persisting(() => _writeEmployeeFromMe(
+        userId: userId,
+        userLogin: userLogin,
+        userName: userName,
+        employeeId: employeeId,
+        employeeName: employeeName,
+        employeeAvatarB64: employeeAvatarB64,
+        employeeJobTitle: employeeJobTitle,
+        employeeJobPosition: employeeJobPosition,
+        employeeDepartment: employeeDepartment,
+        employeeManager: employeeManager,
+        employeeWorkEmail: employeeWorkEmail,
+        employeeWorkPhone: employeeWorkPhone,
+        employeeCompanyName: employeeCompanyName,
+        employeeCompanyLogoB64: employeeCompanyLogoB64,
+        employeeHrApprover: employeeHrApprover,
+        employeeTimeOffApprover: employeeTimeOffApprover,
+        employeeAttendanceApprover: employeeAttendanceApprover,
+        employeeExpenseApprover: employeeExpenseApprover,
+      ));
+
+  /// [updateEmployeeFromMe] for a caller already holding the lock.
+  Future<void> _writeEmployeeFromMe({
+    int? userId,
+    String? userLogin,
+    String? userName,
+    int? employeeId,
+    String? employeeName,
+    String? employeeAvatarB64,
+    String? employeeJobTitle,
+    String? employeeJobPosition,
+    String? employeeDepartment,
+    String? employeeManager,
+    String? employeeWorkEmail,
+    String? employeeWorkPhone,
+    String? employeeCompanyName,
+    String? employeeCompanyLogoB64,
+    String? employeeHrApprover,
+    String? employeeTimeOffApprover,
+    String? employeeAttendanceApprover,
+    String? employeeExpenseApprover,
+  }) async {
     final prefs = await SharedPreferences.getInstance();
     if (userId != null && userId > 0) {
       _userId = userId;
@@ -769,14 +810,11 @@ class SessionService extends ChangeNotifier {
           _keyEmployeeExpenseApprover, employeeExpenseApprover);
     }
     notifyListeners();
-  });
+  }
 
   /// `employee.attendance_kiosk_only` from a /login or /me body. A
-  /// missing key (connector before 2.51.0) reads as false.
-  Future<void> _saveAttendanceKioskOnly(Map<String, dynamic> employee) =>
-      _persisting(() => _writeAttendanceKioskOnly(employee));
-
-  /// [_saveAttendanceKioskOnly] for a caller already holding the lock.
+  /// missing key (connector before 2.51.0) reads as false. The caller
+  /// holds the persistence lock.
   Future<void> _writeAttendanceKioskOnly(Map<String, dynamic> employee) async {
     final value = employee['attendance_kiosk_only'] == true;
     final changed = value != _attendanceKioskOnly;
@@ -1031,42 +1069,45 @@ class SessionService extends ChangeNotifier {
     final signOuts = _signOutsStarted;
     try {
       final res = await api.me();
-      // A sign-out or another sign-in (or a new access token) while this
-      // was on the wire: the answer belongs to that older session, and
-      // storing it would give its profile and approvals count to the
-      // session signed in now. Dropped; the next refresh asks again.
-      if (_authEpoch != epoch || _signOutsStarted != signOuts) {
-        _lastMeRefresh = null;
-        return false;
-      }
       final user = res['user'] as Map<String, dynamic>? ?? {};
       final employee = res['employee'] as Map<String, dynamic>? ?? {};
-      await updateEmployeeFromMe(
-        userId: (user['id'] as num?)?.toInt(),
-        userLogin: user['login']?.toString(),
-        userName: user['name']?.toString(),
-        employeeId: (employee['id'] as num?)?.toInt(),
-        employeeName: employee['name']?.toString(),
-        employeeAvatarB64: employee['avatar_b64']?.toString(),
-        employeeJobTitle: employee['job_title']?.toString(),
-        employeeJobPosition: employee['job_position']?.toString(),
-        employeeDepartment: employee['department_name']?.toString(),
-        employeeManager: employee['manager_name']?.toString(),
-        employeeWorkEmail: employee['work_email']?.toString(),
-        employeeWorkPhone: employee['work_phone']?.toString(),
-        employeeCompanyName: employee['company_name']?.toString(),
-        employeeCompanyLogoB64: employee['company_logo_b64']?.toString(),
-        employeeHrApprover: employee['hr_approver_name']?.toString(),
-        employeeTimeOffApprover:
-            employee['time_off_approver_name']?.toString(),
-        employeeAttendanceApprover:
-            employee['attendance_approver_name']?.toString(),
-        employeeExpenseApprover: employee['expense_approver_name']?.toString(),
-      );
-      await updateLeaveApprovalsFromMe(res);
-      await _saveAttendanceKioskOnly(employee);
-      await updateFromMe(res);
-      return true;
+      // One locked store, checked inside the lock: a sign-out or another
+      // sign-in (or a new access token) that started while this was on the
+      // wire, or before the lock was ours, means the answer belongs to that
+      // older session — storing it would give its profile and approvals
+      // count to the session signed in now. Dropped; the next refresh asks
+      // again. A sign-out that starts later queues its wipe behind this.
+      final stored = await _persisting(() async {
+        if (_authEpoch != epoch || _signOutsStarted != signOuts) return false;
+        await _writeEmployeeFromMe(
+          userId: (user['id'] as num?)?.toInt(),
+          userLogin: user['login']?.toString(),
+          userName: user['name']?.toString(),
+          employeeId: (employee['id'] as num?)?.toInt(),
+          employeeName: employee['name']?.toString(),
+          employeeAvatarB64: employee['avatar_b64']?.toString(),
+          employeeJobTitle: employee['job_title']?.toString(),
+          employeeJobPosition: employee['job_position']?.toString(),
+          employeeDepartment: employee['department_name']?.toString(),
+          employeeManager: employee['manager_name']?.toString(),
+          employeeWorkEmail: employee['work_email']?.toString(),
+          employeeWorkPhone: employee['work_phone']?.toString(),
+          employeeCompanyName: employee['company_name']?.toString(),
+          employeeCompanyLogoB64: employee['company_logo_b64']?.toString(),
+          employeeHrApprover: employee['hr_approver_name']?.toString(),
+          employeeTimeOffApprover:
+              employee['time_off_approver_name']?.toString(),
+          employeeAttendanceApprover:
+              employee['attendance_approver_name']?.toString(),
+          employeeExpenseApprover: employee['expense_approver_name']?.toString(),
+        );
+        await _writeLeaveApprovalsFromMe(res);
+        await _writeAttendanceKioskOnly(employee);
+        await _writeFromMe(res);
+        return true;
+      });
+      if (!stored) _lastMeRefresh = null;
+      return stored;
     } catch (_) {
       // A failed /me must not hold off the next refreshMeIfStale.
       _lastMeRefresh = null;
@@ -1078,7 +1119,11 @@ class SessionService extends ChangeNotifier {
   /// No-op when the map lacks `auth_source` — a legacy connector that
   /// predates App Identity never sends it, so `supportsIdentity` must
   /// stay whatever it already was rather than flipping to false.
-  Future<void> updateFromMe(Map<String, dynamic> me) => _persisting(() async {
+  Future<void> updateFromMe(Map<String, dynamic> me) =>
+      _persisting(() => _writeFromMe(me));
+
+  /// [updateFromMe] for a caller already holding the lock.
+  Future<void> _writeFromMe(Map<String, dynamic> me) async {
     if (!me.containsKey('auth_source')) return;
     _authSource = me['auth_source']?.toString() ?? '';
     _deviceLabel = _labelOf(me);
@@ -1087,7 +1132,7 @@ class SessionService extends ChangeNotifier {
     await prefs.setString(_kDeviceLabel, _deviceLabel);
     if (_authSource.isNotEmpty) await _markIdentityCapable(prefs);
     notifyListeners();
-  });
+  }
 
   /// Store the `leave_approvals` block of a raw `/me` response:
   /// `{enabled: bool, pending_count: int}`. A response without the key
@@ -1095,7 +1140,11 @@ class SessionService extends ChangeNotifier {
   /// approver": disabled, count 0. Unlike [updateFromMe] this does not
   /// keep the old value when the key is missing, because a missing key
   /// is the old connector's way of saying there is nothing to approve.
-  Future<void> updateLeaveApprovalsFromMe(Map<String, dynamic> me) => _persisting(() async {
+  Future<void> updateLeaveApprovalsFromMe(Map<String, dynamic> me) =>
+      _persisting(() => _writeLeaveApprovalsFromMe(me));
+
+  /// [updateLeaveApprovalsFromMe] for a caller already holding the lock.
+  Future<void> _writeLeaveApprovalsFromMe(Map<String, dynamic> me) async {
     final raw = me['leave_approvals'];
     var enabled = false;
     var count = 0;
@@ -1112,7 +1161,7 @@ class SessionService extends ChangeNotifier {
     await prefs.setBool(_kLeaveApprovalsEnabled, enabled);
     await prefs.setInt(_kLeaveApprovalsPendingCount, count);
     if (changed) notifyListeners();
-  });
+  }
 
   /// `device.label` from a /login or /me body. Odoo serialises an empty
   /// Char as `false`, which must read as '' (not the string "false").
