@@ -131,7 +131,11 @@ class HomeShellState extends State<HomeShell> {
       messenger,
       _arrivalSnack,
       fresh.id,
-      notificationArrivalSnackBar(fresh, onAction: () => _openArrival(fresh)),
+      (wrap) => notificationArrivalSnackBar(
+        fresh,
+        onAction: () => _openArrival(fresh),
+        wrapContent: wrap,
+      ),
     );
   }
 
@@ -501,6 +505,7 @@ bool refreshesApprovals(Iterable<NotificationRecord> arrivals) =>
 SnackBar notificationArrivalSnackBar(
   NotificationRecord fresh, {
   required VoidCallback onAction,
+  Widget Function(Widget content)? wrapContent,
 }) => SnackBar(
   backgroundColor: AppTheme.primary,
   // Flutter 3.44 keeps a bar with an action until it is tapped (persist
@@ -511,7 +516,7 @@ SnackBar notificationArrivalSnackBar(
   behavior: SnackBarBehavior.floating,
   margin: const EdgeInsets.all(16),
   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-  content: Row(
+  content: (wrapContent ?? (Widget w) => w)(Row(
     children: [
       const Icon(
         Icons.notifications_active_rounded,
@@ -546,7 +551,7 @@ SnackBar notificationArrivalSnackBar(
         ),
       ),
     ],
-  ),
+  )),
   action: fresh.snackActionLabel != null
       ? SnackBarAction(
           label: fresh.snackActionLabel!,
