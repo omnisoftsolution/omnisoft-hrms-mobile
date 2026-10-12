@@ -11,7 +11,13 @@ import 'session_service.dart';
 /// signed in, and `stop()` from its dispose. Logout flows that drop
 /// the session also call `stop()`.
 class NotificationService extends ChangeNotifier {
+  NotificationService({OmniMobileApi Function(SessionService session)? apiFor})
+      : _apiFor = apiFor;
+
   static const Duration _pollInterval = Duration(seconds: 60);
+
+  /// Tests hand in a fake server; the app builds the real API.
+  final OmniMobileApi Function(SessionService session)? _apiFor;
 
   Timer? _timer;
   SessionService? _session;
@@ -28,6 +34,15 @@ class NotificationService extends ChangeNotifier {
   // checked for leave decisions / approval requests.
   List<NotificationRecord> _freshArrivals = const [];
   int _pollsSinceStart = 0;
+  // Notices a push tap opened (F1): never handed over as an arrival.
+  final Set<int> _suppressed = {};
+  // A poll saw the unread count drop (F3), not consumed by HomeShell yet.
+  bool _unreadDrop = false;
+  // The last list reload failed: the next poll reloads it again.
+  bool _listStale = false;
+  // Moves on stop(): an answer that lands after it belongs to the old
+  // session and is dropped.
+  int _gen = 0;
 
   int get unreadCount => _unreadCount;
   List<NotificationRecord> get items => _items;
@@ -45,6 +60,27 @@ class NotificationService extends ChangeNotifier {
     return f;
   }
 
+  /// A push tap opened notice [id] (F1): it is never handed over as an
+  /// arrival (the user is looking at it), and is dropped from the queue
+  /// when a poll already queued it. A snackbar already on screen for it
+  /// is HomeShell's to hide (ArrivalSnackTracker).
+  void suppressArrival(int id) {
+    _suppressed.add(id);
+    if (_freshArrivals.any((n) => n.id == id)) {
+      _freshArrivals = _freshArrivals.where((n) => n.id != id).toList();
+    }
+  }
+
+  /// True, once, after a poll saw the unread count drop: something was
+  /// read or closed elsewhere (another phone, or a request someone else
+  /// decided — F3). The list was reloaded already; HomeShell re-pulls the
+  /// approvals count.
+  bool consumeUnreadDrop() {
+    final d = _unreadDrop;
+    _unreadDrop = false;
+    return d;
+  }
+
   /// Queue the new arrivals in [items] (the server's list, newest
   /// first) after the unread count went up by [increase]: the unread
   /// items newer than anything already queued, at most [increase] of
@@ -53,9 +89,14 @@ class NotificationService extends ChangeNotifier {
   @visibleForTesting
   void queueArrivals(List<NotificationRecord> items, {required int increase}) {
     final fresh = <NotificationRecord>[];
+    var taken = 0;
     for (final n in items) {
-      if (fresh.length >= increase) break;
-      if (!n.read && n.id > _maxAnnouncedId) fresh.add(n);
+      if (taken >= increase) break;
+      if (n.read || n.id <= _maxAnnouncedId) continue;
+      // A suppressed notice still counts as one of the new ones (F1), so
+      // an older unread item does not take its place.
+      taken++;
+      if (!_suppressed.contains(n.id)) fresh.add(n);
     }
     if (fresh.isEmpty) return;
     _maxAnnouncedId = fresh.first.id;
@@ -66,6 +107,8 @@ class NotificationService extends ChangeNotifier {
   OmniMobileApi? _api() {
     final s = _session;
     if (s == null || !s.isLoggedIn) return null;
+    final apiFor = _apiFor;
+    if (apiFor != null) return apiFor(s);
     return OmniMobileApi(baseUrl: s.clientUrl, db: s.clientDb, token: s.token);
   }
 
@@ -87,6 +130,11 @@ class NotificationService extends ChangeNotifier {
     _maxAnnouncedId = 0;
     _freshArrivals = const [];
     _pollsSinceStart = 0;
+    _suppressed.clear();
+    _unreadDrop = false;
+    _listStale = false;
+    _busy = false;
+    _gen++;
     // Intentionally NOT calling notifyListeners() — this method is
     // only invoked from HomeShell.dispose(), at which point Flutter
     // is mid-finalizeTree (locked) and any rebuild request crashes a
@@ -95,17 +143,27 @@ class NotificationService extends ChangeNotifier {
     // so a notification here adds nothing useful anyway.
   }
 
+  /// Re-poll now: a push arrived while the app is open (spec 2026-10-11
+  /// §6.4). Same path as the 60 s timer, so the arrival snackbar follows.
+  /// Does nothing before [start]. True only when a fresh unread count was
+  /// fetched (false before [start], signed out or offline): the iOS badge
+  /// is set from [unreadCount] only then.
+  Future<bool> refreshNow() => _refreshUnread();
+
   /// Lightweight unread-count probe used by the periodic timer.
   /// When the unread count *increases* after we've already polled at
   /// least once, fetches the full list and queues the freshest unread
-  /// item for the HomeShell snackbar listener.
-  Future<void> _refreshUnread() async {
+  /// item for the HomeShell snackbar listener. True when the count came.
+  Future<bool> _refreshUnread() async {
     final api = _api();
-    if (api == null) return;
+    if (api == null) return false;
+    final gen = _gen;
     try {
       final c = await api.getUnreadNotificationCount();
+      if (gen != _gen) return false; // signed out meanwhile
       _pollsSinceStart++;
       final increased = c > _unreadCount && _pollsSinceStart > 1;
+      final dropped = c < _unreadCount && _pollsSinceStart > 1;
       final increase = c - _unreadCount;
       if (c != _unreadCount) {
         _unreadCount = c;
@@ -115,11 +173,24 @@ class NotificationService extends ChangeNotifier {
         // Need the actual record(s) for the snackbar title — just-saw
         // a count bump is not enough.
         await refreshList();
+        if (gen != _gen) return false; // signed out meanwhile
         // The server orders DESC: the first unread items are the new ones.
         queueArrivals(_items, increase: increase);
+      } else if (dropped || _listStale) {
+        // Read or closed elsewhere (F3): an open bell list shows the new
+        // read state, and HomeShell re-pulls the approvals count. A list
+        // reload that failed earlier is retried here too.
+        await refreshList();
+        if (gen != _gen) return false;
+        if (dropped) {
+          _unreadDrop = true;
+          notifyListeners();
+        }
       }
+      return true;
     } catch (_) {
       // ignore — keep old count
+      return false;
     }
   }
 
@@ -129,18 +200,25 @@ class NotificationService extends ChangeNotifier {
   Future<void> refreshList() async {
     final api = _api();
     if (api == null) return;
+    final gen = _gen;
     _busy = true;
     _lastError = null;
     notifyListeners();
     try {
       final list = await api.getNotifications();
+      if (gen != _gen) return; // signed out meanwhile: not this session's
       _items = list;
       _unreadCount = list.where((n) => !n.read).length;
+      _listStale = false;
     } catch (e) {
+      if (gen != _gen) return;
       _lastError = e.toString();
+      _listStale = true;
     } finally {
-      _busy = false;
-      notifyListeners();
+      if (gen == _gen) {
+        _busy = false;
+        notifyListeners();
+      }
     }
   }
 

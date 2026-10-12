@@ -11,6 +11,7 @@ import '../../core/theme.dart';
 import '../../services/biometric_auth_service.dart';
 import '../../services/face_recognition_service.dart';
 import '../../services/omni_mobile_api.dart';
+import '../../services/push_service.dart';
 import '../../services/device_service.dart';
 import '../../services/session_service.dart';
 import '../../widgets/employee_avatar.dart';
@@ -21,6 +22,7 @@ import '../login/login_screen.dart';
 import '../payroll/payslips_screen.dart';
 import '../face_scan/face_enrollment_screen.dart';
 import 'delete_account_screen.dart';
+import 'notification_settings_screen.dart';
 
 /// Employee profile screen — reached from the avatar in OmniAppBar.
 /// Hero avatar + identity, then face enrollment, payslips (gated by
@@ -33,6 +35,8 @@ class ProfileScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final session = context.watch<SessionService>();
     final face = context.watch<FaceRecognitionService>();
+    // Profile → Notifications only when the tenant sends pushes (§6.6).
+    final push = context.watch<PushService>();
     return Scaffold(
       appBar: AppBar(
         title: const Text('Profile'),
@@ -64,6 +68,10 @@ class ProfileScreen extends StatelessWidget {
           // viewing is the primary reason most users open Profile.
           const SizedBox(height: 16),
           _payslipCard(context, session),
+          if (push.available) ...[
+            const SizedBox(height: 16),
+            _notificationsCard(context),
+          ],
           if (_hasAnyApprover(session)) ...[
             const SizedBox(height: 16),
             _approversCard(session),
@@ -536,6 +544,73 @@ class ProfileScreen extends StatelessWidget {
           );
         },
         child: cardBody,
+      ),
+    );
+  }
+
+  // ------------------------------------------------------------------
+  // Notifications — entry to the push settings (spec 2026-10-11 §6.6).
+  // ------------------------------------------------------------------
+
+  Widget _notificationsCard(BuildContext context) {
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        key: const ValueKey('profile-notifications'),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => const NotificationSettingsScreen(),
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: AppTheme.primaryContainer.withValues(alpha: 0.15),
+                ),
+                child: const Icon(
+                  Icons.notifications_rounded,
+                  size: 22,
+                  color: AppTheme.primary,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Notifications',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Choose what Omni HR tells you about.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.onSurfaceVariant,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: AppTheme.onSurfaceVariant,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

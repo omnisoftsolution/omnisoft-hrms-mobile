@@ -1,17 +1,24 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'arrival_snack_tracker.dart';
 import 'leave_tab_icon.dart';
 import 'my_day/my_day_screen.dart';
 import '../approvals/approval_detail_screen.dart';
 import '../expenses/expenses_screen.dart';
 import '../history/history_shell.dart';
 import '../leave/leave_screen.dart';
+import '../notifications/notification_tap.dart';
+import '../notifications/notifications_screen.dart';
 import '../../core/theme.dart';
 import '../../models/notification_record.dart';
 import '../../services/face_recognition_service.dart';
 import '../../services/holiday_service.dart';
 import '../../services/notification_service.dart';
+import '../../services/push_service.dart';
+import '../../widgets/push_explainer_card.dart';
 import '../../services/session_service.dart';
 
 class HomeShell extends StatefulWidget {
@@ -41,6 +48,13 @@ class HomeShellState extends State<HomeShell> {
   final _expensesNavKey = GlobalKey<NavigatorState>();
 
   NotificationService? _notifSvc;
+  PushService? _push;
+
+  /// Two push taps whose fetches overlap: only the latest opens anything.
+  final _pushTaps = LatestTap();
+
+  /// The arrival snackbar on screen, for a push tap on its notice (F1).
+  final _arrivalSnack = ArrivalSnackTracker();
 
   @override
   void initState() {
@@ -53,6 +67,11 @@ class HomeShellState extends State<HomeShell> {
       _notifSvc = context.read<NotificationService>();
       _notifSvc!.start(session);
       _notifSvc!.addListener(_onNotificationChange);
+      // Pushes (spec 2026-10-11 §6.4) hand reminders, taps and the
+      // explainer over here. Run once now: something may already wait.
+      _push = context.read<PushService>();
+      _push!.addListener(_onPushChange);
+      _onPushChange();
     });
   }
 
@@ -62,6 +81,7 @@ class HomeShellState extends State<HomeShell> {
     // session.clearSession on invalid_session reroutes us to Login).
     _notifSvc?.removeListener(_onNotificationChange);
     _notifSvc?.stop();
+    _push?.removeListener(_onPushChange);
     super.dispose();
   }
 
@@ -85,8 +105,15 @@ class HomeShellState extends State<HomeShell> {
   /// and runs the side effects of every arrival in the batch — one poll
   /// can bring a leave decision and a newer expense update together.
   void _onNotificationChange() {
+    if (!mounted) return;
+    if (_notifSvc?.consumeUnreadDrop() ?? false) {
+      // Something was read or closed elsewhere (F3), e.g. a request
+      // someone else decided: the approvals count on Home / Leave follows.
+      // ignore: discarded_futures — fire-and-forget
+      context.read<SessionService>().refreshMe();
+    }
     final arrivals = _notifSvc?.consumeFreshArrivals() ?? const [];
-    if (arrivals.isEmpty || !mounted) return;
+    if (arrivals.isEmpty) return;
     final fresh = arrivals.first;
     if (refreshesApprovals(arrivals)) {
       // A new request waits for this user: re-pull /me so the approvals
@@ -100,11 +127,16 @@ class HomeShellState extends State<HomeShell> {
     }
     final messenger = _scaffoldMessengerKey.currentState;
     if (messenger == null) return;
-    messenger
-      ..removeCurrentSnackBar()
-      ..showSnackBar(
-        notificationArrivalSnackBar(fresh, onAction: () => _openArrival(fresh)),
-      );
+    showArrivalSnack(
+      messenger,
+      _arrivalSnack,
+      fresh.id,
+      (wrap) => notificationArrivalSnackBar(
+        fresh,
+        onAction: () => _openArrival(fresh),
+        wrapContent: wrap,
+      ),
+    );
   }
 
   /// The arrival snackbar's VIEW / Review action.
@@ -128,6 +160,86 @@ class HomeShellState extends State<HomeShell> {
         navigateToExpense(id);
       }
     }
+  }
+
+  /// What PushService handed over: a reminder that arrived while the app
+  /// is open becomes a snackbar whose "Open" goes Home; a tap on a system
+  /// notification is opened (spec §6.4).
+  void _onPushChange() {
+    final push = _push;
+    if (push == null || !mounted) return;
+    if (push.consumeApprovalsChanged()) {
+      // A request this user could decide was closed elsewhere (F3): the
+      // approvals count on Home / Leave follows.
+      // ignore: discarded_futures — fire-and-forget
+      context.read<SessionService>().refreshMe();
+    }
+    final arrivals = push.consumeArrivals();
+    final messenger = _scaffoldMessengerKey.currentState;
+    if (arrivals.isNotEmpty && messenger != null) {
+      _arrivalSnack.replaced();
+      messenger
+        ..removeCurrentSnackBar()
+        ..showSnackBar(
+          pushArrivalSnackBar(
+            arrivals.first,
+            onOpen: () => unawaited(navigateToMyDay()),
+          ),
+        );
+    }
+    final tap = push.consumePendingTap();
+    if (tap != null) unawaited(_openPushTap(push, tap));
+    // Home's one-time explainer (spec §6.2).
+    if (push.consumeExplainerDue()) unawaited(showPushExplainer(context, push));
+  }
+
+  /// A push tap: reminders → Home; notices → `notifications/get` (on the
+  /// push session snapshot) → the bell's handler run from the Home tab
+  /// (under this shell's messenger), else the bell. Whatever covers the
+  /// tabs (Profile, Payslips, the bell, the explainer — root-navigator
+  /// pages) is closed first. An answer that comes back after a sign-out or
+  /// a new access token, after this shell is gone, or after a newer tap,
+  /// opens nothing (the latest tap wins).
+  Future<void> _openPushTap(PushService push, Map<String, dynamic> data) {
+    final current = push.sessionStillCurrent();
+    final latest = _pushTaps.next();
+    bool still() => mounted && current() && latest();
+    // F1: the notice the tap opens is not announced again by the bell's
+    // arrival snackbar — hidden when it is already on screen.
+    final noticeId = int.tryParse(data['notification_id']?.toString() ?? '');
+    if (noticeId != null) {
+      _notifSvc?.suppressArrival(noticeId);
+      if (_arrivalSnack.takeIfShowing(noticeId)) {
+        _scaffoldMessengerKey.currentState?.hideCurrentSnackBar();
+      }
+    }
+    if (pushTapRefreshesApprovals(data)) {
+      // ignore: discarded_futures — fire-and-forget
+      context.read<SessionService>().refreshMe();
+    }
+    popAbove(context);
+    return openPushTap(
+      data,
+      fetch: push.fetchNotice,
+      openHome: navigateToMyDay,
+      openBell: openNotifications,
+      stillCurrent: still,
+      runHandler: (n) async {
+        final ctx = _myDayKey.currentContext;
+        if (ctx == null || !ctx.mounted) return openNotifications();
+        await handleNotificationTap(
+          ctx,
+          n,
+          targets: NotificationTapTargets(
+            onLeaveTap: navigateToLeave,
+            onExpenseTap: navigateToExpense,
+            onApprovalTap: navigateToApproval,
+            onMyDayTap: navigateToMyDay,
+          ),
+          stillCurrent: still,
+        );
+      },
+    );
   }
 
   void _onTabTap(int i) {
@@ -210,6 +322,35 @@ class HomeShellState extends State<HomeShell> {
     if (_index != 0) setState(() => _index = 0);
     await WidgetsBinding.instance.endOfFrame;
     await _myDayKey.currentState?.refresh();
+  }
+
+  /// The bell, on the root navigator above the tabs. A routable tap pops
+  /// it and lets this shell switch tab. Opened by the AppBar bell and by a
+  /// push tap whose notice has nowhere else to go (spec 2026-10-11 §6.4).
+  Future<void> openNotifications() async {
+    final nav = Navigator.of(context, rootNavigator: true);
+    await nav.push(
+      MaterialPageRoute(
+        builder: (_) => NotificationsScreen(
+          onLeaveTap: (leaveId) async {
+            nav.pop();
+            await navigateToLeave(leaveId);
+          },
+          onExpenseTap: (expenseId) async {
+            nav.pop();
+            await navigateToExpense(expenseId);
+          },
+          onApprovalTap: (leaveId) async {
+            nav.pop();
+            await navigateToApproval(leaveId);
+          },
+          onMyDayTap: () async {
+            nav.pop();
+            await navigateToMyDay();
+          },
+        ),
+      ),
+    );
   }
 
   /// Wraps the given root screen in its own Navigator so that pushes
@@ -364,6 +505,7 @@ bool refreshesApprovals(Iterable<NotificationRecord> arrivals) =>
 SnackBar notificationArrivalSnackBar(
   NotificationRecord fresh, {
   required VoidCallback onAction,
+  Widget Function(Widget content)? wrapContent,
 }) => SnackBar(
   backgroundColor: AppTheme.primary,
   // Flutter 3.44 keeps a bar with an action until it is tapped (persist
@@ -374,7 +516,7 @@ SnackBar notificationArrivalSnackBar(
   behavior: SnackBarBehavior.floating,
   margin: const EdgeInsets.all(16),
   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-  content: Row(
+  content: (wrapContent ?? (Widget w) => w)(Row(
     children: [
       const Icon(
         Icons.notifications_active_rounded,
@@ -409,7 +551,7 @@ SnackBar notificationArrivalSnackBar(
         ),
       ),
     ],
-  ),
+  )),
   action: fresh.snackActionLabel != null
       ? SnackBarAction(
           label: fresh.snackActionLabel!,
@@ -417,4 +559,57 @@ SnackBar notificationArrivalSnackBar(
           onPressed: onAction,
         )
       : null,
+);
+
+/// The snackbar for a push-only notice (a check-in / check-out reminder)
+/// that arrives while the app is open (spec 2026-10-11 §6.4): the push's
+/// own title and body; "Open" goes to Home.
+SnackBar pushArrivalSnackBar(
+  PushArrival arrival, {
+  required VoidCallback onOpen,
+}) => SnackBar(
+  backgroundColor: AppTheme.primary,
+  // Same as the notice snackbar: a bar with an action must still time out.
+  persist: false,
+  duration: const Duration(seconds: 6),
+  behavior: SnackBarBehavior.floating,
+  margin: const EdgeInsets.all(16),
+  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+  content: Row(
+    children: [
+      const Icon(Icons.alarm_rounded, color: Colors.white, size: 20),
+      const SizedBox(width: 12),
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              arrival.title,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+                fontSize: 14,
+              ),
+            ),
+            if (arrival.body.isNotEmpty)
+              Text(
+                arrival.body,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.85),
+                  fontSize: 12,
+                ),
+              ),
+          ],
+        ),
+      ),
+    ],
+  ),
+  action: SnackBarAction(
+    label: 'Open',
+    textColor: Colors.white,
+    onPressed: onOpen,
+  ),
 );

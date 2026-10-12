@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -99,29 +101,24 @@ class OmniAppBar extends StatelessWidget implements PreferredSizeWidget {
 
   void _openNotifications(BuildContext context) {
     final shell = context.findAncestorStateOfType<HomeShellState>();
-    // rootNavigator: true so Notifications renders above HomeShell —
-    // same reason as the Profile push above. The onLeaveTap /
-    // onExpenseTap pops back to root, then HomeShell handles the
-    // tab switch + nested navigation.
-    Navigator.of(context, rootNavigator: true).push(
+    if (shell != null) {
+      // rootNavigator: true so Notifications renders above HomeShell —
+      // same reason as the Profile push above. A routable tap pops back
+      // to the tabs, then HomeShell switches tab (HomeShell.openNotifications,
+      // shared with push taps). Fire-and-forget: the bell is its own page.
+      unawaited(shell.openNotifications());
+      return;
+    }
+    // Outside the shell (a screen pushed on the root navigator, e.g.
+    // Payslips): the bell closes on a routable tap, as before.
+    final nav = Navigator.of(context, rootNavigator: true);
+    nav.push(
       MaterialPageRoute(
         builder: (_) => NotificationsScreen(
-          onLeaveTap: (leaveId) async {
-            Navigator.of(context, rootNavigator: true).pop();
-            await shell?.navigateToLeave(leaveId);
-          },
-          onExpenseTap: (expenseId) async {
-            Navigator.of(context, rootNavigator: true).pop();
-            await shell?.navigateToExpense(expenseId);
-          },
-          onApprovalTap: (leaveId) async {
-            Navigator.of(context, rootNavigator: true).pop();
-            await shell?.navigateToApproval(leaveId);
-          },
-          onMyDayTap: () async {
-            Navigator.of(context, rootNavigator: true).pop();
-            await shell?.navigateToMyDay();
-          },
+          onLeaveTap: (_) => nav.pop(),
+          onExpenseTap: (_) => nav.pop(),
+          onApprovalTap: (_) => nav.pop(),
+          onMyDayTap: () => nav.pop(),
         ),
       ),
     );

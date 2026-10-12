@@ -411,3 +411,98 @@ Spec + plan live in the connector repo:
   `SessionService.clock`. Tests: `test/screens/leave_screen_test.dart`,
   `test/screens/leave_history_screen_test.dart`, `test/widgets/{period_segmented_row,range_picker_dialog}_test.dart`,
   `test/core/leave_dates_test.dart`.
+
+## Push notifications (1.33.0, connector 2.63.0, hrmsmanager omni_hrms_saas 1.9.0)
+Spec: connector repo `docs/superpowers/specs/2026-10-11-push-notifications-design.md` §6.
+- Firebase project `omni-hr-omnisoft`. Client configs are committed: `android/app/google-services.json`
+  (read by the `com.google.gms.google-services` 4.4.4 Gradle plugin) and `ios/Runner/GoogleService-Info.plist`
+  (a Runner resource in project.pbxproj). Pins: firebase_core 4.15.0, firebase_messaging 16.7.0 (Firebase iOS
+  SDK 12.19.0), flutter_local_notifications 22.3.1 (core library desugaring, desugar_jdk_libs 2.1.4).
+- iOS: `aps-environment` + time-sensitive entitlements in Runner.entitlements, `UIBackgroundModes`
+  `remote-notification`. **Willy gates:** the App ID needs Push Notifications + Time Sensitive Notifications in
+  the developer portal; the APNs key must be uploaded to Firebase (key `8KU7H22B9A`, done).
+- **SwiftPM is OFF for this project** (`flutter: config: enable-swift-package-manager: false` in pubspec.yaml), so
+  Firebase and ML Kit share one set of Google pods (GoogleUtilities, GoogleDataTransport, Promises) via CocoaPods;
+  with SwiftPM on, both define the same ObjC classes. Don't re-enable it without moving ML Kit to SwiftPM too.
+  Backlog: Firebase stops publishing to CocoaPods after Oct 2026, so later Firebase upgrades need a plan.
+- **Before the first 1.33 `fastlane beta` from the main checkout:** discard that checkout's leftover uncommitted
+  SwiftPM changes (project.pbxproj, the Runner scheme, the `swiftpm/` folders, Podfile.lock), then `flutter clean`
+  and `pod install` with `LANG=en_US.UTF-8` (CocoaPods needs a UTF-8 locale; `ios/fastlane/Fastfile` sets
+  `ENV['LANG'] ||= 'en_US.UTF-8'` itself, a manual `pod install` / `flutter build ios` still needs it).
+- Android manifest: `default_notification_channel_id` = `requests` (fallback for a push naming no channel or one
+  the app has not created yet; otherwise FCM makes a "Miscellaneous" channel).
+- `omnihr/push` native channel (`ios/Runner/PushPlugin.swift`, registered in AppDelegate after the face plugin)
+  behind `PushNative` (lib/services/push_native.dart): removeDelivered / clearDelivered / setBadge on iOS;
+  Android goes through flutter_local_notifications (`cancelTag` = cancel id 0 + tag omni_key, `cancelAll`, one
+  channel per group from lib/core/push_groups.dart). Android status-bar icon `@drawable/ic_stat_notify` (kept from
+  the resource shrinker by res/raw/keep.xml).
+- `PushService` (lib/services/push_service.dart): registers the FCM token whenever the session's access token
+  changes (sign-in, refresh, app start), except the token being signed out (`_retiredToken`: it is never
+  re-registered, even if the session still shows it), on onTokenRefresh and on resume after a failure; iOS `apns-token-not-set`
+  is retried 3 times (2 s, 3 s, 5 s). Every push call uses `PushTarget` (a snapshot of base URL, db and token taken
+  when the token arrived) plus a generation counter: never read `SessionService` fields inside a push call — Settings
+  → Company saves the new company *before* `signOut()`, and a routing change under the same token registers nothing.
+  **One serialized lifecycle** (review fix round 1): registrations run one at a time per generation (a worker;
+  a token refresh while one is on the wire queues exactly one follow-up that reads the newest token;
+  `_registeredToken` = the FCM token the server accepted); a registration first lets every older push/register on
+  the wire land (≤ 5 s) and waits for the last sign-out's teardown — the **real** `deleteToken` future, not a
+  timed-out wait — up to a 30 s safety cap (`teardownWaitCap`; past it it registers now and again with the fresh
+  token once the deletion ends); right before sending it re-checks that the snapshot is still the live session
+  (token, client URL, db, signed in, no sign-out running) and sends nothing otherwise.
+  `SessionService.onSessionClearing` runs before every sign-out (clearSession, signOut, logout — logout runs it
+  before wiping the company routing) → waits for every `push/register` on the wire, `push/unregister` with the
+  snapshot (quiet `_send(fireHooks: false)`: never fires onInvalidSession), clear delivered, badge 0, deleteToken;
+  unregister and the on-wire wait time out after 5 s. **Sign-out waits at most ~2 s** for this clean-up
+  (`signOutCap`); the rest finishes in the background. While the hook runs (`PushService._clearing`) and until
+  SessionService has finished the sign-out (`SessionService.isClearing`), no access token is adopted; SessionService
+  notifies when it ends. With nothing to tear down (signed out already, nothing on the wire: Clear Company on the
+  login screen, a late invalid_session) the hook only clears delivered + badge and returns at once — no deleteToken.
+- `SessionService` sign-outs: concurrent `clearSession()` calls join one in-flight sign-out (a call from inside the
+  hook — marked by a zone — returns at once instead of waiting for itself; `logout()` waits for a running one, and a
+  `clearSession()` during `logout()` joins it). The fields are wiped only if no new access token was saved while the
+  hook ran (`_authEpoch`, re-checked inside the persistence queue): a sign-in completed meanwhile is newer and stays.
+  **Every write/removal of the stored session goes through one queue (`_persisting`)** — saveSession, refresh,
+  /me updates, kiosk flag, saveCompany, the wipe, logout's wipe — so an older wipe never deletes a newer sign-in's
+  keys. Never call a locked method from inside a `_persisting` body (it would wait for itself); the idle queue runs
+  at once and keeps no completed future (a cross-zone future hangs fake-async widget tests). An `auth/refresh` that was on the wire when a sign-out of a signed-in session
+  started is dropped (`RefreshOutcome.failed`). `refreshAccessToken` itself is only called by LoginScreen (Face ID).
+- Receiving: a push whose `company_code` is not the session's is ignored, and so is every foreground push while no
+  push session is active (signed out, or a sign-out running). Foreground notice →
+  `NotificationService.refreshNow()` (the usual arrival snackbar), then the iOS badge is set to the bell's unread
+  count (iOS applies no `aps.badge` while the app is open); reminder → `pushArrivalSnackBar` ("Open" → My
+  day; an empty title becomes the connector's wording via `reminderTitle`: "Time to check in" / "Still at
+  work?"); `remove` → `applyRemove` (foreground and `firebaseBackgroundHandler`, which first calls
+  `DartPluginRegistrant.ensureInitialized()` and reloads SharedPreferences before reading `company_code`). The
+  background `remove` sets its badge only while the `push_signed_in` marker says a session exists (set when a
+  session is adopted, removed at sign-out — the company code survives sign-out), re-read after the removal.
+  The FCM streams (token, onMessage, onMessageOpenedApp) have token-free `onError` handlers.
+- Taps: the launch message (`getInitialMessage`) is looked up in the background with a 3 s timeout — `init()`
+  never holds `runApp`; its tap waits in `consumePendingTap` like any other. `PushService.sessionStillCurrent()`
+  lets HomeShell drop a `notifications/get` answer that arrives after a sign-out or a new access token, and
+  `LatestTap` drops an older tap's answer once a newer tap arrived (the same check is passed into
+  `handleNotificationTap(stillCurrent:)` and asked again after `markRead`; the bell passes none).
+  `PushService.consumePendingTap()` in HomeShell
+  → `popAbove` (closes Profile / Payslips / the bell / the explainer on the root navigator) → `openPushTap`
+  (lib/screens/notifications/notification_tap.dart): reminders → Home; notices → `notifications/get` →
+  `handleNotificationTap` (the bell's handler, shared with NotificationsScreen), else the bell (announcements,
+  system, 404, offline, an unanswered HR question without usable options).
+- Permission (firebase_messaging 16.7.0, five `AuthorizationStatus` values): Android 13+ `notDetermined` = never
+  asked, `denied` = may ask again ("Turn on notifications"), `deniedPermanently` = settings ("Open settings"); iOS
+  `denied` = settings. **Android < 13 (API ≤ 32) refused notifications → "Open settings"** (no system prompt exists;
+  `androidSdk` seam in PushService). The explainer (lib/widgets/push_explainer_card.dart) shows once per phone when
+  push_available, the status is `notDetermined` and `push_explainer_seen` is unset.
+  Profile → Notifications (lib/screens/profile/notification_settings_screen.dart) only when push_available; mute
+  saves are serialized (`savePrefs`) and every switch waits while one saves. A `push/prefs/get` that failed after
+  the registration worked is asked again on resume while the prefs are unknown, then the explainer is re-checked.
+- Badge: bell open (`PushService.onBellOpened`) → clearDelivered + setBadge(unread) — the badge only when the list
+  came (`refreshList` left no `lastError`); resume → refresh + setBadge(unread) (0 signed out); foreground notice →
+  refresh + setBadge(unread). Resume / foreground set it only when `NotificationService.refreshNow()` answered true
+  (a count was fetched: not 0 before HomeShell started the bell, not a stale count offline). Each needs an active
+  push session, takes the generation before its await and sets nothing if the session ended meanwhile (a
+  sign-out's own clean-up already set the badge to 0); the bell also skips it when closed meanwhile.
+- Tests: `test/services/push_*_test.dart` (lifecycle races in `push_lifecycle_test.dart`), `test/services/session_push_hook_test.dart`,
+  `test/core/push_groups_test.dart`, `test/screens/notification_tap_test.dart`, `test/screens/company_switch_push_test.dart`,
+  `test/screens/notification_settings_screen_test.dart`, `test/screens/notifications_screen_push_test.dart`,
+  `test/screens/home/push_arrival_snackbar_test.dart`, `test/widgets/push_explainer_card_test.dart`; fakes in
+  `test/services/push_fakes.dart`.
+- Older apps (≤ 1.32) never register a token: no pushes, they keep polling. No minimum-version change.

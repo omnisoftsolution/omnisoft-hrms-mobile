@@ -1,7 +1,7 @@
 name: omni_hr
 description: Omni HR — Mobile attendance and leave management
 publish_to: 'none'
-version: 1.32.0+106
+version: 1.33.0+108
 
 environment:
   sdk: ^3.11.0
@@ -47,6 +47,14 @@ dependencies:
   app_links: ^6.3.2
   # Invite QR scanner (Apple Vision on iOS, ML Kit barcode on Android).
   mobile_scanner: ^7.4.2
+  # Push notifications (1.33.0, spec 2026-10-11). Exact pins: the
+  # FlutterFire release of 2026-09-14 (Firebase iOS SDK 12.19.0, whose
+  # GoogleUtilities/GoogleDataTransport/nanopb majors match ML Kit's).
+  firebase_core: 4.15.0
+  firebase_messaging: 16.7.0
+  # Android notification channels + cancel-by-tag. Needs core library
+  # desugaring (android/app/build.gradle).
+  flutter_local_notifications: 22.3.1
 
 dev_dependencies:
   flutter_test:
@@ -84,6 +92,13 @@ flutter_launcher_icons:
 
 flutter:
   uses-material-design: true
+  config:
+    # iOS plugins through CocoaPods only (push, 1.33.0). With Swift Package
+    # Manager on (Flutter 3.44 default) Firebase links its own static
+    # GoogleUtilities/GoogleDataTransport/Promises next to ML Kit's
+    # CocoaPods frameworks: 31 ObjC classes defined twice. Through CocoaPods
+    # both share one copy.
+    enable-swift-package-manager: false
   assets:
     - assets/images/
     - assets/models/

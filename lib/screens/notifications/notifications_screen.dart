@@ -3,24 +3,13 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
-import '../../core/datetime_utils.dart';
-import '../../core/error_messages.dart';
 import '../../core/theme.dart';
-import '../../models/attendance_ask.dart';
 import '../../models/notification_record.dart';
 import '../../services/notification_service.dart';
-import '../../services/omni_mobile_api.dart';
-import '../../services/session_service.dart';
-import '../home/my_day/declaration_sheet.dart';
+import '../../services/push_service.dart';
+import 'notification_tap.dart';
 
-/// Posts the answer to HR's question (the review/answer route).
-typedef ReviewAnswerPoster =
-    Future<void> Function({
-      required int notificationId,
-      required String answerCode,
-      required String note,
-      DateTime? time,
-    });
+export 'notification_tap.dart' show ReviewAnswerPoster;
 
 /// In-app notifications inbox. Pushed from the bell icon on
 /// MyDayScreen. Tap a kind-routable notification → marks read and
@@ -61,128 +50,37 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) => context.read<NotificationService>().refreshList(),
-    );
-  }
-
-  Future<void> _handleTap(NotificationRecord n) async {
-    final svc = context.read<NotificationService>();
-    if (n.isAttendanceQuery &&
-        !n.answered &&
-        AskOption.listFrom(n.payload['options']).isNotEmpty) {
-      await _answer(n, svc);
-      return;
-    }
-    final messenger = ScaffoldMessenger.of(context);
-    if (!n.read) await svc.markRead(n.id);
-    if (!mounted) return;
-    // APP-5: one answer only — say so instead of a tap that does nothing.
-    if (n.isAttendanceQuery && n.answered) {
-      messenger
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          const SnackBar(content: Text('You already answered this question.')),
-        );
-      return;
-    }
-    if (n.isDeclarationApplied) {
-      widget.onMyDayTap?.call();
-      return;
-    }
-    if (n.isApprovalRequestKind) {
-      final leaveId = n.leaveIdHint;
-      if (leaveId != null && widget.onApprovalTap != null) {
-        widget.onApprovalTap!(leaveId);
-        return;
-      }
-    } else if (n.isLeaveKind) {
-      final leaveId = n.leaveIdHint;
-      if (leaveId != null && widget.onLeaveTap != null) {
-        widget.onLeaveTap!(leaveId);
-        return;
-      }
-    } else if (n.isExpenseKind) {
-      final expenseId = n.expenseIdHint;
-      if (expenseId != null && widget.onExpenseTap != null) {
-        widget.onExpenseTap!(expenseId);
-        return;
-      }
-    }
-    // System / unknown — no navigation, but keep the screen open so
-    // the user sees the read-state flip.
-  }
-
-  /// HR's "Ask the employee" (spec 2026-10-07 §4.5): the payload's options
-  /// in the declaration sheet, posted to review/answer, then marked read.
-  Future<void> _answer(NotificationRecord n, NotificationService svc) async {
-    final post =
-        widget.answerReview ?? _reviewAnswer(context.read<SessionService>());
-    final messenger = ScaffoldMessenger.of(context);
-    final question = n.payload['question'];
-    final answer = await showDeclarationSheet(
-      context,
-      heading: 'Question from HR',
-      title: question is String && question.isNotEmpty ? question : n.title,
-      // Connector 2.55.0: a question about the employee's own declaration
-      // suggests the declared time for "No, the right time is".
-      options: AskOption.listFrom(
-        n.payload['options'],
-        fallbackTime: DateTimeUtils.parseOdooUtc(
-          n.payload['suggested_time']?.toString(),
-        ),
-      ),
-      day:
-          DateTime.tryParse(n.payload['date']?.toString() ?? '') ??
-          DateTime.now(),
-      footnote: 'HR will review your answer.',
-    );
-    if (!mounted || answer == null) return;
-    try {
-      await post(
-        notificationId: n.id,
-        answerCode: answer.code,
-        note: answer.note,
-        time: answer.time,
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final svc = context.read<NotificationService>();
+      // Opening the bell clears Omni HR's system notifications and sets
+      // the iOS badge to the bell's unread count (spec 2026-10-11 §6.5) —
+      // the badge only when the list came (not a cached count offline);
+      // PushService skips both if the session ended or the bell closed
+      // while the list loaded.
+      await context.read<PushService>().onBellOpened(
+        refresh: () async {
+          await svc.refreshList();
+          return svc.lastError == null;
+        },
+        unread: () => svc.unreadCount,
+        stillOpen: () => mounted,
       );
-    } catch (e) {
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(friendlyError(e)),
-          backgroundColor: AppTheme.error,
-        ),
-      );
-      // A 409 already_answered must not reopen the sheet on the next tap.
-      await svc.refreshList();
-      return;
-    }
-    await svc.markRead(n.id);
-    messenger.showSnackBar(
-      const SnackBar(
-        content: Text('Sent to HR'),
-        backgroundColor: AppTheme.primary,
-      ),
-    );
-    await svc.refreshList();
+    });
   }
 
-  static ReviewAnswerPoster _reviewAnswer(SessionService session) =>
-      ({
-        required int notificationId,
-        required String answerCode,
-        required String note,
-        DateTime? time,
-      }) =>
-          OmniMobileApi(
-            baseUrl: session.clientUrl,
-            db: session.clientDb,
-            token: session.token,
-          ).answerReview(
-            notificationId: notificationId,
-            answerCode: answerCode,
-            note: note,
-            time: time,
-          );
+  /// The shared bell handler (notification_tap.dart), also used by push
+  /// taps (spec 2026-10-11 §6.4).
+  Future<void> _handleTap(NotificationRecord n) => handleNotificationTap(
+    context,
+    n,
+    targets: NotificationTapTargets(
+      onLeaveTap: widget.onLeaveTap,
+      onExpenseTap: widget.onExpenseTap,
+      onApprovalTap: widget.onApprovalTap,
+      onMyDayTap: widget.onMyDayTap,
+    ),
+    answerReview: widget.answerReview,
+  );
 
   @override
   Widget build(BuildContext context) {

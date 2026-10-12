@@ -267,6 +267,12 @@ String friendlyError(
     return 'Someone else is updating this request. Try again.';
   }
 
+  // --- Push notifications (connector 2.63.0): a sign-in from before
+  // app sessions has no session row to hold push settings ---
+  if (raw.contains('session_required')) {
+    return 'Sign out and sign in again to change notifications.';
+  }
+
   // --- Plan gate ---
   if (raw.contains('feature_unavailable')) {
     return "This feature isn't included in your company's plan. Ask HR.";
