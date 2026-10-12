@@ -101,8 +101,15 @@ class HomeShellState extends State<HomeShell> {
   /// and runs the side effects of every arrival in the batch — one poll
   /// can bring a leave decision and a newer expense update together.
   void _onNotificationChange() {
+    if (!mounted) return;
+    if (_notifSvc?.consumeUnreadDrop() ?? false) {
+      // Something was read or closed elsewhere (F3), e.g. a request
+      // someone else decided: the approvals count on Home / Leave follows.
+      // ignore: discarded_futures — fire-and-forget
+      context.read<SessionService>().refreshMe();
+    }
     final arrivals = _notifSvc?.consumeFreshArrivals() ?? const [];
-    if (arrivals.isEmpty || !mounted) return;
+    if (arrivals.isEmpty) return;
     final fresh = arrivals.first;
     if (refreshesApprovals(arrivals)) {
       // A new request waits for this user: re-pull /me so the approvals
@@ -181,6 +188,12 @@ class HomeShellState extends State<HomeShell> {
     final current = push.sessionStillCurrent();
     final latest = _pushTaps.next();
     bool still() => mounted && current() && latest();
+    // F1: the notice the tap opens is not announced again by the bell's
+    // arrival snackbar — hidden when it is already on screen.
+    final noticeId = int.tryParse(data['notification_id']?.toString() ?? '');
+    if (noticeId != null && (_notifSvc?.suppressArrival(noticeId) ?? false)) {
+      _scaffoldMessengerKey.currentState?.hideCurrentSnackBar();
+    }
     popAbove(context);
     return openPushTap(
       data,

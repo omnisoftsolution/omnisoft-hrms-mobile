@@ -145,11 +145,12 @@ void main() {
     expect(push.consumeArrivals(), isEmpty);
   });
 
-  test('remove in the foreground takes the notification off and sets the badge', () async {
+  test('remove in the foreground takes the notification off, sets the badge '
+      'and re-polls the bell so what is on screen catches up (F3)', () async {
     final push = await started();
     await push.handleForeground(removal());
     expect(native.calls, ['remove approve:77', 'cancel approve:77', 'badge 3']);
-    expect(bell.refreshes, 0);
+    expect(bell.refreshes, 1);
   });
 
   test('company codes match whatever their case or spaces', () {

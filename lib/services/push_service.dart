@@ -752,8 +752,8 @@ class PushService extends ChangeNotifier {
   /// tenant's pushes count, and only while a push session is active (not
   /// signed out, no sign-out running). No system banner: a notice re-polls
   /// the bell (its arrival snackbar follows), a reminder is queued for
-  /// HomeShell's snackbar, a `remove` takes the notification off and
-  /// applies the badge.
+  /// HomeShell's snackbar, a `remove` takes the notification off, applies
+  /// the badge and re-polls the bell.
   Future<void> handleForeground(
     Map<String, dynamic> data, {
     String? title,
@@ -770,6 +770,9 @@ class PushService extends ChangeNotifier {
     if (data['action'] == 'remove') {
       final same = _sameSignedInSession();
       await applyRemove(data, _native, mayBadge: () async => same());
+      // F3: what is on screen (an open bell list, the approvals count)
+      // catches up — the bell's poll sees the count drop and reloads.
+      if (same()) await _notifications?.refreshNow();
       return;
     }
     final kind = data['kind']?.toString() ?? '';

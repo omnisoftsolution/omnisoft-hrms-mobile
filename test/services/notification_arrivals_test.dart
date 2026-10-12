@@ -32,6 +32,37 @@ void main() {
     expect(svc.consumeFreshArrivals().map((e) => e.id), [13]);
   });
 
+  test('a notice a push tap opened is not handed over as an arrival (F1)', () {
+    final svc = NotificationService();
+    svc.suppressArrival(11);
+    svc.queueArrivals([n(11, 'leave_approval_requested')], increase: 1);
+    expect(svc.consumeFreshArrivals(), isEmpty);
+    // A later notice still arrives.
+    svc.queueArrivals(
+        [n(12, 'leave_approved'), n(11, 'leave_approval_requested')],
+        increase: 1);
+    expect(svc.consumeFreshArrivals().map((e) => e.id), [12]);
+  });
+
+  test('a tapped notice already queued is dropped from the queue (F1)', () {
+    final svc = NotificationService();
+    svc.queueArrivals(
+        [n(12, 'leave_approved'), n(11, 'attendance_query')], increase: 2);
+    svc.suppressArrival(11);
+    expect(svc.consumeFreshArrivals().map((e) => e.id), [12]);
+  });
+
+  test('suppressArrival answers true when the notice was the last one handed '
+      'over (its snackbar may be on screen) (F1)', () {
+    final svc = NotificationService();
+    svc.queueArrivals([n(11, 'attendance_query')], increase: 1);
+    expect(svc.consumeFreshArrivals().map((e) => e.id), [11]);
+    expect(svc.suppressArrival(12), isFalse);
+    expect(svc.suppressArrival(11), isTrue);
+    // Once: the snackbar is gone after the first hide.
+    expect(svc.suppressArrival(11), isFalse);
+  });
+
   test('two polls before the host listens: both batches are kept', () {
     final svc = NotificationService();
     svc.queueArrivals([n(11, 'leave_approved')], increase: 1);
