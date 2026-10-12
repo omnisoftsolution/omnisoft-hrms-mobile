@@ -145,12 +145,24 @@ void main() {
     expect(push.consumeArrivals(), isEmpty);
   });
 
-  test('remove in the foreground takes the notification off, sets the badge '
-      'and re-polls the bell so what is on screen catches up (F3)', () async {
+  test('remove in the foreground takes the notification off, sets the badge, '
+      'reloads the bell list and flags the approvals count (F3)', () async {
     final push = await started();
     await push.handleForeground(removal());
     expect(native.calls, ['remove approve:77', 'cancel approve:77', 'badge 3']);
-    expect(bell.refreshes, 1);
+    // The list, not just the count: the closed request may already have
+    // been read here, so the unread count need not move.
+    expect(bell.listRefreshes, 1);
+    expect(push.consumeApprovalsChanged(), isTrue);
+    expect(push.consumeApprovalsChanged(), isFalse);
+  });
+
+  test('a foreground remove that is not an approval reloads the bell but '
+      'does not flag the approvals count', () async {
+    final push = await started();
+    await push.handleForeground({...removal(), 'omni_key': 'leave:12'});
+    expect(bell.listRefreshes, 1);
+    expect(push.consumeApprovalsChanged(), isFalse);
   });
 
   test('company codes match whatever their case or spaces', () {
@@ -180,6 +192,8 @@ void main() {
     final push = await started(token: null);
     await push.handleForeground(removal());
     expect(native.calls, isEmpty);
+    expect(bell.listRefreshes, 0);
+    expect(push.consumeApprovalsChanged(), isFalse);
   });
 
   test('while the sign-out hook runs: a remove, a notice or a reminder in '

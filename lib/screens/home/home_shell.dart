@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'arrival_snack_tracker.dart';
 import 'leave_tab_icon.dart';
 import 'my_day/my_day_screen.dart';
 import '../approvals/approval_detail_screen.dart';
@@ -51,6 +52,9 @@ class HomeShellState extends State<HomeShell> {
 
   /// Two push taps whose fetches overlap: only the latest opens anything.
   final _pushTaps = LatestTap();
+
+  /// The arrival snackbar on screen, for a push tap on its notice (F1).
+  final _arrivalSnack = ArrivalSnackTracker();
 
   @override
   void initState() {
@@ -123,11 +127,14 @@ class HomeShellState extends State<HomeShell> {
     }
     final messenger = _scaffoldMessengerKey.currentState;
     if (messenger == null) return;
+    messenger.removeCurrentSnackBar();
+    final closed = _arrivalSnack.shown(fresh.id);
     messenger
-      ..removeCurrentSnackBar()
-      ..showSnackBar(
-        notificationArrivalSnackBar(fresh, onAction: () => _openArrival(fresh)),
-      );
+        .showSnackBar(
+          notificationArrivalSnackBar(fresh, onAction: () => _openArrival(fresh)),
+        )
+        .closed
+        .then((_) => closed());
   }
 
   /// The arrival snackbar's VIEW / Review action.
@@ -159,9 +166,16 @@ class HomeShellState extends State<HomeShell> {
   void _onPushChange() {
     final push = _push;
     if (push == null || !mounted) return;
+    if (push.consumeApprovalsChanged()) {
+      // A request this user could decide was closed elsewhere (F3): the
+      // approvals count on Home / Leave follows.
+      // ignore: discarded_futures — fire-and-forget
+      context.read<SessionService>().refreshMe();
+    }
     final arrivals = push.consumeArrivals();
     final messenger = _scaffoldMessengerKey.currentState;
     if (arrivals.isNotEmpty && messenger != null) {
+      _arrivalSnack.replaced();
       messenger
         ..removeCurrentSnackBar()
         ..showSnackBar(
@@ -191,8 +205,11 @@ class HomeShellState extends State<HomeShell> {
     // F1: the notice the tap opens is not announced again by the bell's
     // arrival snackbar — hidden when it is already on screen.
     final noticeId = int.tryParse(data['notification_id']?.toString() ?? '');
-    if (noticeId != null && (_notifSvc?.suppressArrival(noticeId) ?? false)) {
-      _scaffoldMessengerKey.currentState?.hideCurrentSnackBar();
+    if (noticeId != null) {
+      _notifSvc?.suppressArrival(noticeId);
+      if (_arrivalSnack.takeIfShowing(noticeId)) {
+        _scaffoldMessengerKey.currentState?.hideCurrentSnackBar();
+      }
     }
     popAbove(context);
     return openPushTap(

@@ -230,6 +230,7 @@ class PushService extends ChangeNotifier {
   List<PushArrival> _arrivals = const [];
   Map<String, dynamic>? _pendingTap;
   bool _explainerDue = false;
+  bool _approvalsChanged = false;
 
   /// One `push/prefs/set` at a time (it replaces all mutes): the next one
   /// starts when this one has finished, failed or not.
@@ -596,6 +597,7 @@ class PushService extends ChangeNotifier {
       _arrivals = const [];
       _pendingTap = null;
       _explainerDue = false;
+      _approvalsChanged = false;
       if (_prefs != null) {
         _prefs = null;
         notifyListeners();
@@ -770,9 +772,16 @@ class PushService extends ChangeNotifier {
     if (data['action'] == 'remove') {
       final same = _sameSignedInSession();
       await applyRemove(data, _native, mayBadge: () async => same());
-      // F3: what is on screen (an open bell list, the approvals count)
-      // catches up — the bell's poll sees the count drop and reloads.
-      if (same()) await _notifications?.refreshNow();
+      if (!same()) return;
+      // F3: what is on screen catches up. The bell reloads its list (the
+      // closed request may already be read here, so the unread count need
+      // not move), and a closed approval request re-pulls the approvals
+      // count (HomeShell, [consumeApprovalsChanged]).
+      if ((data['omni_key']?.toString() ?? '').startsWith('approve:')) {
+        _approvalsChanged = true;
+        notifyListeners();
+      }
+      await _notifications?.refreshList();
       return;
     }
     final kind = data['kind']?.toString() ?? '';
@@ -790,6 +799,14 @@ class PushService extends ChangeNotifier {
     // iOS shows no banner (and applies no aps.badge) while the app is open:
     // set the badge from the fresh unread count ourselves.
     await _syncBadge();
+  }
+
+  /// True, once, after a foreground `remove` of an approval request: the
+  /// approvals count HomeShell shows is re-pulled (F3).
+  bool consumeApprovalsChanged() {
+    final c = _approvalsChanged;
+    _approvalsChanged = false;
+    return c;
   }
 
   /// Reminders that arrived since HomeShell last asked, newest first.

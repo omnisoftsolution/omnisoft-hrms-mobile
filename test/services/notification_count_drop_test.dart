@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omni_hr/models/notification_record.dart';
 import 'package:omni_hr/services/notification_service.dart';
@@ -12,6 +14,12 @@ class _BellApi extends OmniMobileApi {
   List<NotificationRecord> items = const [];
   int listCalls = 0;
 
+  /// The next list call waits for it (used once, then cleared).
+  Completer<void>? listGate;
+
+  /// The next list call fails (used once, then cleared).
+  Object? listError;
+
   @override
   Future<int> getUnreadNotificationCount() async =>
       items.where((n) => !n.read).length;
@@ -19,7 +27,14 @@ class _BellApi extends OmniMobileApi {
   @override
   Future<List<NotificationRecord>> getNotifications() async {
     listCalls++;
-    return items;
+    final answer = items;
+    final gate = listGate;
+    listGate = null;
+    if (gate != null) await gate.future;
+    final e = listError;
+    listError = null;
+    if (e != null) throw e;
+    return answer;
   }
 }
 
@@ -53,6 +68,42 @@ void main() {
     expect(svc.consumeUnreadDrop(), isTrue);
     expect(svc.consumeUnreadDrop(), isFalse);
     expect(svc.consumeFreshArrivals(), isEmpty);
+    svc.stop();
+  });
+
+  test('a list answer that lands after sign-out (stop) is dropped, and no '
+      'drop is flagged for the next session', () async {
+    final api = _BellApi()..items = [n(12), n(11)];
+    final svc = NotificationService(apiFor: (_) => api);
+    svc.start(await signedInSession());
+    await flush();
+    await svc.refreshList();
+    api.items = [n(12, read: true), n(11)];
+    final gate = Completer<void>();
+    api.listGate = gate;
+    final poll = svc.refreshNow(); // sees the drop, waits on the list
+    await flush();
+    svc.stop(); // sign-out while the list is in flight
+    gate.complete();
+    await poll;
+    expect(svc.items, isEmpty);
+    expect(svc.unreadCount, 0);
+    expect(svc.consumeUnreadDrop(), isFalse);
+  });
+
+  test('a list reload that failed is retried on the next poll even when the '
+      'count no longer moves', () async {
+    final api = _BellApi()..items = [n(12), n(11)];
+    final svc = NotificationService(apiFor: (_) => api);
+    svc.start(await signedInSession());
+    await flush();
+    await svc.refreshList();
+    api.items = [n(12, read: true), n(11)];
+    api.listError = Exception('offline');
+    await svc.refreshNow(); // drop seen, list failed
+    expect(svc.items.where((e) => !e.read).map((e) => e.id), [12, 11]);
+    await svc.refreshNow(); // count unchanged (1): still reloads the list
+    expect(svc.items.where((e) => !e.read).map((e) => e.id), [11]);
     svc.stop();
   });
 

@@ -36,10 +36,13 @@ class NotificationService extends ChangeNotifier {
   int _pollsSinceStart = 0;
   // Notices a push tap opened (F1): never handed over as an arrival.
   final Set<int> _suppressed = {};
-  // The arrival handed over last: its snackbar may be on screen.
-  int? _lastHandedOver;
   // A poll saw the unread count drop (F3), not consumed by HomeShell yet.
   bool _unreadDrop = false;
+  // The last list reload failed: the next poll reloads it again.
+  bool _listStale = false;
+  // Moves on stop(): an answer that lands after it belongs to the old
+  // session and is dropped.
+  int _gen = 0;
 
   int get unreadCount => _unreadCount;
   List<NotificationRecord> get items => _items;
@@ -54,22 +57,18 @@ class NotificationService extends ChangeNotifier {
   List<NotificationRecord> consumeFreshArrivals() {
     final f = _freshArrivals;
     _freshArrivals = const [];
-    if (f.isNotEmpty) _lastHandedOver = f.first.id;
     return f;
   }
 
   /// A push tap opened notice [id] (F1): it is never handed over as an
   /// arrival (the user is looking at it), and is dropped from the queue
-  /// when a poll already queued it. True, once, when it was the arrival
-  /// handed over last — its snackbar may be on screen for the host to hide.
-  bool suppressArrival(int id) {
+  /// when a poll already queued it. A snackbar already on screen for it
+  /// is HomeShell's to hide (ArrivalSnackTracker).
+  void suppressArrival(int id) {
     _suppressed.add(id);
     if (_freshArrivals.any((n) => n.id == id)) {
       _freshArrivals = _freshArrivals.where((n) => n.id != id).toList();
     }
-    if (_lastHandedOver != id) return false;
-    _lastHandedOver = null;
-    return true;
   }
 
   /// True, once, after a poll saw the unread count drop: something was
@@ -132,8 +131,10 @@ class NotificationService extends ChangeNotifier {
     _freshArrivals = const [];
     _pollsSinceStart = 0;
     _suppressed.clear();
-    _lastHandedOver = null;
     _unreadDrop = false;
+    _listStale = false;
+    _busy = false;
+    _gen++;
     // Intentionally NOT calling notifyListeners() — this method is
     // only invoked from HomeShell.dispose(), at which point Flutter
     // is mid-finalizeTree (locked) and any rebuild request crashes a
@@ -156,8 +157,10 @@ class NotificationService extends ChangeNotifier {
   Future<bool> _refreshUnread() async {
     final api = _api();
     if (api == null) return false;
+    final gen = _gen;
     try {
       final c = await api.getUnreadNotificationCount();
+      if (gen != _gen) return false; // signed out meanwhile
       _pollsSinceStart++;
       final increased = c > _unreadCount && _pollsSinceStart > 1;
       final dropped = c < _unreadCount && _pollsSinceStart > 1;
@@ -172,12 +175,16 @@ class NotificationService extends ChangeNotifier {
         await refreshList();
         // The server orders DESC: the first unread items are the new ones.
         queueArrivals(_items, increase: increase);
-      } else if (dropped) {
+      } else if (dropped || _listStale) {
         // Read or closed elsewhere (F3): an open bell list shows the new
-        // read state, and HomeShell re-pulls the approvals count.
+        // read state, and HomeShell re-pulls the approvals count. A list
+        // reload that failed earlier is retried here too.
         await refreshList();
-        _unreadDrop = true;
-        notifyListeners();
+        if (gen != _gen) return false;
+        if (dropped) {
+          _unreadDrop = true;
+          notifyListeners();
+        }
       }
       return true;
     } catch (_) {
@@ -192,18 +199,25 @@ class NotificationService extends ChangeNotifier {
   Future<void> refreshList() async {
     final api = _api();
     if (api == null) return;
+    final gen = _gen;
     _busy = true;
     _lastError = null;
     notifyListeners();
     try {
       final list = await api.getNotifications();
+      if (gen != _gen) return; // signed out meanwhile: not this session's
       _items = list;
       _unreadCount = list.where((n) => !n.read).length;
+      _listStale = false;
     } catch (e) {
+      if (gen != _gen) return;
       _lastError = e.toString();
+      _listStale = true;
     } finally {
-      _busy = false;
-      notifyListeners();
+      if (gen == _gen) {
+        _busy = false;
+        notifyListeners();
+      }
     }
   }
 

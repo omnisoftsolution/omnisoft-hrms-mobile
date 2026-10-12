@@ -304,6 +304,12 @@ class FakeNotifications extends NotificationService {
   /// offline).
   bool fetched = true;
 
+  /// Full list reloads (a foreground remove asks for one, F3).
+  int listRefreshes = 0;
+
+  @override
+  Future<void> refreshList() async => listRefreshes++;
+
   @override
   Future<bool> refreshNow() async {
     refreshes++;
