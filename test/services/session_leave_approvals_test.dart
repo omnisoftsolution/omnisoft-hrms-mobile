@@ -197,6 +197,38 @@ void main() {
     });
   });
 
+  test('a /me answer that lands after another sign-in is dropped: the new '
+      'user never gets the old user\'s approvals count (Fable r3/r4 nit)',
+      () async {
+    FlutterSecureStorage.setMockInitialValues({'access_token': 'tok-A'});
+    SharedPreferences.setMockInitialValues({
+      'company_code': 'ACME',
+      'client_url': 'https://acme.test',
+      'client_db': 'acme',
+    });
+    final s = SessionService();
+    await s.load();
+    final gate = Completer<void>();
+    final pending = s.refreshMeWith(_FakeApi(() async {
+      await gate.future;
+      return me({
+        'leave_approvals': {'enabled': true, 'pending_count': 4},
+      });
+    }));
+    await s.saveSession(
+      accessToken: 'tok-B',
+      userId: 2,
+      userLogin: 'budi',
+      userName: 'Budi',
+      employeeId: 2,
+      employeeName: 'Budi',
+    );
+    gate.complete();
+    expect(await pending, isFalse);
+    expect(s.leaveApprovalsPendingCount, 0);
+    expect(s.employeeName, 'Budi');
+  });
+
   test('a sign-out that starts while a /me answer is being stored leaves '
       'no approvals count behind (Fable r3 #1)', () async {
     FlutterSecureStorage.setMockInitialValues({'access_token': 'tok-A'});

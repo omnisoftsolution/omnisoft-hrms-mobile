@@ -79,6 +79,37 @@ void main() {
     expect(find.byType(SnackBar), findsNothing);
   });
 
+  test('a reminder leaves a queued arrival tracked: a tap before it shows '
+      'still dismisses it (Fable r4 nit 3)', () {
+    final t = ArrivalSnackTracker();
+    t.shown(11);
+    t.replaced();
+    expect(t.takeIfShowing(11), isFalse);
+    expect(t.visible(11), isTrue);
+  });
+
+  testWidgets('a second arrival does not forget the first one\'s pending '
+      'dismissal (Codex r4 #1, Fable r4 #1)', (tester) async {
+    final key = GlobalKey<ScaffoldMessengerState>();
+    await tester.pumpWidget(MaterialApp(
+      scaffoldMessengerKey: key,
+      home: const Scaffold(body: SizedBox()),
+    ));
+    final m = key.currentState!;
+    m.showSnackBar(const SnackBar(content: Text('Confirmation X')));
+    m.showSnackBar(const SnackBar(content: Text('Confirmation Y')));
+    await tester.pumpAndSettle();
+    final t = ArrivalSnackTracker();
+    showArrivalSnack(m, t, 11, (wrap) => _bar('Arrival 11', wrap));
+    await tester.pumpAndSettle(); // Y current, 11 queued
+    expect(t.takeIfShowing(11), isFalse); // the tap: deferred
+    showArrivalSnack(m, t, 12, (wrap) => _bar('Arrival 12', wrap));
+    // Y removed: 11 is promoted, shows and must go at once; then 12.
+    await tester.pumpAndSettle();
+    expect(find.text('Arrival 11'), findsNothing);
+    expect(find.text('Arrival 12'), findsOneWidget);
+  });
+
   testWidgets('a tap on the arrival on screen hides it', (tester) async {
     final key = GlobalKey<ScaffoldMessengerState>();
     await tester.pumpWidget(MaterialApp(
