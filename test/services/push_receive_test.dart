@@ -165,6 +165,32 @@ void main() {
     expect(push.consumeApprovalsChanged(), isFalse);
   });
 
+  test('a sign-out while a foreground remove is applied: no bell reload and '
+      'no approvals flag for the old session (F3)', () async {
+    final s = await signedInSession();
+    final push = pushService(
+      messaging: fcm,
+      log: log,
+      pushNative: native,
+      notifications: bell,
+      callTimeout: const Duration(seconds: 3),
+      signOutCap: const Duration(seconds: 3),
+    );
+    s.onSessionClearing = push.onSessionCleared;
+    await push.onSignedIn(s);
+    await push.init();
+    final gate = native.cancelGate = Completer<void>();
+    final removing = push.handleForeground(removal());
+    await flush();
+    final out = s.signOut();
+    await flush();
+    gate.complete();
+    await removing;
+    await out;
+    expect(bell.listRefreshes, 0);
+    expect(push.consumeApprovalsChanged(), isFalse);
+  });
+
   test('company codes match whatever their case or spaces', () {
     expect(isForThisTenant({'company_code': 'acme '}, 'ACME'), isTrue);
     expect(isForThisTenant({'company_code': 'PRINTART'}, 'ACME'), isFalse);

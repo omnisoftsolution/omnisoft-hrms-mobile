@@ -44,6 +44,21 @@ void main() {
     expect(svc.consumeFreshArrivals().map((e) => e.id), [12]);
   });
 
+  test('a suppressed notice still counts as one of the new ones: an older '
+      'unread item does not take its place (F1)', () {
+    final svc = NotificationService();
+    svc.suppressArrival(11);
+    svc.queueArrivals([n(11, 'leave_approved'), n(5, 'leave_refused')],
+        increase: 1);
+    expect(svc.consumeFreshArrivals(), isEmpty);
+
+    final svc2 = NotificationService();
+    svc2.suppressArrival(12);
+    svc2.queueArrivals([n(12, 'leave_approved'), n(11, 'expense_approved')],
+        increase: 2);
+    expect(svc2.consumeFreshArrivals().map((e) => e.id), [11]);
+  });
+
   test('a tapped notice already queued is dropped from the queue (F1)', () {
     final svc = NotificationService();
     svc.queueArrivals(

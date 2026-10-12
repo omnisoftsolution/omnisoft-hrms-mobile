@@ -237,9 +237,15 @@ class FakeNative extends PushNative {
     calls.add('remove ${ids.join(',')}');
   }
 
+  /// The next cancelTag waits for it (used once, then cleared).
+  Completer<void>? cancelGate;
+
   @override
   Future<void> cancelTag(String tag) async {
     calls.add('cancel $tag');
+    final gate = cancelGate;
+    cancelGate = null;
+    if (gate != null) await gate.future;
   }
 
   @override
