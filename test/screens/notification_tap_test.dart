@@ -186,6 +186,14 @@ void main() {
     });
   });
 
+  test('a push tap on an approval request re-pulls the approvals count; '
+      'other kinds do not (Fable r2 #1)', () {
+    expect(pushTapRefreshesApprovals({'kind': 'leave_approval_requested'}),
+        isTrue);
+    expect(pushTapRefreshesApprovals({'kind': 'leave_approved'}), isFalse);
+    expect(pushTapRefreshesApprovals(const {}), isFalse);
+  });
+
   group('openPushTap (spec §6.4)', () {
     late List<String> did;
 

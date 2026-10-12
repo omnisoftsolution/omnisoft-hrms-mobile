@@ -91,6 +91,28 @@ void main() {
     expect(svc.consumeUnreadDrop(), isFalse);
   });
 
+  test('a count increase whose list lands after stop() queues no arrivals '
+      'for the next session (Codex r2 #2)', () async {
+    final api = _BellApi()..items = [n(11)];
+    final svc = NotificationService(apiFor: (_) => api);
+    final session = await signedInSession();
+    svc.start(session);
+    await flush();
+    api.items = [n(12), n(11)];
+    final gate = Completer<void>();
+    api.listGate = gate;
+    final poll = svc.refreshNow(); // count 1 -> 2, waits on the list
+    await flush();
+    svc.stop();
+    svc.start(session); // the next session's first poll
+    await flush();
+    await svc.refreshList(); // the next session opens the bell
+    gate.complete();
+    await poll;
+    expect(svc.consumeFreshArrivals(), isEmpty);
+    svc.stop();
+  });
+
   test('a list reload that failed is retried on the next poll even when the '
       'count no longer moves', () async {
     final api = _BellApi()..items = [n(12), n(11)];

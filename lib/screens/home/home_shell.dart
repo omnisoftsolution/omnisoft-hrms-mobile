@@ -127,14 +127,12 @@ class HomeShellState extends State<HomeShell> {
     }
     final messenger = _scaffoldMessengerKey.currentState;
     if (messenger == null) return;
-    messenger.removeCurrentSnackBar();
-    final closed = _arrivalSnack.shown(fresh.id);
-    messenger
-        .showSnackBar(
-          notificationArrivalSnackBar(fresh, onAction: () => _openArrival(fresh)),
-        )
-        .closed
-        .then((_) => closed());
+    showArrivalSnack(
+      messenger,
+      _arrivalSnack,
+      fresh.id,
+      notificationArrivalSnackBar(fresh, onAction: () => _openArrival(fresh)),
+    );
   }
 
   /// The arrival snackbar's VIEW / Review action.
@@ -210,6 +208,10 @@ class HomeShellState extends State<HomeShell> {
       if (_arrivalSnack.takeIfShowing(noticeId)) {
         _scaffoldMessengerKey.currentState?.hideCurrentSnackBar();
       }
+    }
+    if (pushTapRefreshesApprovals(data)) {
+      // ignore: discarded_futures — fire-and-forget
+      context.read<SessionService>().refreshMe();
     }
     popAbove(context);
     return openPushTap(

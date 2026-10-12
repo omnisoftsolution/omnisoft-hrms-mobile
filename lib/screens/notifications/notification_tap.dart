@@ -203,6 +203,12 @@ bool tapsThroughHandler(NotificationRecord n) {
   return false;
 }
 
+/// A push tap on an "Approval needed" notice: the bell's arrival for it is
+/// suppressed (F1), so the tap itself re-pulls the approvals count the
+/// arrival would have refreshed (Fable r2 #1).
+bool pushTapRefreshesApprovals(Map<String, dynamic> data) =>
+    data['kind']?.toString() == 'leave_approval_requested';
+
 /// A tap on a system notification (spec §6.4, push data per the contract):
 /// a reminder opens Home; a notice is fetched with `notifications/get` and
 /// run through the bell's handler, or opens the bell when it has nowhere

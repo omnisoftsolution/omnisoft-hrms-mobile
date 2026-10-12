@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart';
+
 /// Which notice's arrival snackbar HomeShell has on screen, so a push tap
 /// on that notice hides it (F1) and never hides another snackbar — a
 /// reminder that replaced it, or a newer arrival.
@@ -29,4 +31,19 @@ class ArrivalSnackTracker {
     _shownId = null;
     return true;
   }
+}
+
+/// Shows [bar] as the arrival snackbar for notice [id] and records it in
+/// [tracker]. Whatever [messenger] shows or has queued is cleared first,
+/// so the arrival is the snackbar on screen (a queued one would otherwise
+/// become current while the tracker says the arrival is — Codex r2 #3).
+void showArrivalSnack(
+  ScaffoldMessengerState messenger,
+  ArrivalSnackTracker tracker,
+  int id,
+  SnackBar bar,
+) {
+  messenger.clearSnackBars();
+  final closed = tracker.shown(id);
+  messenger.showSnackBar(bar).closed.then((_) => closed());
 }

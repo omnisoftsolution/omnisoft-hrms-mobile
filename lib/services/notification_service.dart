@@ -173,6 +173,7 @@ class NotificationService extends ChangeNotifier {
         // Need the actual record(s) for the snackbar title — just-saw
         // a count bump is not enough.
         await refreshList();
+        if (gen != _gen) return false; // signed out meanwhile
         // The server orders DESC: the first unread items are the new ones.
         queueArrivals(_items, increase: increase);
       } else if (dropped || _listStale) {

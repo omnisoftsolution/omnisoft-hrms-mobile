@@ -1027,8 +1027,18 @@ class SessionService extends ChangeNotifier {
   @visibleForTesting
   Future<bool> refreshMeWith(OmniMobileApi api) async {
     _lastMeRefresh = clock();
+    final epoch = _authEpoch;
+    final signOuts = _signOutsStarted;
     try {
       final res = await api.me();
+      // A sign-out or another sign-in (or a new access token) while this
+      // was on the wire: the answer belongs to that older session, and
+      // storing it would give its profile and approvals count to the
+      // session signed in now. Dropped; the next refresh asks again.
+      if (_authEpoch != epoch || _signOutsStarted != signOuts) {
+        _lastMeRefresh = null;
+        return false;
+      }
       final user = res['user'] as Map<String, dynamic>? ?? {};
       final employee = res['employee'] as Map<String, dynamic>? ?? {};
       await updateEmployeeFromMe(
