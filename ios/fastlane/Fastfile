@@ -49,30 +49,29 @@ IPA_OUTPUT_NAME = "omnihr.ipa"
 # this per release. Inlined (not read from a file) so it can't break on a
 # path/cwd surprise during the upload step. TestFlight allows ~4000 chars.
 TESTFLIGHT_CHANGELOG = <<~NOTES.freeze
-  New in this build (1.32.0, needs connector 2.62.0 on the server):
-  - Leave approvals: the Pending list has two parts, "Waiting for you"
-    and "You can also approve". Each request says who it waits for:
-    "Your approval", "Waiting for Kelvin (manager)" or "Waiting for HR".
-    The request page shows the same on its current step.
-  - Add this phone: HR can give you an add-phone link, QR code or
-    6-digit code (HR presses Add phone on the employee's App Access tab
-    in Odoo). Open the link or scan the QR, or tap "Add this phone" on
-    the sign-in screen and type your login and the code; then type your
-    Omni HR password.
-    Your other phones stay signed in and your password does not change.
+  New in this build (1.33.0, needs connector 2.63.0 and hrmsmanager 1.9.0):
+  - Notifications: leave and expense decisions, "Approval needed" for
+    approvers, questions and changes from HR about your attendance,
+    company news and personal messages, a new phone added to your
+    account, and (when your company turns them on) check-in / check-out
+    reminders. Home asks once "Stay on top of your day"; turn them on
+    there or later in Profile > Notifications, where each group can be
+    switched off (Security stays on).
+  - Tapping a notification opens the matching screen. With the app open
+    you get a small banner at the bottom instead.
+  - When someone else decides a request first, its "Approval needed"
+    notification disappears from your phone.
 
   Please test:
-  1. As an approver who works in two companies, open Leave approvals:
-     only your own company's requests (plus requests HR named you for)
-     are listed, in the two parts.
-  2. Check the chip and the request page for a request waiting for you,
-     one waiting for a manager and one waiting for HR.
-  3. In Odoo, press Add phone on an employee's App Access tab. On a
-     second phone, open the link (or scan the QR), type the app
-     password and confirm you land on Home. On the first phone, pull
-     down to refresh: it is still signed in.
-  4. Try a wrong password and a wrong code once each and read the
-     message.
+  1. Open the app, accept "Stay on top of your day" and allow
+     notifications.
+  2. Ask HR to approve or refuse one of your leaves: the notification
+     arrives with the phone locked, and a tap opens your leave.
+  3. As an approver, get "Approval needed", tap it, approve: the request
+     opens and the Leave badge updates.
+  4. Profile > Notifications: switch Company news off, ask HR to send a
+     message: nothing arrives. Switch it back on.
+  5. Log out: no more notifications arrive on this phone.
 NOTES
 
 platform :ios do
