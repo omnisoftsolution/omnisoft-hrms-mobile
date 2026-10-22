@@ -2,15 +2,23 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import 'omni_colors.dart';
+
 /// Omni HR design system — see DESIGN.md from the design source folder.
 ///
-/// Color tokens map directly to Material 3 ColorScheme slots so
-/// every Material widget picks up the right shade by default. The
-/// AppBar / button / input / card themes are tuned to match the
-/// reference: white surfaces, blue-tinted ambient shadows, lighter
-/// `primaryContainer` (#2BB8C4) for the call-to-action button.
+/// One builder makes both themes from an [OmniColors] token set, which
+/// is also attached as a theme extension: screens read their colours
+/// with `context.omni`. The Material 3 ColorScheme is mapped from the
+/// same tokens so dialogs, pickers, snackbars and sheets follow too.
 class AppTheme {
-  // ---- Color tokens (from design.md) -----------------------------------
+  /// What the app follows. Held on light until every screen reads
+  /// `context.omni` (dark mode M1–M4); M5 flips it to
+  /// [ThemeMode.system] so the app follows the phone.
+  static const ThemeMode themeMode = ThemeMode.light;
+
+  // ---- Light colour constants (design.md) ------------------------------
+  // Light-only: they don't change with the phone's setting. New code uses
+  // `context.omni`; these go away in dark mode M5.
   static const Color primary = Color(0xFF006971);
   static const Color onPrimary = Color(0xFFFFFFFF);
   /// Lighter teal used for the primary call-to-action and focus accents.
@@ -28,110 +36,148 @@ class AppTheme {
   static const Color surfaceContainer = Color(0xFFECEEF0);
   static const Color inversePrimary = Color(0xFF58D8E4);
 
-  /// Soft blue-tinted ambient shadow used by cards and inputs.
+  /// Soft blue-tinted ambient shadow used by cards and inputs (light).
   /// Per DESIGN.md: 0px 4px 20px rgba(80, 117, 175, 0.08).
-  static List<BoxShadow> get glassShadow => [
-        BoxShadow(
-          color: const Color(0xFF5075AF).withValues(alpha: 0.08),
-          blurRadius: 20,
-          offset: const Offset(0, 4),
-        ),
-      ];
+  static List<BoxShadow> get glassShadow => OmniColors.light.cardShadow;
 
-  /// Stronger glow used by the primary CTA button.
+  /// Stronger glow used by the primary CTA button (light).
   /// Per DESIGN.md: 0px 10px 30px rgba(43, 184, 196, 0.30).
-  static List<BoxShadow> get primaryGlow => [
-        BoxShadow(
-          color: primaryContainer.withValues(alpha: 0.30),
-          blurRadius: 30,
-          offset: const Offset(0, 10),
+  static List<BoxShadow> get primaryGlow => OmniColors.light.buttonGlow;
+
+  static ThemeData get lightTheme => _build(
+        OmniColors.light,
+        const ColorScheme.light(
+          primary: primary,
+          onPrimary: onPrimary,
+          primaryContainer: primaryContainer,
+          onPrimaryContainer: onPrimaryContainer,
+          secondary: secondary,
+          onSecondary: onSecondary,
+          surface: surface,
+          onSurface: onSurface,
+          onSurfaceVariant: onSurfaceVariant,
+          error: error,
+          outline: outline,
+          outlineVariant: outlineVariant,
         ),
-      ];
+        // Dark status-bar icons on the white AppBar.
+        const SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: Brightness.dark, // Android
+          statusBarBrightness: Brightness.light, // iOS
+        ),
+      );
 
-  /// Dark status-bar icons on the now-white AppBar.
-  static const SystemUiOverlayStyle _statusBarStyle = SystemUiOverlayStyle(
-    statusBarColor: Colors.transparent,
-    statusBarIconBrightness: Brightness.dark, // Android
-    statusBarBrightness: Brightness.light,    // iOS
-  );
+  static ThemeData get darkTheme {
+    final c = OmniColors.dark;
+    return _build(
+      c,
+      ColorScheme.dark(
+        primary: c.accent,
+        onPrimary: c.onButton,
+        primaryContainer: c.brandFill,
+        onPrimaryContainer: c.onAccentTint,
+        secondary: c.secondary,
+        onSecondary: const Color(0xFF0E2F5E),
+        secondaryContainer: c.segmentOn,
+        onSecondaryContainer: c.onPendingTint,
+        surface: c.background,
+        onSurface: c.text,
+        onSurfaceVariant: c.textSub,
+        surfaceContainerLowest: const Color(0xFF0A0F10),
+        surfaceContainerLow: c.bar,
+        surfaceContainer: c.card,
+        surfaceContainerHigh: c.sheet,
+        surfaceContainerHighest: c.soft,
+        error: c.error,
+        onError: c.onBadge,
+        errorContainer: c.errorTint,
+        onErrorContainer: c.onErrorTint,
+        outline: c.textMuted,
+        outlineVariant: c.line,
+        inverseSurface: c.text,
+        onInverseSurface: const Color(0xFF2B3132),
+        inversePrimary: const Color(0xFF006971),
+      ),
+      // Light status-bar icons on the dark AppBar.
+      const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light, // Android
+        statusBarBrightness: Brightness.dark, // iOS
+      ),
+      sheets: true,
+    );
+  }
 
-  static ThemeData get lightTheme {
+  /// [sheets]: give bottom sheets and dialogs the `sheet` token. Off for
+  /// light, which keeps Material's defaults as before dark mode.
+  static ThemeData _build(
+    OmniColors c,
+    ColorScheme scheme,
+    SystemUiOverlayStyle statusBar, {
+    bool sheets = false,
+  }) {
     final base = ThemeData(
       useMaterial3: true,
-      colorScheme: const ColorScheme.light(
-        primary: primary,
-        onPrimary: onPrimary,
-        primaryContainer: primaryContainer,
-        onPrimaryContainer: onPrimaryContainer,
-        secondary: secondary,
-        onSecondary: onSecondary,
-        surface: surface,
-        onSurface: onSurface,
-        onSurfaceVariant: onSurfaceVariant,
-        error: error,
-        outline: outline,
-        outlineVariant: outlineVariant,
-      ),
-      scaffoldBackgroundColor: surface,
+      colorScheme: scheme,
+      scaffoldBackgroundColor: c.background,
     );
 
     final inter = GoogleFonts.interTextTheme(base.textTheme);
 
     return base.copyWith(
+      extensions: [c],
       textTheme: inter.copyWith(
         // Tighter, heavier display variants per design tokens.
         displaySmall: inter.displaySmall?.copyWith(
           fontWeight: FontWeight.w800,
           letterSpacing: -0.5,
-          color: onSurface,
+          color: c.text,
         ),
         headlineLarge: inter.headlineLarge?.copyWith(
           fontWeight: FontWeight.w800,
           letterSpacing: -0.5,
-          color: onSurface,
+          color: c.text,
         ),
         headlineMedium: inter.headlineMedium?.copyWith(
           fontWeight: FontWeight.w700,
           letterSpacing: -0.3,
-          color: onSurface,
+          color: c.text,
         ),
         titleLarge: inter.titleLarge?.copyWith(
           fontWeight: FontWeight.w700,
-          color: onSurface,
+          color: c.text,
         ),
       ),
       appBarTheme: AppBarTheme(
-        backgroundColor: surfaceContainerLowest,
-        foregroundColor: onSurface,
+        backgroundColor: c.bar,
+        foregroundColor: c.text,
         elevation: 0,
         scrolledUnderElevation: 0,
         surfaceTintColor: Colors.transparent,
         centerTitle: true,
-        systemOverlayStyle: _statusBarStyle,
-        iconTheme: const IconThemeData(color: onSurfaceVariant, size: 22),
+        systemOverlayStyle: statusBar,
+        iconTheme: IconThemeData(color: c.textSub, size: 22),
         titleTextStyle: GoogleFonts.inter(
           fontSize: 18,
           fontWeight: FontWeight.w700,
-          color: onSurface,
+          color: c.text,
           letterSpacing: -0.2,
         ),
         shape: Border(
-          bottom: BorderSide(
-            color: outline.withValues(alpha: 0.12),
-            width: 1,
-          ),
+          bottom: BorderSide(color: c.lineSoft, width: 1),
         ),
       ),
       cardTheme: CardThemeData(
         elevation: 1,
-        shadowColor: secondary.withValues(alpha: 0.08),
+        shadowColor: c.cardShadowColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        color: surfaceContainerLowest,
+        color: c.card,
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: primaryContainer,
-          foregroundColor: onPrimary,
+          backgroundColor: c.button,
+          foregroundColor: c.onButton,
           shape: const StadiumBorder(),
           padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
           textStyle: GoogleFonts.inter(
@@ -148,20 +194,20 @@ class AppTheme {
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          foregroundColor: primary,
+          foregroundColor: c.accent,
           shape: const StadiumBorder(),
           padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
           textStyle: GoogleFonts.inter(
             fontSize: 15,
             fontWeight: FontWeight.w600,
           ),
-          side: const BorderSide(color: primary, width: 1.5),
+          side: BorderSide(color: c.accent, width: 1.5),
         ),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-          backgroundColor: primaryContainer,
-          foregroundColor: onPrimary,
+          backgroundColor: c.button,
+          foregroundColor: c.onButton,
           shape: const StadiumBorder(),
           padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
           textStyle: GoogleFonts.inter(
@@ -172,7 +218,7 @@ class AppTheme {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: surfaceContainerLowest,
+        fillColor: c.card,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide.none,
@@ -183,30 +229,30 @@ class AppTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: primaryContainer, width: 1.5),
+          borderSide: BorderSide(color: c.focus, width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: error, width: 1.5),
+          borderSide: BorderSide(color: c.error, width: 1.5),
         ),
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-        prefixIconColor: onSurfaceVariant,
-        suffixIconColor: onSurfaceVariant,
+        prefixIconColor: c.textSub,
+        suffixIconColor: c.textSub,
         labelStyle: GoogleFonts.inter(
           fontSize: 14,
-          color: onSurfaceVariant,
+          color: c.textSub,
         ),
         floatingLabelStyle: GoogleFonts.inter(
           fontSize: 12,
           fontWeight: FontWeight.w600,
-          color: primaryContainer,
+          color: c.focus,
         ),
       ),
       bottomNavigationBarTheme: BottomNavigationBarThemeData(
-        backgroundColor: surfaceContainerLowest,
-        selectedItemColor: primary,
-        unselectedItemColor: outline,
+        backgroundColor: c.bar,
+        selectedItemColor: c.accent,
+        unselectedItemColor: c.textMuted,
         type: BottomNavigationBarType.fixed,
         elevation: 8,
         selectedLabelStyle: GoogleFonts.inter(
@@ -219,10 +265,17 @@ class AppTheme {
         ),
       ),
       dividerTheme: DividerThemeData(
-        color: outline.withValues(alpha: 0.12),
+        color: c.lineSoft,
         thickness: 1,
         space: 1,
       ),
+      bottomSheetTheme: sheets
+          ? BottomSheetThemeData(
+              backgroundColor: c.sheet,
+              modalBackgroundColor: c.sheet,
+            )
+          : null,
+      dialogTheme: sheets ? DialogThemeData(backgroundColor: c.sheet) : null,
     );
   }
 }

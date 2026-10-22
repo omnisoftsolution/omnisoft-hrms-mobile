@@ -48,6 +48,18 @@ Android + iOS employee app for Omni HR (version in pubspec.yaml). Backend = Odoo
 - Device test caveat: check whether iPhone actually returns a BSSID (iOS 26 reality — Apple has
   progressively restricted this even with the entitlement).
 
+## Colours / dark mode (in progress, branch feat/dark-mode)
+- Tokens: `lib/core/omni_colors.dart` — `OmniColors` (ThemeExtension, `light` + `dark`) incl. the My day
+  palette (`MyDayTone.kind`; compare tones by kind, never identity). Read them with `context.omni`.
+  Both themes come from one builder in `lib/core/theme.dart`; `main.dart` wires `darkTheme`.
+- **New code uses `context.omni`**, never hex literals or the static `AppTheme.<colour>` constants (light-only,
+  removed in M5). Pick by job: `accent` = teal text/icons on a card, `brandFill` = teal behind white text;
+  `card` (not `Colors.white`) for surfaces.
+- `AppTheme.themeMode` stays `ThemeMode.light` until every screen is migrated (M1–M4); M5 flips it to
+  `ThemeMode.system`. Plan + canvas: `session-assets/2026-10-22-dark-mode/plan.md` in the workspace.
+- `test/core/omni_colors_test.dart` checks WCAG contrast of every token pair (dark: all pass; light: a fixed list
+  of failures the app already had). Theme-building tests must be `testWidgets` (google_fonts fetches over HTTP).
+
 ## Build footgun — ALREADY FIXED, do not remove
 Flutter 3.44 + tflite_flutter "Inconsistent JVM Target" (`:tflite_flutter:compileReleaseKotlin`) is fixed on
 master (f82a8db): android/gradle.properties sets `kotlin.jvm.target.validation.mode=warning`, and the JDK is

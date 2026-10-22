@@ -188,6 +188,8 @@ class _OmniHrAppState extends State<OmniHrApp> with WidgetsBindingObserver {
         navigatorKey: _navigatorKey,
         title: AppConstants.appName,
         theme: AppTheme.lightTheme,
+        darkTheme: AppTheme.darkTheme,
+        themeMode: AppTheme.themeMode,
         debugShowCheckedModeBanner: false,
         // Reactive routing: rebuilds when session state changes
         // (company code → sign-in → Home; see SessionGate).
