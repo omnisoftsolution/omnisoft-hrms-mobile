@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/datetime_utils.dart';
-import '../../../core/theme.dart';
+import '../../../core/omni_colors.dart';
 import '../../../models/auto_close_previous.dart';
 
 /// Shown once after a check-in during which the connector auto-closed a
@@ -18,8 +18,9 @@ class AutoClosedBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const yellow = Color(0xFFB45309); // amber-800
-    const bg = Color(0xFFFEF3C7); // amber-100
+    final c = context.omni;
+    final yellow = c.warning;
+    final bg = c.warningTint;
     final original = DateTimeUtils.formatLocalDateTime(acp.originalCheckIn);
     final inferred = DateTimeUtils.formatLocalDateTime(acp.inferredCheckOut);
     return Container(
@@ -33,13 +34,13 @@ class AutoClosedBanner extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.info_outline_rounded, size: 18, color: yellow),
+          Icon(Icons.info_outline_rounded, size: 18, color: yellow),
           const SizedBox(width: 8),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Previous check-in auto-closed',
                   style: TextStyle(
                     fontSize: 13,
@@ -53,9 +54,9 @@ class AutoClosedBanner extends StatelessWidget {
                   'closed. We recorded a '
                   '${acp.hoursAssumed.toStringAsFixed(0)}-hour shift '
                   'ending at $inferred. Contact HR if this is incorrect.',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
-                    color: AppTheme.onSurfaceVariant,
+                    color: c.textSub,
                     height: 1.4,
                   ),
                 ),

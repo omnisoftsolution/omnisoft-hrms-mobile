@@ -6,7 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import '../core/constants.dart';
-import '../core/theme.dart';
+import '../core/omni_colors.dart';
 import '../models/face_capture_result.dart';
 import '../services/face_recognition_service.dart';
 
@@ -273,7 +273,7 @@ class _InlineFaceCaptureState extends State<InlineFaceCapture> {
             height: outer,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: AppTheme.primaryContainer.withValues(alpha: 0.18),
+              color: context.omni.checkInFill.withValues(alpha: 0.18),
             ),
           ),
           // Inner circle: camera preview clipped to circle.
@@ -293,7 +293,8 @@ class _InlineFaceCaptureState extends State<InlineFaceCapture> {
               height: widget.size,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 4),
+                // Same ring as the big check button.
+                border: Border.all(color: context.omni.card, width: 4),
               ),
             ),
           ),
@@ -359,7 +360,7 @@ class _InlineFaceCaptureState extends State<InlineFaceCapture> {
           width: 28,
           height: 28,
           child: CircularProgressIndicator(
-            color: AppTheme.primaryContainer,
+            color: context.omni.checkInFill,
             strokeWidth: 2,
           ),
         ),
@@ -408,7 +409,7 @@ class _InlineFaceCaptureState extends State<InlineFaceCapture> {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
         color: _phase == _Phase.retrying
-            ? AppTheme.error.withValues(alpha: 0.92)
+            ? context.omni.errorFill.withValues(alpha: 0.92)
             : Colors.black.withValues(alpha: 0.55),
         borderRadius: BorderRadius.circular(100),
       ),

@@ -4,7 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../../core/datetime_utils.dart';
 import '../../../models/my_day.dart';
-import 'my_day_colors.dart';
+import '../../../core/omni_colors.dart';
 
 /// What the status tile shows, derived from `today` in the order of
 /// spec 2026-10-06 §4.2 (first match wins).
@@ -54,27 +54,31 @@ MyDayDisplay displayOf(MyDay day) {
   }
 }
 
-MyDayTone toneOf(MyDayDisplay display) {
+/// [palette] is the theme's (`context.omni.myDay`); light by default.
+MyDayTone toneOf(
+  MyDayDisplay display, [
+  MyDayPalette palette = MyDayPalette.light,
+]) {
   switch (display) {
     case MyDayDisplay.holiday:
-      return MyDayColors.holiday;
+      return palette.holiday;
     case MyDayDisplay.leave:
-      return MyDayColors.leave;
+      return palette.leave;
     case MyDayDisplay.noShift:
     case MyDayDisplay.notIn:
-      return MyDayColors.waiting;
+      return palette.waiting;
     case MyDayDisplay.missing:
-      return MyDayColors.missing;
+      return palette.missing;
     case MyDayDisplay.late:
     case MyDayDisplay.early:
-      return MyDayColors.late;
+      return palette.late;
     case MyDayDisplay.onBreak:
-      return MyDayColors.brk;
+      return palette.brk;
     case MyDayDisplay.overtime:
-      return MyDayColors.overtime;
+      return palette.overtime;
     case MyDayDisplay.checkedIn:
     case MyDayDisplay.done:
-      return MyDayColors.work;
+      return palette.work;
   }
 }
 

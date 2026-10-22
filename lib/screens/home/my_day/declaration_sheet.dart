@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../../core/theme.dart';
+import '../../../core/omni_colors.dart';
 import '../../../models/attendance_ask.dart';
 
 /// Picks a time for an answer; tests replace it.
@@ -144,6 +144,7 @@ class _DeclarationSheetState extends State<DeclarationSheet> {
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
     final undo = _selected == 'undo';
+    final c = context.omni;
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
       child: SafeArea(
@@ -156,7 +157,7 @@ class _DeclarationSheetState extends State<DeclarationSheet> {
               Text(
                 widget.heading,
                 style: text.labelLarge?.copyWith(
-                  color: AppTheme.primary,
+                  color: c.accent,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -215,7 +216,8 @@ class _DeclarationSheetState extends State<DeclarationSheet> {
                     key: const ValueKey('declaration-send'),
                     style: undo
                         ? FilledButton.styleFrom(
-                            backgroundColor: AppTheme.error,
+                            backgroundColor: c.errorFill,
+                            foregroundColor: c.onBrandFill,
                           )
                         : null,
                     onPressed: _ready ? _send : null,
@@ -234,7 +236,7 @@ class _DeclarationSheetState extends State<DeclarationSheet> {
               Text(
                 widget.footnote,
                 key: const ValueKey('declaration-footnote'),
-                style: text.bodySmall?.copyWith(color: AppTheme.outline),
+                style: text.bodySmall?.copyWith(color: c.textMuted),
               ),
             ],
           ),

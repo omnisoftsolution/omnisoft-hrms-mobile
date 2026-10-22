@@ -42,6 +42,8 @@ class MyDayPalette {
   final MyDayTone missing;
   final MyDayTone waiting;
   final MyDayTone holiday;
+  /// Icon on a filled dot (timeline punch circles).
+  final Color onDot;
 
   const MyDayPalette({
     required this.work,
@@ -52,6 +54,7 @@ class MyDayPalette {
     required this.missing,
     required this.waiting,
     required this.holiday,
+    required this.onDot,
   });
 
   MyDayTone of(MyDayToneKind kind) => switch (kind) {
@@ -78,6 +81,7 @@ class MyDayPalette {
         missing: MyDayTone.lerp(a.missing, b.missing, t),
         waiting: MyDayTone.lerp(a.waiting, b.waiting, t),
         holiday: MyDayTone.lerp(a.holiday, b.holiday, t),
+        onDot: Color.lerp(a.onDot, b.onDot, t)!,
       );
 
   // ---- Light (the app's colours up to 1.33.0) ---------------------------
@@ -147,6 +151,7 @@ class MyDayPalette {
     missing: lightMissing,
     waiting: lightWaiting,
     holiday: lightHoliday,
+    onDot: Color(0xFFFFFFFF),
   );
 
   // ---- Dark (canvas 2026-10-22; fills step down so tiles don't glow) ----
@@ -207,6 +212,8 @@ class MyDayPalette {
       onTint: Color(0xFFC9D1D2),
       dot: Color(0xFF9AA5A6),
     ),
+    // Dark dots are light, so their icons are dark.
+    onDot: Color(0xFF0E1415),
   );
 }
 
@@ -250,6 +257,8 @@ class OmniColors extends ThemeExtension<OmniColors> {
   /// Main call-to-action button.
   final Color button;
   final Color onButton;
+  /// The big check-in circle (white text on it).
+  final Color checkInFill;
   /// Focused input border and floating label.
   final Color focus;
   /// Blue text (pending, links).
@@ -267,8 +276,12 @@ class OmniColors extends ThemeExtension<OmniColors> {
   final Color errorFill;
   final Color success;
   final Color successTint;
+  /// Green fill behind white text (the check-in tick).
+  final Color successFill;
   final Color warning;
   final Color warningTint;
+  /// Text on a `warning` fill (the amber "Tell HR" button).
+  final Color onWarning;
   /// Count badges (bell, tabs).
   final Color badge;
   final Color onBadge;
@@ -302,6 +315,7 @@ class OmniColors extends ThemeExtension<OmniColors> {
     required this.onBrandFill,
     required this.button,
     required this.onButton,
+    required this.checkInFill,
     required this.focus,
     required this.secondary,
     required this.segmentOn,
@@ -314,8 +328,10 @@ class OmniColors extends ThemeExtension<OmniColors> {
     required this.errorFill,
     required this.success,
     required this.successTint,
+    required this.successFill,
     required this.warning,
     required this.warningTint,
+    required this.onWarning,
     required this.badge,
     required this.onBadge,
     required this.navIndicator,
@@ -345,6 +361,7 @@ class OmniColors extends ThemeExtension<OmniColors> {
     onBrandFill: const Color(0xFFFFFFFF),
     button: const Color(0xFF2BB8C4),
     onButton: const Color(0xFFFFFFFF),
+    checkInFill: const Color(0xFF2BB8C4),
     focus: const Color(0xFF2BB8C4),
     secondary: const Color(0xFF395F97),
     segmentOn: const Color(0xFF395F97),
@@ -357,8 +374,10 @@ class OmniColors extends ThemeExtension<OmniColors> {
     errorFill: const Color(0xFFBA1A1A),
     success: const Color(0xFF1B7F3B),
     successTint: const Color(0xFFDCF2E3),
+    successFill: const Color(0xFF1B7F3B),
     warning: const Color(0xFFB45309),
     warningTint: const Color(0xFFFEF3C7),
+    onWarning: const Color(0xFFFFFFFF),
     badge: const Color(0xFFBA1A1A),
     onBadge: const Color(0xFFFFFFFF),
     navIndicator: const Color(0xFF2BB8C4).withValues(alpha: 0.18),
@@ -403,6 +422,7 @@ class OmniColors extends ThemeExtension<OmniColors> {
     onBrandFill: const Color(0xFFFFFFFF),
     button: const Color(0xFF58D8E4),
     onButton: const Color(0xFF00363B),
+    checkInFill: const Color(0xFF00525A),
     focus: const Color(0xFF58D8E4),
     secondary: const Color(0xFFA8C8FF),
     segmentOn: const Color(0xFF2F558F),
@@ -415,8 +435,10 @@ class OmniColors extends ThemeExtension<OmniColors> {
     errorFill: const Color(0xFF93000A),
     success: const Color(0xFF7FD89F),
     successTint: const Color(0xFF173D27),
+    successFill: const Color(0xFF1B5E38),
     warning: const Color(0xFFFFD58A),
     warningTint: const Color(0xFF3D3012),
+    onWarning: const Color(0xFF3D3012),
     badge: const Color(0xFFFFB4AB),
     onBadge: const Color(0xFF690005),
     navIndicator: const Color(0xFF58D8E4).withValues(alpha: 0.16),
@@ -446,6 +468,7 @@ class OmniColors extends ThemeExtension<OmniColors> {
     Color? onBrandFill,
     Color? button,
     Color? onButton,
+    Color? checkInFill,
     Color? focus,
     Color? secondary,
     Color? segmentOn,
@@ -458,8 +481,10 @@ class OmniColors extends ThemeExtension<OmniColors> {
     Color? errorFill,
     Color? success,
     Color? successTint,
+    Color? successFill,
     Color? warning,
     Color? warningTint,
+    Color? onWarning,
     Color? badge,
     Color? onBadge,
     Color? navIndicator,
@@ -487,6 +512,7 @@ class OmniColors extends ThemeExtension<OmniColors> {
         onBrandFill: onBrandFill ?? this.onBrandFill,
         button: button ?? this.button,
         onButton: onButton ?? this.onButton,
+        checkInFill: checkInFill ?? this.checkInFill,
         focus: focus ?? this.focus,
         secondary: secondary ?? this.secondary,
         segmentOn: segmentOn ?? this.segmentOn,
@@ -499,8 +525,10 @@ class OmniColors extends ThemeExtension<OmniColors> {
         errorFill: errorFill ?? this.errorFill,
         success: success ?? this.success,
         successTint: successTint ?? this.successTint,
+        successFill: successFill ?? this.successFill,
         warning: warning ?? this.warning,
         warningTint: warningTint ?? this.warningTint,
+        onWarning: onWarning ?? this.onWarning,
         badge: badge ?? this.badge,
         onBadge: onBadge ?? this.onBadge,
         navIndicator: navIndicator ?? this.navIndicator,
@@ -533,6 +561,7 @@ class OmniColors extends ThemeExtension<OmniColors> {
       onBrandFill: c(onBrandFill, other.onBrandFill),
       button: c(button, other.button),
       onButton: c(onButton, other.onButton),
+      checkInFill: c(checkInFill, other.checkInFill),
       focus: c(focus, other.focus),
       secondary: c(secondary, other.secondary),
       segmentOn: c(segmentOn, other.segmentOn),
@@ -545,8 +574,10 @@ class OmniColors extends ThemeExtension<OmniColors> {
       errorFill: c(errorFill, other.errorFill),
       success: c(success, other.success),
       successTint: c(successTint, other.successTint),
+      successFill: c(successFill, other.successFill),
       warning: c(warning, other.warning),
       warningTint: c(warningTint, other.warningTint),
+      onWarning: c(onWarning, other.onWarning),
       badge: c(badge, other.badge),
       onBadge: c(onBadge, other.onBadge),
       navIndicator: c(navIndicator, other.navIndicator),

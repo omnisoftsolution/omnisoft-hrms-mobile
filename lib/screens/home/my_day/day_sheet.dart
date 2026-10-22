@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-import '../../../core/theme.dart';
+import '../../../core/omni_colors.dart';
 import '../../../models/my_day.dart';
-import 'my_day_colors.dart';
 import 'my_day_display.dart';
 
 /// What the day sheet says about one week-strip day (spec 2026-10-06 §8.2).
@@ -33,19 +32,19 @@ String dayTitle(String date) {
 
 String _shiftLine(MyDayWeekDay d) => d.shift.isEmpty ? '' : 'Shift ${d.shift}';
 
-DaySummary _worked(MyDayWeekDay d) {
+DaySummary _worked(MyDayWeekDay d, MyDayPalette palette) {
   var head = d.workedMinutes > 0
       ? 'Worked ${workedLabel(d.workedMinutes)}'
       : 'Worked';
-  var tone = MyDayColors.work;
+  var tone = palette.work;
   var icon = Icons.check_circle_outline;
   if (d.verdict == 'late' && d.lateMinutes > 0) {
     head += ' · ${minutesLabel(d.lateMinutes)} late';
-    tone = MyDayColors.late;
+    tone = palette.late;
     icon = Icons.alarm_outlined;
   } else if (d.verdict == 'early_leave' && d.earlyMinutes > 0) {
     head += ' · left ${minutesLabel(d.earlyMinutes)} early';
-    tone = MyDayColors.late;
+    tone = palette.late;
     icon = Icons.logout_outlined;
   } else if (d.verdict == 'ok') {
     head += ' · on time';
@@ -66,17 +65,21 @@ DaySummary _worked(MyDayWeekDay d) {
   );
 }
 
-DaySummary daySummaryOf(MyDayWeekDay d) {
+/// [palette] is the theme's (`context.omni.myDay`); light by default.
+DaySummary daySummaryOf(
+  MyDayWeekDay d, {
+  MyDayPalette palette = MyDayPalette.light,
+}) {
   final title = dayTitle(d.date);
   switch (d.kind) {
     case 'worked':
-      return _worked(d);
+      return _worked(d, palette);
     case 'absent':
       return DaySummary(
         title: title,
         head: 'No check-in recorded',
         sub: _shiftLine(d),
-        tone: MyDayColors.missing,
+        tone: palette.missing,
         icon: Icons.warning_amber_outlined,
       );
     case 'public_holiday':
@@ -84,7 +87,7 @@ DaySummary daySummaryOf(MyDayWeekDay d) {
         title: title,
         head: 'Public holiday',
         sub: d.name,
-        tone: MyDayColors.holiday,
+        tone: palette.holiday,
         icon: Icons.star_outline,
       );
     case 'leave':
@@ -92,7 +95,7 @@ DaySummary daySummaryOf(MyDayWeekDay d) {
         title: title,
         head: d.name.isEmpty ? 'Leave' : d.name,
         sub: d.approver.isEmpty ? '' : 'Approved by ${d.approver}',
-        tone: MyDayColors.leave,
+        tone: palette.leave,
         icon: Icons.event_available_outlined,
       );
     case 'scheduled':
@@ -100,7 +103,7 @@ DaySummary daySummaryOf(MyDayWeekDay d) {
         title: title,
         head: 'Scheduled',
         sub: _shiftLine(d),
-        tone: MyDayColors.waiting,
+        tone: palette.waiting,
         icon: Icons.schedule_outlined,
       );
     default:
@@ -108,7 +111,7 @@ DaySummary daySummaryOf(MyDayWeekDay d) {
         title: title,
         head: 'No shift',
         sub: '',
-        tone: MyDayColors.waiting,
+        tone: palette.waiting,
         icon: Icons.wb_sunny_outlined,
       );
   }
@@ -122,7 +125,7 @@ DaySummary daySummaryOf(MyDayWeekDay d) {
 /// Leave, History and Expenses stay visible and tappable. (showKioskSheet
 /// is the opposite case and uses the root navigator on purpose.)
 Future<void> showDaySheet(BuildContext context, MyDayWeekDay day) {
-  final summary = daySummaryOf(day);
+  final summary = daySummaryOf(day, palette: context.omni.myDay);
   return showModalBottomSheet<void>(
     context: context,
     useRootNavigator: false,
@@ -174,7 +177,7 @@ Future<void> showDaySheet(BuildContext context, MyDayWeekDay day) {
                           Text(
                             summary.sub,
                             style: text.bodySmall?.copyWith(
-                              color: AppTheme.outline,
+                              color: sheetContext.omni.textMuted,
                             ),
                           ),
                         ],

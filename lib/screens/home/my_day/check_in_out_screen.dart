@@ -5,7 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/error_messages.dart';
-import '../../../core/theme.dart';
+import '../../../core/omni_colors.dart';
 import '../../../models/face_capture_result.dart';
 import '../../../services/attendance_action_controller.dart';
 import '../../../widgets/big_check_button.dart';
@@ -268,12 +268,13 @@ class _CheckInOutScreenState extends State<CheckInOutScreen> {
   Widget build(BuildContext context) {
     final now = DateTime.now();
     final failed = _phase == _Phase.failed;
-    final muted = TextStyle(fontSize: 13, color: AppTheme.onSurfaceVariant);
+    final c = context.omni;
+    final muted = TextStyle(fontSize: 13, color: c.textSub);
     // While the punch runs the camera's ✕ is the only way out.
     return PopScope(
       canPop: failed,
       child: Scaffold(
-        backgroundColor: AppTheme.surface,
+        backgroundColor: c.background,
         body: SafeArea(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
@@ -358,7 +359,8 @@ class _CheckInOutScreenState extends State<CheckInOutScreen> {
                     child: FilledButton(
                       onPressed: () => _close(const CheckInOutResult()),
                       style: FilledButton.styleFrom(
-                        backgroundColor: AppTheme.primary,
+                        backgroundColor: c.brandFill,
+                        foregroundColor: c.onBrandFill,
                         shape: const StadiumBorder(),
                       ),
                       child: const Text(
@@ -380,6 +382,18 @@ class _CheckInOutScreenState extends State<CheckInOutScreen> {
   }
 }
 
+/// The cards' soft shadow; none in dark (cards separate by tone).
+List<BoxShadow>? _cardShadow(BuildContext context) =>
+    context.omni.cardShadow.isEmpty
+    ? null
+    : const [
+        BoxShadow(
+          color: Color(0x0D191C1E),
+          blurRadius: 20,
+          offset: Offset(0, 4),
+        ),
+      ];
+
 class _Card extends StatelessWidget {
   const _Card({required this.child});
 
@@ -389,15 +403,9 @@ class _Card extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
     decoration: BoxDecoration(
-      color: AppTheme.surfaceContainerLowest,
+      color: context.omni.card,
       borderRadius: BorderRadius.circular(24),
-      boxShadow: const [
-        BoxShadow(
-          color: Color(0x0D191C1E),
-          blurRadius: 20,
-          offset: Offset(0, 4),
-        ),
-      ],
+      boxShadow: _cardShadow(context),
     ),
     child: child,
   );
@@ -423,83 +431,81 @@ class _Header extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-    decoration: BoxDecoration(
-      color: AppTheme.surfaceContainerLowest,
-      borderRadius: BorderRadius.circular(24),
-      boxShadow: const [
-        BoxShadow(
-          color: Color(0x0D191C1E),
-          blurRadius: 20,
-          offset: Offset(0, 4),
-        ),
-      ],
-    ),
-    child: Row(
-      children: [
-        CircleAvatar(
-          radius: 22,
-          backgroundColor: const Color(0xFFDCEFF1),
-          child: Text(
-            _initials,
-            style: const TextStyle(
-              color: Color(0xFF004F55),
-              fontWeight: FontWeight.w800,
+  Widget build(BuildContext context) {
+    final c = context.omni;
+    // The amber late note: the late fill in light, its (lighter) dot in dark.
+    final lateText = Theme.of(context).brightness == Brightness.dark
+        ? c.myDay.late.dot
+        : c.myDay.late.fill;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: c.card,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: _cardShadow(context),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 22,
+            backgroundColor: c.accentTint,
+            child: Text(
+              _initials,
+              style: TextStyle(
+                color: c.onAccentTint,
+                fontWeight: FontWeight.w800,
+              ),
             ),
           ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 12, color: c.textSub),
+                ),
+              ],
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 16,
+                time,
+                style: GoogleFonts.inter(
+                  fontSize: 22,
                   fontWeight: FontWeight.w800,
+                  color: c.text,
                 ),
               ),
-              Text(
-                subtitle,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: AppTheme.onSurfaceVariant,
+              if (note.isNotEmpty)
+                Text(
+                  note,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: lateText,
+                  ),
                 ),
-              ),
             ],
           ),
-        ),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Text(
-              time,
-              style: GoogleFonts.inter(
-                fontSize: 22,
-                fontWeight: FontWeight.w800,
-                color: AppTheme.onSurface,
-              ),
-            ),
-            if (note.isNotEmpty)
-              Text(
-                note,
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF8A5A00),
-                ),
-              ),
-          ],
-        ),
-      ],
-    ),
-  );
+        ],
+      ),
+    );
+  }
 }
 
 /// One checklist row: mark, title, detail.
@@ -519,55 +525,51 @@ class _StepRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.omni;
     final (Color bg, Color fg, Widget? mark) = switch (row) {
       _Row.done => (
-        const Color(0xFFDCF2E3),
-        const Color(0xFF1B7F3B),
-        const Icon(Icons.check_rounded, size: 18, color: Color(0xFF1B7F3B)),
+        c.successTint,
+        c.success,
+        Icon(Icons.check_rounded, size: 18, color: c.success),
       ),
       _Row.skipped => (
-        AppTheme.surfaceContainer,
-        AppTheme.outline,
-        Icon(Icons.remove_rounded, size: 18, color: AppTheme.outline),
+        c.soft,
+        c.textMuted,
+        Icon(Icons.remove_rounded, size: 18, color: c.textMuted),
       ),
       _Row.running => (
-        const Color(0xFFDCEFF1),
-        AppTheme.primary,
-        const SizedBox(
+        c.accentTint,
+        c.accent,
+        SizedBox(
           width: 14,
           height: 14,
-          child: CircularProgressIndicator(
-            strokeWidth: 2,
-            color: AppTheme.primary,
-          ),
+          child: CircularProgressIndicator(strokeWidth: 2, color: c.accent),
         ),
       ),
       _Row.failed => (
-        const Color(0xFFFFDAD6),
-        AppTheme.error,
-        const Icon(Icons.close_rounded, size: 18, color: AppTheme.error),
+        c.errorTint,
+        c.error,
+        Icon(Icons.close_rounded, size: 18, color: c.error),
       ),
       // Not recognised, the camera opens again (P3): red text, a retry
       // mark instead of the cross — the action is still going.
       _Row.retry => (
-        const Color(0xFFFFDAD6),
-        AppTheme.error,
-        const Icon(Icons.refresh_rounded, size: 18, color: AppTheme.error),
+        c.errorTint,
+        c.error,
+        Icon(Icons.refresh_rounded, size: 18, color: c.error),
       ),
-      _Row.pending => (AppTheme.surfaceContainer, AppTheme.outline, null),
+      _Row.pending => (c.soft, c.textMuted, null),
     };
     final titleColor = switch (row) {
-      _Row.running => AppTheme.primary,
-      _Row.failed || _Row.retry => AppTheme.error,
-      _Row.pending || _Row.skipped => AppTheme.outline,
-      _Row.done => AppTheme.onSurface,
+      _Row.running => c.accent,
+      _Row.failed || _Row.retry => c.error,
+      _Row.pending || _Row.skipped => c.textMuted,
+      _Row.done => c.text,
     };
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 10),
       decoration: BoxDecoration(
-        border: last
-            ? null
-            : Border(bottom: BorderSide(color: AppTheme.surfaceContainer)),
+        border: last ? null : Border(bottom: BorderSide(color: c.soft)),
       ),
       child: Row(
         children: [
@@ -597,8 +599,8 @@ class _StepRow extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 12,
                       color: row == _Row.failed || row == _Row.retry
-                          ? AppTheme.error
-                          : AppTheme.onSurfaceVariant,
+                          ? c.error
+                          : c.textSub,
                     ),
                   ),
               ],
@@ -621,7 +623,7 @@ class _DoneCircle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const green = Color(0xFF1B7F3B);
+    final green = context.omni.successFill;
     return TweenAnimationBuilder<double>(
       key: const ValueKey('check-done'),
       tween: Tween(begin: 0.8, end: 1),
@@ -640,7 +642,7 @@ class _DoneCircle extends StatelessWidget {
         child: Container(
           width: _kCircle,
           height: _kCircle,
-          decoration: const BoxDecoration(shape: BoxShape.circle, color: green),
+          decoration: BoxDecoration(shape: BoxShape.circle, color: green),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [

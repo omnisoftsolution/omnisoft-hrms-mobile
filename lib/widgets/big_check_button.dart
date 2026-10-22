@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../core/theme.dart';
+import '../core/omni_colors.dart';
 
 enum CheckButtonState {
   ready,    // idle, ready to check in/out
@@ -93,14 +93,16 @@ class _BigCheckButtonState extends State<BigCheckButton>
     super.dispose();
   }
 
-  Color get _fill {
+  /// Check-out uses the selected-segment blue (#395F97 in light, as
+  /// before); check-in its own teal, deeper in dark so white text reads.
+  Color _fillOf(OmniColors c) {
     // In enroll mode the button isn't really a check-in/out — paint
     // it in the same primaryContainer teal as the "checked-out" idle
     // state so it doesn't suggest an active session.
     if (widget.state == CheckButtonState.enroll) {
-      return AppTheme.primaryContainer;
+      return c.checkInFill;
     }
-    return widget.checkedIn ? AppTheme.secondary : AppTheme.primaryContainer;
+    return widget.checkedIn ? c.segmentOn : c.checkInFill;
   }
 
   String get _stateLabel => switch (widget.state) {
@@ -110,18 +112,20 @@ class _BigCheckButtonState extends State<BigCheckButton>
         CheckButtonState.enroll => 'SETUP NEEDED',
       };
 
-  Color get _stateDot => switch (widget.state) {
+  Color _stateDotOf(OmniColors c) => switch (widget.state) {
         CheckButtonState.ready => const Color(0xFF22C55E),
         CheckButtonState.scanning => Colors.white,
         // Out-of-range / disabled → red so the user immediately sees
         // why they can't check in. Pairs with the "NOT READY" label.
-        CheckButtonState.disabled => AppTheme.error,
+        CheckButtonState.disabled => c.error,
         // Amber for one-time setup — not an error, just a step.
         CheckButtonState.enroll => const Color(0xFFF59E0B),
       };
 
   @override
   Widget build(BuildContext context) {
+    final c = context.omni;
+    final fill = _fillOf(c);
     final outer = widget.size + 48;
     return SizedBox(
       width: outer,
@@ -141,7 +145,7 @@ class _BigCheckButtonState extends State<BigCheckButton>
                 height: outer,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: _fill.withValues(alpha: _pulseAlpha.value),
+                  color: fill.withValues(alpha: _pulseAlpha.value),
                 ),
               ),
             ),
@@ -154,16 +158,16 @@ class _BigCheckButtonState extends State<BigCheckButton>
                   ? null
                   : [
                       BoxShadow(
-                        color: _fill.withValues(alpha: 0.30),
+                        color: fill.withValues(alpha: 0.30),
                         blurRadius: 30,
                         offset: const Offset(0, 10),
                       ),
                     ],
             ),
             child: Material(
-              color: _fill,
-              shape: const CircleBorder(
-                side: BorderSide(color: Colors.white, width: 4),
+              color: fill,
+              shape: CircleBorder(
+                side: BorderSide(color: c.card, width: 4),
               ),
               clipBehavior: Clip.antiAlias,
               child: InkWell(
@@ -209,7 +213,7 @@ class _BigCheckButtonState extends State<BigCheckButton>
                         ),
                       ),
                       const SizedBox(height: 8),
-                      _StatePill(label: _stateLabel, dotColor: _stateDot),
+                      _StatePill(label: _stateLabel, dotColor: _stateDotOf(c)),
                     ],
                   ),
                 ),
@@ -261,7 +265,7 @@ class _CheckGlyph extends StatelessWidget {
                 child: Icon(
                   Icons.location_on_rounded,
                   size: 18,
-                  color: Theme.of(context).colorScheme.primary,
+                  color: context.omni.brandFill,
                 ),
               ),
             ),

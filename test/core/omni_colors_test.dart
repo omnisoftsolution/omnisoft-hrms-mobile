@@ -37,6 +37,7 @@ Map<String, (Color, Color, double)> pairsOf(OmniColors c) {
     'onAccentTint/accentTint': (c.onAccentTint, c.accentTint, text),
     'onBrandFill/brandFill': (c.onBrandFill, c.brandFill, text),
     'onButton/button': (c.onButton, c.button, text),
+    'white/checkInFill': (Colors.white, c.checkInFill, text),
     'secondary/card': (c.secondary, c.card, text),
     'onSegmentOn/segmentOn': (c.onSegmentOn, c.segmentOn, text),
     'onPendingTint/pendingTint': (c.onPendingTint, c.pendingTint, text),
@@ -45,7 +46,9 @@ Map<String, (Color, Color, double)> pairsOf(OmniColors c) {
     'white/errorFill': (Colors.white, c.errorFill, text),
     'success/card': (c.success, c.card, text),
     'success/successTint': (c.success, c.successTint, text),
+    'white/successFill': (Colors.white, c.successFill, text),
     'warning/warningTint': (c.warning, c.warningTint, text),
+    'onWarning/warning': (c.onWarning, c.warning, text),
     'onBadge/badge': (c.onBadge, c.badge, text),
     'focus/card': (c.focus, c.card, graphic),
     for (final t in c.myDay.all) ...{
@@ -53,6 +56,7 @@ Map<String, (Color, Color, double)> pairsOf(OmniColors c) {
       'myDay.${t.kind.name} onTint/tint': (t.onTint, t.tint, text),
       'myDay.${t.kind.name} fill/tilePill': (t.fill, c.tilePill, text),
       'myDay.${t.kind.name} dot/card': (t.dot, c.card, graphic),
+      'myDay.${t.kind.name} onDot/dot': (c.myDay.onDot, t.dot, graphic),
     },
   };
 }
@@ -80,10 +84,13 @@ void main() {
       expect(failuresOf(OmniColors.light), {
         'textMuted/background', // 4.27
         'onButton/button', // white on #2BB8C4, 2.40
+        'white/checkInFill', // the big check-in circle, same teal
         'success/successTint', // 4.31
         'focus/card', // #2BB8C4 ring on white, 2.40
         'myDay.late dot/card', // 2.44
         'myDay.waiting dot/card', // 1.70, decorative
+        'myDay.late onDot/dot', // white icon on #D99A1C, 2.44
+        'myDay.waiting onDot/dot', // never filled (upcoming rows)
       });
     });
   });

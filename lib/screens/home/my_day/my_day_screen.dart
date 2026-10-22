@@ -5,7 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../../../core/datetime_utils.dart';
 import '../../../core/error_messages.dart';
-import '../../../core/theme.dart';
+import '../../../core/omni_colors.dart';
 import '../../../models/attendance_ask.dart';
 import '../../../models/auto_close_previous.dart';
 import '../../../models/expense_record.dart';
@@ -433,7 +433,7 @@ class MyDayScreenState extends State<MyDayScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(friendlyError(e)),
-          backgroundColor: AppTheme.error,
+          backgroundColor: context.omni.errorFill,
         ),
       );
       return;
@@ -445,7 +445,7 @@ class MyDayScreenState extends State<MyDayScreen> {
       messenger.showSnackBar(
         SnackBar(
           content: Text(outcome.error!),
-          backgroundColor: AppTheme.error,
+          backgroundColor: context.omni.errorFill,
         ),
       );
       return;
@@ -466,7 +466,7 @@ class MyDayScreenState extends State<MyDayScreen> {
               ? 'Checked in successfully!'
               : 'Checked out successfully!',
         ),
-        backgroundColor: AppTheme.primary,
+        backgroundColor: context.omni.brandFill,
         // A bar with an action would otherwise stay until tapped; the undo
         // window closes it (spec 2026-10-07 §4.4).
         persist: false,
@@ -521,7 +521,7 @@ class MyDayScreenState extends State<MyDayScreen> {
       messenger.showSnackBar(
         SnackBar(
           content: Text(friendlyError(e)),
-          backgroundColor: AppTheme.error,
+          backgroundColor: context.omni.errorFill,
         ),
       );
       return;
@@ -531,9 +531,9 @@ class MyDayScreenState extends State<MyDayScreen> {
     if (!mounted) return;
     messenger.removeCurrentSnackBar();
     messenger.showSnackBar(
-      const SnackBar(
-        content: Text('Punch undone'),
-        backgroundColor: AppTheme.primary,
+      SnackBar(
+        content: const Text('Punch undone'),
+        backgroundColor: context.omni.brandFill,
       ),
     );
     await refresh();
@@ -588,7 +588,7 @@ class MyDayScreenState extends State<MyDayScreen> {
       messenger.showSnackBar(
         SnackBar(
           content: Text(friendlyError(e)),
-          backgroundColor: AppTheme.error,
+          backgroundColor: context.omni.errorFill,
         ),
       );
       return false;
@@ -596,9 +596,9 @@ class MyDayScreenState extends State<MyDayScreen> {
     if (!mounted) return true;
     messenger.removeCurrentSnackBar();
     messenger.showSnackBar(
-      const SnackBar(
-        content: Text('Sent to HR'),
-        backgroundColor: AppTheme.primary,
+      SnackBar(
+        content: const Text('Sent to HR'),
+        backgroundColor: context.omni.brandFill,
       ),
     );
     return true;
@@ -680,8 +680,9 @@ class MyDayScreenState extends State<MyDayScreen> {
       );
     }
     final text = Theme.of(context).textTheme;
+    final c = context.omni;
     final sectionStyle = text.labelLarge?.copyWith(
-      color: AppTheme.onSurfaceVariant,
+      color: c.textSub,
       fontWeight: FontWeight.w700,
     );
     // Attendance off in the subscription: no tile, no timeline, no punch
@@ -697,11 +698,11 @@ class MyDayScreenState extends State<MyDayScreen> {
         if (_refreshFailed)
           Container(
             width: double.infinity,
-            color: AppTheme.error.withValues(alpha: 0.08),
+            color: c.error.withValues(alpha: 0.08),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Text(
               friendlyError(myDayRefreshFailed),
-              style: text.bodySmall?.copyWith(color: AppTheme.error),
+              style: text.bodySmall?.copyWith(color: c.error),
             ),
           ),
         if (header != null)
@@ -823,11 +824,11 @@ class MyDayScreenState extends State<MyDayScreen> {
             const SizedBox(height: 4),
             Text(
               line1,
-              style: text.bodySmall?.copyWith(color: AppTheme.outline),
+              style: text.bodySmall?.copyWith(color: context.omni.textMuted),
             ),
             Text(
               line2,
-              style: text.bodySmall?.copyWith(color: AppTheme.outline),
+              style: text.bodySmall?.copyWith(color: context.omni.textMuted),
             ),
           ],
         ),

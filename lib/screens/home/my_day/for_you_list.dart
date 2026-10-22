@@ -2,9 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/datetime_utils.dart';
-import '../../../core/theme.dart';
+import '../../../core/omni_colors.dart';
 import '../../../models/my_day.dart';
-import 'my_day_colors.dart';
 import 'my_day_display.dart';
 
 String _expenseStateLabel(String state) {
@@ -97,25 +96,31 @@ IconData _icon(String kind) {
   }
 }
 
-MyDayTone _tone(String kind) {
+MyDayTone _tone(String kind, MyDayPalette palette) {
   switch (kind) {
     case 'leave_approvals':
     case 'my_expense':
-      return MyDayColors.brk;
+      return palette.brk;
     case 'payslip':
-      return MyDayColors.overtime;
+      return palette.overtime;
     default:
-      return MyDayColors.work;
+      return palette.work;
   }
 }
 
-Widget _tile(Key key, IconData icon, MyDayTone tone, {bool inverted = false}) =>
+Widget _tile(
+  OmniColors c,
+  Key key,
+  IconData icon,
+  MyDayTone tone, {
+  bool inverted = false,
+}) =>
     Container(
       key: key,
       width: 40,
       height: 40,
       decoration: BoxDecoration(
-        color: inverted ? Colors.white : tone.tint,
+        color: inverted ? c.card : tone.tint,
         borderRadius: BorderRadius.circular(13),
       ),
       child: Icon(icon, size: 20, color: tone.onTint),
@@ -129,24 +134,22 @@ class YesterdayCard extends StatelessWidget {
   final ForYouItem item;
   final VoidCallback? onTellHr;
 
-  static const _amber = Color(0xFFB45309); // amber-800
-  static const _bg = Color(0xFFFEF3C7); // amber-100
-
   @override
   Widget build(BuildContext context) {
+    final c = context.omni;
     return Container(
       key: ValueKey('for-you-yesterday-${item.date}'),
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: _bg,
+        color: c.warningTint,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _amber.withValues(alpha: 0.4)),
+        border: Border.all(color: c.warning.withValues(alpha: 0.4)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.history, size: 20, color: _amber),
+          Icon(Icons.history, size: 20, color: c.warning),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -154,18 +157,18 @@ class YesterdayCard extends StatelessWidget {
               children: [
                 Text(
                   forYouTitle(item),
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
-                    color: _amber,
+                    color: c.warning,
                   ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   forYouSubtitle(item),
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 13,
-                    color: AppTheme.onSurfaceVariant,
+                    color: c.textSub,
                     height: 1.35,
                   ),
                 ),
@@ -176,8 +179,8 @@ class YesterdayCard extends StatelessWidget {
           FilledButton(
             key: const ValueKey('for-you-yesterday-tell'),
             style: FilledButton.styleFrom(
-              backgroundColor: _amber,
-              foregroundColor: Colors.white,
+              backgroundColor: c.warning,
+              foregroundColor: c.onWarning,
             ),
             onPressed: onTellHr,
             child: const Text('Tell HR'),
@@ -214,13 +217,14 @@ class ForYouList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
+    final c = context.omni;
     final known = items.where((item) => item.isKnown).toList();
     if (known.isEmpty && !missing) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 16),
         child: Text(
           emptyText,
-          style: text.bodyMedium?.copyWith(color: AppTheme.outline),
+          style: text.bodyMedium?.copyWith(color: c.textMuted),
         ),
       );
     }
@@ -229,29 +233,30 @@ class ForYouList extends StatelessWidget {
         if (missing)
           Card(
             margin: const EdgeInsets.only(bottom: 8),
-            color: MyDayColors.missing.tint,
+            color: c.myDay.missing.tint,
             child: ListTile(
               key: const ValueKey('for-you-missing'),
               leading: _tile(
+                c,
                 const ValueKey('for-you-tile-missing'),
                 Icons.error_outline,
-                MyDayColors.missing,
+                c.myDay.missing,
                 inverted: true,
               ),
               title: Text(
                 'No check-in recorded today',
                 style: TextStyle(
-                  color: MyDayColors.missing.onTint,
+                  color: c.myDay.missing.onTint,
                   fontWeight: FontWeight.w600,
                 ),
               ),
               subtitle: Text(
                 'Tell HR if you are at work',
-                style: TextStyle(color: MyDayColors.missing.onTint),
+                style: TextStyle(color: c.myDay.missing.onTint),
               ),
               trailing: Icon(
                 Icons.chevron_right,
-                color: MyDayColors.missing.onTint,
+                color: c.myDay.missing.onTint,
               ),
               onTap: onMissingTap,
             ),
@@ -268,15 +273,16 @@ class ForYouList extends StatelessWidget {
               child: ListTile(
                 key: ValueKey('for-you-${item.kind}-${item.id}'),
                 leading: _tile(
+                  c,
                   ValueKey('for-you-tile-${item.kind}-${item.id}'),
                   _icon(item.kind),
-                  _tone(item.kind),
+                  _tone(item.kind, c.myDay),
                 ),
                 title: Text(forYouTitle(item)),
                 subtitle: Text(forYouSubtitle(item)),
-                trailing: const Icon(
+                trailing: Icon(
                   Icons.chevron_right,
-                  color: AppTheme.outline,
+                  color: c.textMuted,
                 ),
                 onTap: () => onTap(item),
               ),
