@@ -15,6 +15,11 @@ import 'saas_service.dart';
 /// = transient error (network, timeout, server error), token kept.
 enum RefreshOutcome { ok, invalid, failed }
 
+/// What the Home tab shows (app 1.34.0, connector 2.65.0): My day as
+/// before, the Team overview instead of it, or both behind a
+/// "Team overview | My day" switch. See [SessionService.homeView].
+enum HomeView { myDay, overview, dual }
+
 /// Session state for the mobile app. Persists across launches.
 ///
 /// Layout:
@@ -132,6 +137,23 @@ class SessionService extends ChangeNotifier {
   static const _kDeviceLabel = 'device_label';
   static const _kAttendanceKioskOnly = 'attendance_kiosk_only';
 
+  // Keys: team leave + Team overview flags from the /login and /me
+  // `employee` block (connector 2.65.0+). Part of the login session:
+  // cleared by clearSession(). A missing key (older connector) means
+  // false / 'none' / 'off'.
+  static const _kAttendanceTracked = 'attendance_tracked';
+  static const _kOverviewAccess = 'overview_access';
+  static const _kTeamLeaveSource = 'team_leave_source';
+  static const _kTeamScopeSig = 'team_scope_sig';
+  static final _teamScopeSigPattern = RegExp(r'^[0-9a-f]{16}$');
+  static const _overviewAccessValues = {
+    'none',
+    'approvees',
+    'department',
+    'company',
+  };
+  static const _teamLeaveSourceValues = {'department', 'approver', 'off'};
+
   // Keys: leave approvals capability from /me (connector 2.43.0+).
   // Part of the login session: cleared by clearSession().
   static const _kLeaveApprovalsEnabled = 'leave_approvals_enabled';
@@ -174,6 +196,10 @@ class SessionService extends ChangeNotifier {
   String _employeeAttendanceApprover = '';
   String _employeeExpenseApprover = '';
   bool _attendanceKioskOnly = false;
+  bool _attendanceTracked = false;
+  String _overviewAccess = 'none';
+  String _teamLeaveSource = 'off';
+  String _teamScopeSig = '';
 
   // App Identity: device refresh token + auth source
   String _refreshToken = '';
@@ -249,6 +275,56 @@ class SessionService extends ChangeNotifier {
   /// 2.51.0+). The Home tab then shows My day instead of the check-in
   /// home. A connector that does not send the key reads as false.
   bool get attendanceKioskOnly => _attendanceKioskOnly;
+
+  /// The employee punches attendance at all (`employee.attendance_tracked`
+  /// = the connector's `kiosk_enabled`, 2.65.0+). False when the key is
+  /// missing.
+  bool get attendanceTracked => _attendanceTracked;
+
+  /// HR's Team overview grant, as the connector applies it (L10):
+  /// 'none' | 'approvees' | 'department' | 'company'. Missing or unknown
+  /// reads as 'none'.
+  String get overviewAccess => _overviewAccess;
+
+  /// Who "my team" is for Team leave: 'department' | 'approver' | 'off'
+  /// ('off' too when the plan has no Time Off). Missing or unknown reads
+  /// as 'off'.
+  String get teamLeaveSource => _teamLeaveSource;
+
+  /// What the Home tab shows. An employee HR granted the overview to sees
+  /// it when the plan has Attendance (Team overview is part of Attendance;
+  /// Time Off only adds Who's out): as the only Home when they do not
+  /// punch, behind the switch when they do. Everyone else, and everyone on
+  /// a plan without Attendance, keeps My day. Built on the public getters,
+  /// so a test session that overrides them (fake-subclass seam) gets the
+  /// matching Home.
+  HomeView get homeView {
+    if (overviewAccess != 'none' && featureAttendance) {
+      return attendanceTracked ? HomeView.dual : HomeView.overview;
+    }
+    return HomeView.myDay;
+  }
+
+  /// The LEAVE tab's Team leave row and the apply sheet's "Also off" line.
+  bool get teamLeaveEnabled => featureTimeOff && teamLeaveSource != 'off';
+
+  /// `employee.team_scope_sig` (connector 2.65.0+, K1): 16 hex characters
+  /// that change whenever anything that decides what the viewer may see
+  /// changes (company, grant, setting, department, approvers, disclosure
+  /// settings, officer flags, the approvees). '' when the key is missing
+  /// or malformed.
+  String get teamScopeSig => _teamScopeSig;
+
+  /// Stored with every TeamCache entry; an entry saved under another
+  /// signature is not shown (A-L3, A-L14). The server's [teamScopeSig]
+  /// when sent; without it (older connector) the grant, the setting, the
+  /// department and the company as this session knows them. The session
+  /// has the department and company names, not their ids (the `employee`
+  /// block carries no ids), so the fallback uses the names.
+  String get teamCacheSignature => teamScopeSig.isNotEmpty
+      ? teamScopeSig
+      : '$overviewAccess/$teamLeaveSource/$employeeDepartment/'
+          '$employeeCompanyName';
 
   // App Identity
   String get refreshToken => _refreshToken;
@@ -326,6 +402,12 @@ class SessionService extends ChangeNotifier {
     _authSource = prefs.getString(_kAuthSource) ?? '';
     _deviceLabel = prefs.getString(_kDeviceLabel) ?? '';
     _attendanceKioskOnly = prefs.getBool(_kAttendanceKioskOnly) ?? false;
+    _attendanceTracked = prefs.getBool(_kAttendanceTracked) ?? false;
+    _overviewAccess =
+        _oneOf(prefs.getString(_kOverviewAccess), _overviewAccessValues, 'none');
+    _teamLeaveSource =
+        _oneOf(prefs.getString(_kTeamLeaveSource), _teamLeaveSourceValues, 'off');
+    _teamScopeSig = _scopeSigOf(prefs.getString(_kTeamScopeSig));
     _leaveApprovalsEnabled = prefs.getBool(_kLeaveApprovalsEnabled) ?? false;
     _leaveApprovalsPendingCount =
         prefs.getInt(_kLeaveApprovalsPendingCount) ?? 0;
@@ -533,6 +615,7 @@ class SessionService extends ChangeNotifier {
     await _persisting(() async {
       if (_authEpoch != epoch) return;
       await _writeAttendanceKioskOnly(employee);
+      await _writeTeamFlags(employee);
       _authSource = res['auth_source']?.toString() ?? '';
       _deviceLabel = _labelOf(res);
       final rt = res['refresh_token']?.toString() ?? '';
@@ -824,6 +907,41 @@ class SessionService extends ChangeNotifier {
     if (changed) notifyListeners();
   }
 
+  /// The team leave + Team overview keys of a /login or /me `employee`
+  /// block (connector 2.65.0+). A missing key (an older connector, or one
+  /// rolled back) resets to false / 'none' / 'off'; an unknown value
+  /// reads as that default too. The caller holds the persistence lock.
+  Future<void> _writeTeamFlags(Map<String, dynamic> employee) async {
+    final tracked = employee['attendance_tracked'] == true;
+    final access =
+        _oneOf(employee['overview_access'], _overviewAccessValues, 'none');
+    final source =
+        _oneOf(employee['team_leave_source'], _teamLeaveSourceValues, 'off');
+    final sig = _scopeSigOf(employee['team_scope_sig']);
+    final changed = tracked != _attendanceTracked ||
+        access != _overviewAccess ||
+        source != _teamLeaveSource ||
+        sig != _teamScopeSig;
+    _attendanceTracked = tracked;
+    _overviewAccess = access;
+    _teamLeaveSource = source;
+    _teamScopeSig = sig;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kAttendanceTracked, tracked);
+    await prefs.setString(_kOverviewAccess, access);
+    await prefs.setString(_kTeamLeaveSource, source);
+    await prefs.setString(_kTeamScopeSig, sig);
+    if (changed) notifyListeners();
+  }
+
+  /// [value] when it is one of [allowed], else [fallback].
+  static String _oneOf(Object? value, Set<String> allowed, String fallback) =>
+      value is String && allowed.contains(value) ? value : fallback;
+
+  /// A `team_scope_sig` (16 lower-case hex characters), else ''.
+  static String _scopeSigOf(Object? value) =>
+      value is String && _teamScopeSigPattern.hasMatch(value) ? value : '';
+
   /// Clear only the auth session keys. SaaS routing stays so re-login
   /// doesn't require re-entering the company code. Runs
   /// [onSessionClearing] first, while the session is still intact.
@@ -897,6 +1015,10 @@ class SessionService extends ChangeNotifier {
     _authSource = '';
     _deviceLabel = '';
     _attendanceKioskOnly = false;
+    _attendanceTracked = false;
+    _overviewAccess = 'none';
+    _teamLeaveSource = 'off';
+    _teamScopeSig = '';
     _leaveApprovalsEnabled = false;
     _leaveApprovalsPendingCount = 0;
     _lastMeRefresh = null;
@@ -918,6 +1040,10 @@ class SessionService extends ChangeNotifier {
     await prefs.remove(_kAuthSource);
     await prefs.remove(_kDeviceLabel);
     await prefs.remove(_kAttendanceKioskOnly);
+    await prefs.remove(_kAttendanceTracked);
+    await prefs.remove(_kOverviewAccess);
+    await prefs.remove(_kTeamLeaveSource);
+    await prefs.remove(_kTeamScopeSig);
     await prefs.remove(_kLeaveApprovalsEnabled);
     await prefs.remove(_kLeaveApprovalsPendingCount);
     await prefs.remove(_keyExpiresAt);
@@ -1103,6 +1229,7 @@ class SessionService extends ChangeNotifier {
         );
         await _writeLeaveApprovalsFromMe(res);
         await _writeAttendanceKioskOnly(employee);
+        await _writeTeamFlags(employee);
         await _writeFromMe(res);
         return true;
       });
