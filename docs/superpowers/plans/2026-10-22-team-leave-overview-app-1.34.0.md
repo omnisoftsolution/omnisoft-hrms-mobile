@@ -33,7 +33,7 @@ Old connectors and missing keys fall back to today's behaviour.
 
 ### Design decisions
 - **D1 (outlook display):** "Outlook body = **calendar heat map** (month grids, shade = people off, tap a day → who)."
-- **D3 (pending):** pending requests show by default with a dashed "Pending" chip, here and in the apply sheet's "Also off" line. The server decides; the app shows what it gets.
+- **D3 (pending, Willy r5 2026-10-22):** "Do teammates see pending (not yet approved) requests? **HR setting, off by default**." With the setting off, the server sends colleagues' approved leave only; the viewer's own requests, and those the viewer approves (or sees as a Time Off officer), still come as pending (connector L1). Any row the server marks pending shows a dashed "Pending" chip, here and in the apply sheet's "Also off" line. The server decides; the app shows what it gets. `disclosure.show_pending` only words the privacy line ("approved leave only" / "includes pending requests"); a missing or malformed value reads as **off** (A-L25).
 - **D4 (leave type):** the type is shown only when the server sends one; otherwise the row says "On leave".
 - **D5 (overview access):** "Team overview access default **None**, per-employee toggle only."
 - **D7 (Yesterday):** Yesterday (reviewed) is in v1.
@@ -86,6 +86,8 @@ flutter analyze > /tmp/omni-analyze-now.log 2>&1; \
 | 2.65, grant none | present | per `team_leave_source` | My day |
 | 2.65, grant set, not tracked | present | per setting | Team overview |
 | 2.65, grant set, tracked | present | per setting | switch (remembered) |
+| 2.65, grant set, plan without Attendance (Time Off on or off) | present | per setting (hidden without Time Off) | My day, attendance pane locked (A-L24) |
+| 2.65, grant set, Attendance on, Time Off off | present | hidden | Team overview / switch as above, without Who's out and its outlook link (`who_out: null`, A-L24) |
 | 2.65, overview answers `not_allowed` (revoked) | — | — | My day this run + `refreshMe()` + cache cleared |
 | new app + route 404 (tenant rolled back) | — | hidden | My day |
 
@@ -121,8 +123,8 @@ flutter analyze > /tmp/omni-analyze-now.log 2>&1; \
     - with a department chip selected, the outlook sub-label is that department's name and size ("Fabric · 15 people");
     - "People you approve" everywhere (view chip and header);
     - no "on your team" in the overview context ("No one is off in the next N days.").
-  - **Invented copy (no mockup string; kept, for Willy to confirm — consolidated review, open question 3):** Who's out "morning only" / "afternoon only" / "part of the day" / " · pending"; "No one is out today."; "No one is booked off in the next 7 days."; "Showing what you saw at HH:MM"; the no-team bodies for `no_department` / `no_approver` / `no_people` / `off`; "Some rows are not shown." (A-L17); the approver / approvees sub-labels and "1 person".
-  - **One leave-date formatter (open question 1):** the outlook, the day card, the Also-off line and the person sheet all use `leaveWhenLabel` ("Annual Leave · Tue 27 Oct – Wed 28 Oct · 2 days", the same shape as leave history), not the mockup's "Annual Leave Tue 27 – Wed 28 Oct".
+  - **Invented copy (no mockup string; kept — Willy approved the plan's wording on 2026-10-22: "fine as the plan writes it"):** Who's out "morning only" / "afternoon only" / "part of the day" / " · pending"; "No one is out today."; "No one is booked off in the next 7 days."; "Showing what you saw at HH:MM"; the no-team bodies for `no_department` / `no_approver` / `no_people` / `off`; "Some rows are not shown." (A-L17); the approver / approvees sub-labels and "1 person".
+  - **One leave-date formatter (Willy chose it on 2026-10-22: "Tue 27 Oct – Wed 28 Oct · 2 days"):** the outlook, the day card, the Also-off line and the person sheet all use `leaveWhenLabel` ("Annual Leave · Tue 27 Oct – Wed 28 Oct · 2 days", the same shape as leave history), not the mockup's "Annual Leave Tue 27 – Wed 28 Oct".
 - **A-L10 — Flutter 3.44.6 lint and test traps.**
   - `containsSemantics` is deprecated: use `isSemantics`.
   - A map entry written `if (x != null) 'k': x` trips `use_null_aware_elements`: write `'k': ?x`.
@@ -137,7 +139,7 @@ Added by review r1 (`session-assets/2026-10-22-team-leave-mgmt-day/reviews/tlmd-
 
 - **A-L14 — Cache signature = `team_scope_sig` (K1, A1).** `/login` and `/me` send `employee.team_scope_sig` (16 hex characters; the facts that decide what the viewer may see). `SessionService.teamScopeSig` stores it (prefs `team_scope_sig`; malformed or missing = `''`), and `teamCacheSignature` is that signature. Without it (an older connector) the fallback uses names, `'$overviewAccess/$teamLeaveSource/$departmentName/$companyName'`, as the contract does. The `employee` block carries `department_name` / `company_name` and no ids. In the session those names are `employeeDepartment` / `employeeCompanyName`, so the code reads `'$overviewAccess/$teamLeaveSource/$employeeDepartment/$employeeCompanyName'`. A department transfer or an approver change through `/me` therefore drops the old cached answers. Known limit (K1): in the "same approver" leave view, colleagues whose approver changes elsewhere do not change the viewer's signature; the next online fetch corrects it.
 - **A-L15 — Cache binding and generation (A2).** Every caller (Tasks 5, 6, 8) reads the key and the binding (`session.teamCacheSignature` and `TeamCache.generation`, since r2 one `TeamCacheBinding` that also holds the employee and `requestEpoch`, A-L21) together **before** its request and passes it to `TeamCache.write(s, key, body, binding:)`. `clearEmployee` / `clearAll` bump the generation at once, after a read barrier that hides the cleared entries from `read` (A-L23). A write is dropped on any mismatch, checked at the call and again inside the queue, right before it stores. Writes and clears run one at a time on a private queue (the session `_persisting` pattern). So a success that lands after an access-lost clear, a sign-out, the same employee signing in again, or a narrowed grant never repopulates the cache.
-- **A-L16 — With neither feature, Home = My day (A11; deviation from the proposal, open question for Willy).** Proposal §2 says "with neither, Home shows For you only". Both plans keep My day instead: `homeView` needs `featureAttendance || featureTimeOff`, the connector answers `feature_unavailable` when both are off, and My day with Attendance off already shows `FeatureLockedPane` + the week strip + For you. Willy to confirm (consolidated review, open question 2).
+- **A-L16 — With neither feature, Home = My day (A11; deviation from the proposal, confirmed by Willy r5).** Proposal §2 says "with neither, Home shows For you only". Both plans keep My day instead: My day with Attendance off already shows `FeatureLockedPane` + the week strip + For you. Willy (r5, 2026-10-22): "A manager with overview access but neither Attendance nor Time Off: show the normal My day (attendance panel locked)". Since r5 the gate itself is Attendance alone (A-L24), so this case is one row of it.
 - **A-L17 — Bounded answers say so (K2, A9).** When the outlook answers `truncated: true` the screen shows one line under the heat map, "Some rows are not shown." (`teamRowsNotShown`, `team_format.dart`); Who's out shows the same line when `who_out.truncated` is true (`WhoOut.truncated`). The counts (`days[].off`, overlap `more`) are exact server counts and are shown as sent.
 - **A-L18 — `TeamOutlook.view` is `String?` (A8).** It is `null` in the overview context (the server sends `view: null` there); in the team context a missing value reads `'team'`.
 - **A-L19 — On-tile colours (A6).** Text, icons and lines on the overview tiles come from `TeamColors.onTile` / `onTileSoft` / `onTileFaint` / `tileLine` / `tileTrack` / `tileBadge`; the LEAVE tile's face initials use `TeamColors.onC3`. No new widget writes `Colors.white` (`Colors.transparent` stays: it is not a theme colour).
@@ -181,6 +183,20 @@ Added by review r1 (`session-assets/2026-10-22-team-leave-mgmt-day/reviews/tlmd-
   - **Unchanged.** The callers keep every binding check (A-L21, A-L22). The screens need no change: their listener reload and offline fallback now read nothing.
   - **Test.** Task 3, `an access-lost clear hides the entry from reads before it notifies, …`. A `_HeldStore` (the storage under SharedPreferences) holds an earlier write. An access-lost clear follows. The `TeamCache.changes` listener binds again and reads the cache at once, as the overview's failed reload does. The test checks that the binding is current, the read is null before the deletion completes (the queue still waits) and after it, the removal was already sent to storage, and nothing is stored at the end. Mutation-checked in the scratch run: without the barrier, or without the early removal, the test fails. The Task 6 / Task 8 fallback tests pass unchanged, so no screen-level variant was added.
 
+Added by Willy's r5 answers (`session-assets/2026-10-22-team-leave-mgmt-day/reviews/tlmd-plan-r5-changes.md`, R-A1 / R-A2):
+
+- **A-L24 — Team overview is part of Attendance (R-A2).** Willy: "Which plan feature should unlock Team overview? **Part of Attendance**".
+  - **The rule.** `SessionService.homeView` = `overviewAccess != 'none' && featureAttendance` → `attendanceTracked ? HomeView.dual : HomeView.overview`; otherwise `HomeView.myDay`. `featureTimeOff` no longer takes part. Before r5 the gate was `featureAttendance || featureTimeOff`.
+  - **Attendance off** (Time Off on or off): Home is My day with the locked attendance pane, the week strip and For you, as before (A-L16). The connector answers `home/overview` (both days), `/list` and `/person` with `feature_unavailable` when `attendance` is off. A HomeRoot that still asks (the plan flag changed mid-run) falls back through the access-lost path (A-L5): cache cleared, `refreshMe()`, My day for the run.
+  - **Attendance on, Time Off off.** The overview shows the counts, Yesterday, the drill-down and For you. The server sends `who_out: null` (and `sections.leave: false`), so Who's out is hidden, and with it the "See 30 / 60 / 90 days" link (it sits inside `WhoOutCard`). The outlook's `overview` context answers `feature_unavailable` there, so hiding the link means nothing can ask it. The screen's existing `o.sections.leave && whoOut != null` gate already does this. Task 8 tests both shapes: `sections.leave: false`, and `who_out: null` with `sections.leave` still true.
+  - **Unchanged.** `/login` / `/me` keep sending `overview_access` whatever the plan has; the app does the gating. `teamLeaveEnabled` stays `featureTimeOff && teamLeaveSource != 'off'`. The models stay tolerant: `TeamOverview` still parses a body without the attendance section (Task 2), and the overview still renders one (Task 8), although connector 2.65.0 no longer sends it.
+  - **Tests.** Task 1's `homeView` truth table (Attendance off gives My day whatever Time Off is); Task 8's `sections` group; Task 9's compatibility matrix (two new rows: no Attendance gives My day with `FeatureLockedPane` and no overview call; Attendance without Time Off gives the overview without Who's out).
+- **A-L25 — Pending is off by default (R-A1).** Willy: "Do teammates see pending (not yet approved) requests? **HR setting, off by default**" (D3).
+  - **The parse.** `TeamDisclosure.fromJson` reads `show_pending` as `json['show_pending'] == true`, like `show_type`. A missing key, a wrong type (`'yes'`, `1`) or a missing `disclosure` block gives `showPending: false`. The constructor default is `false` too.
+  - **What it changes.** Only the privacy line: "… · approved leave only" unless the server says pending is on. Pending chips still follow each row's `state` (the viewer's own row, an approver's or an officer's view keep pending rows, connector L1).
+  - **Fixtures.** Task 5's `outlookJson` / `outlook` and Task 6's tile fixture default to `show_pending: false`. Task 2's full contract sample keeps `true` on purpose: it tests that an explicit `true` parses.
+  - **Tests.** Task 2 (the empty map and wrong types read `false`; `'yes'` is not `true`); Task 5 (the happy path passes `showPending: true` because its fixture has a colleague's pending row; a new test shows "approved leave only" by default; the "no privacy line" checks look for the line itself, not its pending half).
+
 ---
 ## API contract (verbatim copy from the connector plan; the connector plan wins on any difference)
 
@@ -197,7 +213,7 @@ All routes have the following properties:
 
 | HTTP | body `error` | When |
 |---|---|---|
-| 200 | `feature_unavailable` (existing `_feature_unavailable_response()`) | outlook / overlap with `time_off` off; overview with both `attendance` and `time_off` off; list / person with `attendance` off |
+| 200 | `feature_unavailable` (existing `_feature_unavailable_response()`) | outlook (either context) / overlap with `time_off` off; outlook `context:'overview'` with `attendance` off; `home/overview` (both days), `home/overview/list` and `home/overview/person` with `attendance` off, whatever `time_off` says (L27: Team overview is part of Attendance) |
 | 400 | `invalid_request` | bad `days`, `context`, `view`, `day`, `bucket`, `offset`, `limit`, dates |
 | 400 | `invalid_department` | `department_id` that is not a JSON integer (a bool included), or not allowed for this scope; the same answer on `leave/team_outlook` (either context), `home/overview` and `home/overview/list` (L20) |
 | 403 | `not_allowed` | overview routes: no grant, or `company_mismatch`. Outlook: `context:'overview'` without a grant or under `company_mismatch`, or a `view` that is not offered (under `company_mismatch` only `view:'team'` is offered; the team outlook and `team_leave_source` keep working there, as they show only the employee's own company) |
@@ -213,7 +229,7 @@ All routes have the following properties:
  "team_scope_sig": "3f2a9c0d1e4b5a67"}
 ```
 - `attendance_tracked` is `kiosk_enabled`.
-- `overview_access` is the effective value (L10).
+- `overview_access` is the effective value (L10). It keeps the grant when `attendance` is off and `time_off` on; the app opens the overview only when `overview_access != 'none'` **and** `attendance` is on, because every overview route answers `feature_unavailable` without `attendance` (L27).
 - `team_leave_source` is the company setting `department` | `approver` | `off`, or `off` when `time_off` is off. The app hides the Team leave row on `off`.
 - `team_scope_sig` is a string of exactly 16 lower-case hex characters (`^[0-9a-f]{16}$`): `sha1` of a canonical JSON list of the facts that decide what the viewer may see (L18):
   - `company_id`, the effective `overview_access`, the effective `team_leave_source`, the viewer's `department_id`;
@@ -238,7 +254,7 @@ Views offered in the team context (`views` in the answer):
 - `approvees` when the viewer is the effective **leave** approver of at least one active session-company employee;
 - `company` when the viewer is a Time Off officer in the session company.
 
-In the overview context the people are `_omni_overview_filter(viewer._omni_overview_scope(attendance_only=False), department_id)['employees']`. The answer sends `view: null` and `views: []` there, and `departments` only for `company` access (sizes count the unfiltered company scope). In every other case `departments` is `null`. A missing `days` is `invalid_request`.
+Gates: `time_off` (both contexts), then, in the overview context only, `attendance` (L27); either one off answers `feature_unavailable`. In the overview context the people are `_omni_overview_filter(viewer._omni_overview_scope(attendance_only=False), department_id)['employees']`. The answer sends `view: null` and `views: []` there, and `departments` only for `company` access (sizes count the unfiltered company scope). In every other case `departments` is `null`. A missing `days` is `invalid_request`.
 
 ```json
 {
@@ -246,7 +262,7 @@ In the overview context the people are `_omni_overview_filter(viewer._omni_overv
   "range": {"from": "2026-10-22", "to": "2026-11-20", "days": 30}, "today": "2026-10-22",
   "team": {"kind": "department", "label": "Marketing", "size": 12, "department_id": 5},
   "empty_reason": null,
-  "disclosure": {"show_type": false, "show_pending": true},
+  "disclosure": {"show_type": false, "show_pending": false},
   "departments": [{"id": 5, "name": "Marketing", "size": 20}],
   "summary": {"this_week_off": 2, "label": "Marketing", "faces": [{"id": 12, "initials": "MO"}, {"id": 14, "initials": "PN"}]},
   "people": [{"id": 12, "name": "Mei Lin Ong", "initials": "MO", "department": "Marketing", "you": false}],
@@ -266,7 +282,7 @@ Field rules:
 - `leaves[].state` is `approved` (`validate`) | `pending` (`confirm`, `validate1`).
 - `leaves[].unit` is `day` | `half_day` | `hours`.
 - `leaves[].type` is `null` unless L1 allows it. `from_period` / `to_period` are `am` | `pm` | `null`; hours follow the `leave/history` rule.
-- `disclosure` gives the **peer** defaults; a row may still carry a type or pending state through L1.
+- `disclosure` gives the **peer** defaults; a row may still carry a type or pending state through L1. Both are `false` until HR turns *Teammates see the leave type* / *Teammates see pending requests* on (both off by default, D3 as amended, L28); the viewer's own rows, their approvees' rows (effective leave approver) and an officer's rows still carry `state: "pending"` and the type.
 - `days[].off` counts the distinct people with a visible leave covering the date on a date their calendar works: the calendar has work lines on that date, lunch lines excluded, and on a two-week calendar only that date's week type counts (L23). Flexible or no calendar counts every day. `pending` is the pending part of that count.
 - `workday` is true when any person in the set has calendar work on that date (the same rule).
 - `holiday` is `{"name", "everyone"}` or `null`. `everyone` is true only when every person's calendar has that holiday on that local date (L23); with nobody in the set it is true.
@@ -285,7 +301,7 @@ At most 5 rows, sorted by `date_from` then name; `more` counts the rest exactly:
 
 ### `POST home/overview` (Tasks 7, 8)
 
-Body: `{"day": "today"|"yesterday", "department_id": int|null}`. Gates: grant ≠ none, no mismatch, at least one of `attendance` / `time_off`.
+Body: `{"day": "today"|"yesterday", "department_id": int|null}`. Gates, in order: `attendance` on (else `feature_unavailable`, whatever `time_off` says, L27), then grant ≠ none and no mismatch.
 
 ```json
 {
@@ -305,10 +321,10 @@ Body: `{"day": "today"|"yesterday", "department_id": int|null}`. Gates: grant �
 ```
 
 Field rules:
-- `counts` is `null` when `attendance` is off, and `who_out` is `null` when `time_off` is off.
+- `counts` (today) and `reviewed` (yesterday) are always objects and `sections.attendance` is always `true`: the route never answers a body without `attendance` (L27). `who_out` is `null` when `time_off` is off (`sections.leave: false`).
 - `expected` = tracked − on_leave − off_today; `checked_in` = on_time + late.
 - `who_out.today[].part` is `morning` | `afternoon` | `hours` | `null`. `hours` only for a genuine "Specific hours" request; a whole-day or multi-day request on an hour-unit type is `null` (a full day), the same rule as the outlook `unit` (L24). The list row `leave.part` follows the same rule. `tracked` (`kiosk_enabled`) tells the app whether the row may open the person sheet (L2: only tracked people, only with `names`). `back_at` is the local `HH:MM` the person is due back today, or `null`; the server works it out from that person's shift blocks as of this request, never from cached facts, so a part-day leave approved a moment ago already moves it (L26).
-- `scope.empty_reason` is `null` | `no_department` | `no_people`.
+- `scope.empty_reason` is `null` | `no_department` | `no_people`. `no_people` is also the answer for "People I approve" when the viewer is nobody's attendance approver, for example in a company with no attendance approvers at all (Maxhill): `counts` all 0, `who_out` empty, `reviewed` all 0, `home/overview/list` `total: 0`; never an error and never another scope (L30).
 - `who_out.next_7` covers the 7 calendar days after today, rest days included (no workday filter): a day appears only when someone in scope has visible leave on it.
 - `who_out.truncated` is true when the visible leaves of [today, today + 7] passed the outlook row bound (3000, L19), so `today` and `next_7` may miss people. It is never dropped silently. The app shows one line, "Some rows are not shown.".
 - `for_you` reuses `hr.employee._omni_my_day_for_you(...)` (the same list and features as My day), except that it never contains `yesterday_incomplete`: that card scores the viewer's day, and the overview never scores through For you (L25).
@@ -381,7 +397,7 @@ Field rules:
 - `shift` is `null` on a day with no blocks.
 - The person route needs `attendance` (feature_unavailable otherwise).
 
-Connector lead decisions the app depends on: L1 (who sees type/pending — server-side), L2 (counts only: list/person 403 `names_hidden`, Who's out names still sent but not tappable), L3 (`source` mobile|kiosk|other, `kiosk_name`, `location`), L4 (missing yesterday rows scored on the fly on the first request; `provisional` when some could not be), L8 (`summary` always present), L10 (`overview_access` is the effective value), L12 (yesterday rows are committed by the server), L13 (the overview follows shift blocks: a night worker's 22:00 block reads Not in yet / Later today, flexible schedules never No check-in), L14 (`back_at` is null after an afternoon leave). L18 (`team_scope_sig`: 16 lower-case hex, opaque; the app's cache signature; covers leave and attendance approvees, feature flags and `company_mismatch`), L19 (visibility filtered before any row bound; exact overlap `more`; `who_out.truncated`), L20 (`invalid_department` for any bad `department_id`), L21 (Yesterday uses the Daily Review's calendar day; due + no row = `not_reviewed`, never `off`), L22 (a failed commit answers from stored rows with `provisional: true`), L23 (heat-map dates follow each calendar's week type; holiday `everyone` per calendar), L24 (`part: hours` only for genuine Specific hours). L25 (the overview's For you never carries `yesterday_incomplete` and never scores). L26 (`back_at` comes from fresh shift blocks of the part-day people).
+Connector lead decisions the app depends on: L1 (who sees type/pending — server-side), L2 (counts only: list/person 403 `names_hidden`, Who's out names still sent but not tappable), L3 (`source` mobile|kiosk|other, `kiosk_name`, `location`), L4 (missing yesterday rows scored on the fly on the first request; `provisional` when some could not be), L8 (`summary` always present), L10 (`overview_access` is the effective value), L12 (yesterday rows are committed by the server), L13 (the overview follows shift blocks: a night worker's 22:00 block reads Not in yet / Later today, flexible schedules never No check-in), L14 (`back_at` is null after an afternoon leave). L18 (`team_scope_sig`: 16 lower-case hex, opaque; the app's cache signature; covers leave and attendance approvees, feature flags and `company_mismatch`), L19 (visibility filtered before any row bound; exact overlap `more`; `who_out.truncated`), L20 (`invalid_department` for any bad `department_id`), L21 (Yesterday uses the Daily Review's calendar day; due + no row = `not_reviewed`, never `off`), L22 (a failed commit answers from stored rows with `provisional: true`), L23 (heat-map dates follow each calendar's week type; holiday `everyone` per calendar), L24 (`part: hours` only for genuine Specific hours). L25 (the overview's For you never carries `yesterday_incomplete` and never scores). L26 (`back_at` comes from fresh shift blocks of the part-day people). L27 (the overview is part of Attendance: every overview route, and the outlook's overview context, answer `feature_unavailable` when `attendance` is off; `who_out` is null when `time_off` is off). L28 (pending off by default for peers). L30 (no attendance approvers → `approvees` scope is `no_people`, never a silent switch).
 
 ---
 
@@ -415,11 +431,13 @@ Connector lead decisions the app depends on: L1 (who sees type/pending — serve
 |---|---|---|
 | `enum HomeView { myDay, overview, dual }` | `lib/services/session_service.dart` | T1 |
 | `SessionService.attendanceTracked` / `overviewAccess` / `teamLeaveSource` | `bool` / `String` (`none`…) / `String` (`off`…) getters | T1 |
-| `SessionService.homeView` | `HomeView` getter: `overviewAccess != 'none' && (featureAttendance \|\| featureTimeOff)` → `attendanceTracked ? dual : overview`, else `myDay` | T1 |
+| `SessionService.homeView` | `HomeView` getter: `overviewAccess != 'none' && featureAttendance` → `attendanceTracked ? dual : overview`, else `myDay` (Team overview is part of Attendance; Time Off plays no part, A-L24) | T1 |
 | `SessionService.teamLeaveEnabled` | `bool` getter: `featureTimeOff && teamLeaveSource != 'off'` | T1 |
 | `SessionService.teamScopeSig` | `String` getter: `employee.team_scope_sig` (16 hex, K1), `''` when missing or malformed; prefs `team_scope_sig` | T1 |
 | `SessionService.teamCacheSignature` | `String` getter: `teamScopeSig` when not empty, else `'$overviewAccess/$teamLeaveSource/$employeeDepartment/$employeeCompanyName'` (A-L14) | T1 |
 | `TeamOutlook.fromJson`, `TeamLeaveRow`, `TeamDay`, `TeamHoliday`, `TeamSummary`, `TeamPerson`, `TeamScope` | `lib/models/team_outlook.dart` | T2 |
+| `TeamDisclosure {bool showType; bool showPending}` | `lib/models/team_outlook.dart`; both `false` unless the server sends `true` (pending off by default, D3, A-L25) | T2 |
+| `TeamOverview.whoOut` (`WhoOut?`) | `null` when the plan has no Time Off (`who_out: null`); the overview then hides Who's out and its outlook link (A-L24) | T2 / T8 |
 | `TeamOverview.fromJson`, `OverviewCounts`, `ReviewedDay` (incl. `notReviewed`), `WhoOut`, `WhoOutToday` (incl. `bool tracked`), `WhoOutDay`, `OverviewRow`, `OverviewRowLeave {String? type; String state; String? part; String? backAt; DateTime? until}`, `OverviewShift` (`String get label`), `OverviewPage`, `OverviewPerson`, `OverviewPunch` | `lib/models/team_overview.dart` | T2 |
 | `OmniMobileApi.fetchTeamOutlook({int days = 30, String context = 'team', String view = 'team', int? departmentId})` | `Future<TeamOutlook>` | T2 |
 | `OmniMobileApi.fetchTeamOverlap(DateTime from, DateTime to)` | `Future<TeamOverlap>` | T2 |
@@ -582,6 +600,7 @@ Put the real final lines from Step 3 into the message. Expected: one new commit 
 > - The derived getters read the public getters, so the fake-subclass sessions of Tasks 5–9 get a matching `teamCacheSignature` and `homeView`.
 > - Review r1 (A1 / K1): the session also stores `employee.team_scope_sig` (`teamScopeSig`), and `teamCacheSignature` is that signature when present, else the fallback built from the grant, the setting, the department and the company (A-L14). A department transfer or an approver change through `/me` therefore changes the signature, and Task 3's cache drops the old answers.
 > - No other change: names match the interface table and are used as-is by Tasks 3, 6 and 9.
+> - Willy r5 (R-A2, A-L24): Team overview is part of Attendance. `homeView` needs `featureAttendance` only (it was `featureAttendance || featureTimeOff`); the truth table's Attendance-off rows now expect My day whatever Time Off is.
 
 **Files:**
 - Modify: `lib/services/session_service.dart`. The edits sit near these anchors:
@@ -604,7 +623,7 @@ Put the real final lines from Step 3 into the message. Expected: one new commit 
   - `bool get attendanceTracked`: `employee.attendance_tracked == true`; `false` when the key is missing.
   - `String get overviewAccess`: `'none'` | `'approvees'` | `'department'` | `'company'`. Missing or unknown reads as `'none'`.
   - `String get teamLeaveSource`: `'department'` | `'approver'` | `'off'`. Missing or unknown reads as `'off'`.
-  - `HomeView get homeView`: `overviewAccess != 'none' && (featureAttendance || featureTimeOff)` gives `attendanceTracked ? HomeView.dual : HomeView.overview`; otherwise `HomeView.myDay`.
+  - `HomeView get homeView`: `overviewAccess != 'none' && featureAttendance` gives `attendanceTracked ? HomeView.dual : HomeView.overview`; otherwise `HomeView.myDay`. Time Off plays no part (A-L24).
   - `bool get teamLeaveEnabled`: `featureTimeOff && teamLeaveSource != 'off'`.
   - `String get teamScopeSig`: `employee.team_scope_sig` (K1) when it is 16 lower-case hex characters, else `''`.
   - `String get teamCacheSignature`: `teamScopeSig` when not empty, else the fallback `'$overviewAccess/$teamLeaveSource/$employeeDepartment/$employeeCompanyName'` (A-L14).
@@ -812,11 +831,14 @@ void main() {
       ('none', true, true, true, HomeView.myDay),
       ('department', false, true, true, HomeView.overview),
       ('department', true, true, true, HomeView.dual),
+      // Attendance without Time Off: the overview (Who's out hidden, T8).
       ('approvees', false, true, false, HomeView.overview),
       ('approvees', true, true, false, HomeView.dual),
-      ('company', false, false, true, HomeView.overview),
-      ('company', true, false, true, HomeView.dual),
-      // Both features off: nothing to overview, My day as today.
+      // Team overview is part of Attendance (A-L24): without it, My day
+      // (attendance pane locked), whatever Time Off is.
+      ('company', false, false, true, HomeView.myDay),
+      ('company', true, false, true, HomeView.myDay),
+      ('department', false, false, true, HomeView.myDay),
       ('company', false, false, false, HomeView.myDay),
       ('department', true, false, false, HomeView.myDay),
     ];
@@ -1142,12 +1164,14 @@ Insert directly after it:
   String get teamLeaveSource => _teamLeaveSource;
 
   /// What the Home tab shows. An employee HR granted the overview to sees
-  /// it, when the plan has Attendance or Time Off: as the only Home when
-  /// they do not punch, behind the switch when they do. Everyone else
-  /// keeps My day. Built on the public getters, so a test session that
-  /// overrides them (fake-subclass seam) gets the matching Home.
+  /// it when the plan has Attendance (Team overview is part of Attendance;
+  /// Time Off only adds Who's out): as the only Home when they do not
+  /// punch, behind the switch when they do. Everyone else, and everyone on
+  /// a plan without Attendance, keeps My day. Built on the public getters,
+  /// so a test session that overrides them (fake-subclass seam) gets the
+  /// matching Home.
   HomeView get homeView {
-    if (overviewAccess != 'none' && (featureAttendance || featureTimeOff)) {
+    if (overviewAccess != 'none' && featureAttendance) {
       return attendanceTracked ? HomeView.dual : HomeView.overview;
     }
     return HomeView.myDay;
@@ -1318,9 +1342,10 @@ and team_scope_sig (connector 2.65.0) through the existing persistence
 queue, next to the kiosk-only flag, so a /me that lands after a
 sign-out or another sign-in is dropped. Missing or unknown values read
 as false / 'none' / 'off' / '' (older connector = today's behaviour).
-Derives homeView (myDay / overview / dual), teamLeaveEnabled and
-teamCacheSignature (the server signature, else grant / setting /
-department / company). clearSession() and logout() remove the keys.
+Derives homeView (myDay / overview / dual; the overview needs the
+Attendance feature), teamLeaveEnabled and teamCacheSignature (the
+server signature, else grant / setting / department / company).
+clearSession() and logout() remove the keys.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 EOF
@@ -1337,6 +1362,7 @@ EOF
 > - Model names here are binding for Tasks 3–9 (A-L9): `raw`, `lateCount`, `countOf` / `buckets` / `totalBar`, `leavesOn` / `person`, `OverviewShift`, `OverviewRowLeave`, `OverviewRow.note` (the `note.kind` string).
 > - Verified in a scratch copy: Tasks 1–9 in order analyze clean and the whole suite passes.
 > - Review r1: A7 — `names_hidden` reads "Counts only — your company doesn't show names here." (the mockup sentence, as `OverviewCopy.countsOnly`); A8 — `TeamOutlook.view` is `String?`, null in the overview context (A-L18); K2 — `WhoOut.truncated`; A13 — an intermediate commit after the models (Step 4b), then the API and error words.
+> - Willy r5 (R-A1, A-L25): `TeamDisclosure.showPending` is `false` unless the server sends `true` (it used to default to `true`). The empty-map and wrong-type tests expect `false`; the full contract sample keeps an explicit `true`. R-A2 (A-L24): the overview parse is unchanged and stays tolerant; a body without the attendance section is no longer sent by connector 2.65.0, but its parse test stays.
 
 **Files:**
 - Create: `lib/models/team_outlook.dart`, `lib/models/team_overview.dart`
@@ -1372,7 +1398,7 @@ EOF
       - `TeamDay? dayOf(DateTime d)`;
       - `List<TeamLeaveRow> leavesOn(DateTime d)` (the rows whose dates cover `d`, in server order).
     - `class TeamScope {String kind; String label; int size; int? departmentId}`.
-    - `class TeamDisclosure {bool showType; bool showPending}`. Defaults are `false` / `true`.
+    - `class TeamDisclosure {bool showType; bool showPending}`. Both default to `false`: each is `true` only when the server sends `true` (pending off by default, D3 r5, A-L25).
     - `class TeamDepartment {int id; String name; int size}` with `static List<TeamDepartment> listFrom(Object?)`. Entries with `id <= 0` are dropped.
     - `class TeamSummary {int thisWeekOff; String label; List<TeamFace> faces}` with `static const empty`.
     - `class TeamFace {int id; String initials}`.
@@ -1489,6 +1515,8 @@ Map<String, dynamic> outlookSample() => {
         'department_id': 5,
       },
       'empty_reason': null,
+      // HR turned pending on here (the default is off, D3 / A-L25): this
+      // sample checks that an explicit true parses.
       'disclosure': {'show_type': false, 'show_pending': true},
       'departments': [
         {'id': 5, 'name': 'Marketing', 'size': 20},
@@ -1706,7 +1734,8 @@ void main() {
       expect(o.team, isNull);
       expect(o.emptyReason, isNull);
       expect(o.disclosure.showType, isFalse);
-      expect(o.disclosure.showPending, isTrue);
+      // Pending is off unless the server says so (D3, A-L25).
+      expect(o.disclosure.showPending, isFalse);
       expect(o.departments, isEmpty);
       expect(o.summary.thisWeekOff, 0);
       expect(o.summary.faces, isEmpty);
@@ -1743,7 +1772,7 @@ void main() {
         'range': 'soon',
         'team': ['Marketing'],
         'empty_reason': '',
-        'disclosure': {'show_type': 'yes', 'show_pending': 'no'},
+        'disclosure': {'show_type': 'yes', 'show_pending': 'yes'},
         'departments': [
           {'id': 0, 'name': 'Nobody'},
           'junk',
@@ -1778,8 +1807,9 @@ void main() {
       expect(o.rangeFrom, isNull);
       expect(o.team, isNull);
       expect(o.emptyReason, isNull);
+      // A string is not true: both stay off (A-L25).
       expect(o.disclosure.showType, isFalse);
-      expect(o.disclosure.showPending, isTrue);
+      expect(o.disclosure.showPending, isFalse);
       expect(o.departments.map((d) => d.id), [7]);
       expect(o.departments.single.size, 0);
       expect(o.summary.thisWeekOff, 0);
@@ -2162,6 +2192,8 @@ void main() {
 
   group('TeamOverview.fromJson — sections and missing keys', () {
     test('attendance off: counts null, leave only', () {
+      // Connector 2.65.0 answers feature_unavailable without Attendance
+      // (A-L24) and never sends this shape; the parse stays tolerant.
       final o = TeamOverview.fromJson({
         ...overviewSample(),
         'sections': {'attendance': false, 'leave': true},
@@ -2549,19 +2581,20 @@ class TeamScope {
   );
 }
 
-/// The peer defaults: leave type shown, pending requests included. A row
-/// may still carry a type or a pending state (the server decides, L1).
+/// What colleagues see of each other's leave (HR settings): the leave
+/// type, and pending (not yet approved) requests. Both are off unless the
+/// server sends `true` (pending off by default, D3 r5, A-L25). A row may
+/// still carry a type or a pending state: the viewer's own, or one the
+/// viewer approves (the server decides, L1).
 class TeamDisclosure {
   final bool showType;
   final bool showPending;
 
-  const TeamDisclosure({this.showType = false, this.showPending = true});
+  const TeamDisclosure({this.showType = false, this.showPending = false});
 
   factory TeamDisclosure.fromJson(Map<String, dynamic> json) => TeamDisclosure(
     showType: json['show_type'] == true,
-    showPending: json['show_pending'] is bool
-        ? json['show_pending'] as bool
-        : true,
+    showPending: json['show_pending'] == true,
   );
 }
 
@@ -5856,6 +5889,7 @@ EOF
 >   - A7: mockup strings win — the day-card title is "Mon 9 Nov · Deepavali (observed) · 0 off"; a department chip's sub-label is that department's name and size ("Fabric · 15 people"); the view chip is "People you approve"; the overview context's empty body has no "on your team".
 >   - A9: one line "Some rows are not shown." under the heat map when `truncated` (A-L17).
 >   - A13: one intermediate commit after Step 8 (colours, format, widgets, heat map), then the screen.
+> - Willy r5 (R-A1, A-L25): pending is off by default. The fixture helpers `outlookJson` / `outlook` default to `showPending: false`. The happy path passes `showPending: true`, because its default leaves include a colleague's pending row. A new test checks the default privacy line, "… · approved leave only". The overview-context and `empty_reason` tests look for the privacy line itself ("no type or reason"), not its pending half.
 
 **Files:**
 - Create: `lib/screens/team/team_colors.dart`, `lib/screens/team/team_format.dart`, `lib/screens/team/team_widgets.dart`, `lib/screens/team/heat_map.dart`, `lib/screens/team/team_leave_screen.dart`
@@ -5943,7 +5977,8 @@ const fixtureLeaves = [
 /// A `leave/team_outlook` body in the contract shape, [days] days from
 /// [fixtureToday]. Weekends are not workdays. [off] / [pending] set
 /// `days[].off` / `.pending` by ISO date; [holidays] sets `days[].holiday`
-/// (`{'name', 'everyone'}`) by ISO date.
+/// (`{'name', 'everyone'}`) by ISO date. [showType] / [showPending] are the
+/// HR settings, both off by default as on the server (D3, A-L25).
 Map<String, dynamic> outlookJson({
   int days = 30,
   String context = 'team',
@@ -5951,7 +5986,7 @@ Map<String, dynamic> outlookJson({
   List<String> views = const ['team'],
   String? emptyReason,
   bool showType = false,
-  bool showPending = true,
+  bool showPending = false,
   Map<String, dynamic> team = const {
     'kind': 'department', 'label': 'Marketing', 'size': 12, 'department_id': 5,
   },
@@ -6007,7 +6042,7 @@ TeamOutlook outlook({
   List<String> views = const ['team'],
   String? emptyReason,
   bool showType = false,
-  bool showPending = true,
+  bool showPending = false,
   Map<String, dynamic>? team,
   List<Map<String, dynamic>>? departments,
   Map<String, int>? off,
@@ -7494,7 +7529,9 @@ void main() {
     tester,
   ) async {
     _tall(tester);
-    final api = _FakeApi([outlook()]);
+    // HR turned pending on (off by default, D3): the fixture's leaves
+    // include Priya's pending request.
+    final api = _FakeApi([outlook(showPending: true)]);
     await tester.pumpWidget(_host(api));
     await tester.pumpAndSettle();
 
@@ -7533,6 +7570,26 @@ void main() {
       findsNothing,
     );
     expect(find.byKey(const ValueKey('team-strip')), findsNothing);
+  });
+
+  testWidgets('pending off (the default, D3, A-L25): "approved leave only"', (
+    tester,
+  ) async {
+    _tall(tester);
+    // An answer without the disclosure block reads as off too.
+    final body = outlookJson()..remove('disclosure');
+    for (final answer in [outlook(), TeamOutlook.fromJson(body)]) {
+      await tester.pumpWidget(_host(_FakeApi([answer])));
+      await tester.pumpAndSettle();
+      expect(
+        find.text(
+          'Shown as “On leave” — no type or reason · approved leave only',
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('includes pending requests'), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+    }
   });
 
   testWidgets('tapping a day lists who is off, with You and the type sent', (
@@ -7692,8 +7749,9 @@ void main() {
     });
     expect(find.text('All'), findsOneWidget);
     expect(find.text('Fabric'), findsOneWidget);
-    // No privacy line outside the team context.
-    expect(find.textContaining('includes pending requests'), findsNothing);
+    // No privacy line outside the team context (either wording).
+    expect(find.textContaining('no type or reason'), findsNothing);
+    expect(find.textContaining('approved leave only'), findsNothing);
 
     // A department chip: the header names that department and its size.
     expect(find.text('Marketing · 20 people'), findsOneWidget);
@@ -7747,7 +7805,9 @@ void main() {
       expect(find.text('No team to show yet'), findsOneWidget);
       expect(find.text(_emptyText[reason]!), findsOneWidget);
       expect(find.text('October 2026'), findsNothing);
-      expect(find.textContaining('includes pending requests'), findsNothing);
+      // No privacy line on the empty card (either wording).
+      expect(find.textContaining('no type or reason'), findsNothing);
+      expect(find.textContaining('approved leave only'), findsNothing);
     });
   }
 
@@ -9120,7 +9180,7 @@ class _Skeleton extends StatelessWidget {
 - [ ] **Step 12: Run the team tests and the whole suite**
 
 Run: `flutter test test/screens/team/`
-Expected: PASS (22 format + 11 heat map + 34 screen = 67 tests).
+Expected: PASS (22 format + 11 heat map + 35 screen = 68 tests).
 
 Run: `flutter test`
 Expected: all green (the Task 0 total plus the tests added since).
@@ -10322,7 +10382,8 @@ Map<String, dynamic> _outlookJson({int off = 2, String? emptyReason}) => {
     'department_id': 5,
   },
   'empty_reason': emptyReason,
-  'disclosure': {'show_type': false, 'show_pending': true},
+  // The HR defaults: no type, no colleagues' pending requests (D3, A-L25).
+  'disclosure': {'show_type': false, 'show_pending': false},
   'summary': {
     'this_week_off': off,
     'label': 'Marketing',
@@ -14669,6 +14730,7 @@ EOF
 >   - A7: the counts-only sentence is the mockup's "Counts only — your company doesn't show names here." (`OverviewCopy.countsOnly`, the same text Task 2 gives `names_hidden`).
 >   - A9: one line "Some rows are not shown." under Who's out when `who_out.truncated` (A-L17).
 >   - A13: an intermediate commit right after Step 3 (the `openForYouItem` move), then the rest.
+> - Willy r5 (R-A2, A-L24): Team overview is part of Attendance. Without Attendance the server answers `feature_unavailable` (any Time Off), which the access-lost path already handles. With Attendance on and Time Off off it sends `who_out: null`: the screen's `o.sections.leave && whoOut != null` gate hides Who's out and the "See 30 / 60 / 90 days" link inside it (the outlook's overview context answers `feature_unavailable` then). No screen code changes. The `sections` group now tests the Time Off off shape twice (`sections.leave: false`; `who_out: null` with `sections.leave` true) and names the `feature_unavailable` test after Attendance. The leave-only test stays as a tolerance test.
 
 **Files:**
 - Create: `lib/screens/home/my_day/for_you_navigation.dart`
@@ -16401,17 +16463,34 @@ void main() {
   });
 
   group('sections', () {
-    testWidgets('attendance only: no Who\'s out', (tester) async {
+    testWidgets('Time Off off (who_out null): counts, no Who\'s out, no '
+        'outlook link (A-L24)', (tester) async {
       _tall(tester);
-      await tester.pumpWidget(_host(_Api([_json(leave: false)])));
-      await tester.pumpAndSettle();
-      expect(find.text('42 checked in'), findsOneWidget);
-      expect(find.text("Who's out"), findsNothing);
-      expect(find.text('For you'), findsOneWidget);
+      // The server's shape (sections.leave false, who_out null), and a
+      // who_out null under sections.leave true: Who's out is hidden both
+      // ways, and with it the way into the outlook.
+      for (final body in [
+        _json(leave: false),
+        {..._json(), 'who_out': null},
+      ]) {
+        await tester.pumpWidget(_host(_Api([body])));
+        await tester.pumpAndSettle();
+        expect(find.text('Today · live'), findsOneWidget);
+        expect(find.text('42 checked in'), findsOneWidget);
+        expect(find.byKey(const ValueKey('ov-tile-late')), findsOneWidget);
+        expect(find.text("Who's out"), findsNothing);
+        expect(find.text('NEXT 7 DAYS'), findsNothing);
+        expect(find.byKey(const ValueKey('ov-see-outlook')), findsNothing);
+        expect(find.text('For you'), findsOneWidget);
+        await tester.pumpWidget(const SizedBox.shrink());
+      }
     });
 
-    testWidgets('leave only: no day switch, no tiles; Who\'s out rows '
-        'cannot open the person (it needs Attendance)', (tester) async {
+    testWidgets('a body without the attendance section (tolerated; '
+        'connector 2.65.0 answers feature_unavailable instead, A-L24): no '
+        'day switch, no tiles; Who\'s out rows cannot open the person', (
+      tester,
+    ) async {
       _tall(tester);
       final log = _Log();
       await tester.pumpWidget(_host(_Api([_json(attendance: false)]), log: log));
@@ -16424,7 +16503,8 @@ void main() {
       expect(tester.widget<InkWell>(find.byKey(const ValueKey('ov-out-31'))).onTap, isNull);
     });
 
-    testWidgets('both off: feature_unavailable falls back (A-L5)', (
+    testWidgets('Attendance off (Time Off on or off): feature_unavailable '
+        'falls back (A-L5, A-L24)', (
       tester,
     ) async {
       _tall(tester);
@@ -17759,6 +17839,7 @@ EOF
 > - My day's `header` sits above the status tile and also shows while loading or after a failed load (A-L12); `showMyDay()` switches without saving, only a tap on the switch saves (A-L4, A-L12).
 > - HomeShell is not pumped in tests (A-L10): its logic is in `HomeRoot` and the top-level `homeTabContext(...)` / `homeModeKey(...)`, which have their own tests (A-L8).
 > - A-L5 fallback holds My day while `overviewAccess` keeps the value it had at the failure; any `/me` that changes it re-evaluates.
+> - Willy r5 (R-A2, A-L24): Team overview is part of Attendance. `HomeRoot` needs no change (it follows `homeView`, and `saveCompany` notifies). The compatibility matrix group gains two rows: a plan without Attendance gives My day with `FeatureLockedPane` and no overview call, whatever Time Off and tracking are; Attendance without Time Off gives the overview (or the switch) without Who's out and no Team leave row. `_OverviewApi(timeOff: false)` answers the server's Time Off off shape; `_plan(...)` sets the features through `saveCompany`.
 
 **Files:**
 - Create: `lib/screens/home/home_root.dart`
@@ -17772,7 +17853,8 @@ EOF
     - `enum HomeView { myDay, overview, dual }`;
     - `SessionService.homeView`, `.overviewAccess`, `.teamLeaveEnabled`;
     - the `/login` / `/me` keys `attendance_tracked`, `overview_access`, `team_leave_source`, written by `saveLoginResponse` and `refreshMeWith`;
-    - the existing `clientDb`, `employeeId`, `refreshMe()` (`Future<bool>`).
+    - the existing `clientDb`, `employeeId`, `refreshMe()` (`Future<bool>`);
+    - the existing `featureAttendance` / `featureTimeOff`, set in tests through `saveCompany(features: …)` (A-L24).
   - T2:
     - `OmniMobileApi.fetchOverview({String day = 'today', int? departmentId})` → `Future<TeamOverview>`;
     - `TeamOverview.fromJson`;
@@ -17837,6 +17919,7 @@ import 'package:omni_hr/services/notification_service.dart';
 import 'package:omni_hr/services/omni_mobile_api.dart';
 import 'package:omni_hr/services/session_service.dart';
 import 'package:omni_hr/widgets/error_state_view.dart';
+import 'package:omni_hr/widgets/feature_locked_pane.dart';
 
 import '../../fixtures/my_day_fixture.dart';
 
@@ -17884,8 +17967,11 @@ class _MyDayApi extends OmniMobileApi {
 }
 
 class _OverviewApi extends OmniMobileApi {
-  _OverviewApi() : super(baseUrl: '', db: '', token: '');
+  _OverviewApi({this.timeOff = true}) : super(baseUrl: '', db: '', token: '');
 
+  /// The plan's Time Off. Without it the server sends no Who's out
+  /// (`sections.leave: false`, `who_out: null`, A-L24).
+  final bool timeOff;
   int calls = 0;
   Object? error;
 
@@ -17897,7 +17983,13 @@ class _OverviewApi extends OmniMobileApi {
     calls++;
     final e = error;
     if (e != null) throw e;
-    return TeamOverview.fromJson(_overviewJson());
+    return TeamOverview.fromJson({
+      ..._overviewJson(),
+      if (!timeOff) ...{
+        'sections': {'attendance': true, 'leave': false},
+        'who_out': null,
+      },
+    });
   }
 }
 
@@ -18005,6 +18097,25 @@ Future<_Session> _signedIn(
     }),
   );
   return session;
+}
+
+/// Sets the SaaS plan features through the session's `saveCompany` seam
+/// (T1). A fresh `SessionService` has both on.
+Future<void> _plan(
+  WidgetTester tester,
+  SessionService session, {
+  required bool attendance,
+  required bool timeOff,
+}) async {
+  await tester.runAsync(
+    () => session.saveCompany(
+      saasUrl: 'https://saas.test',
+      companyCode: 'ACME',
+      clientUrl: 'https://acme.test',
+      clientDb: 'acme',
+      features: {'attendance': attendance, 'time_off': timeOff},
+    ),
+  );
 }
 
 /// A /me answer arrives (SessionService notifies; HomeRoot re-evaluates).
@@ -18202,6 +18313,81 @@ void main() {
       );
       expect(myDayApi.calls, 0);
     });
+
+    testWidgets(
+      '2.65, grant set, plan without Attendance: My day with the locked '
+      'attendance pane, whatever Time Off and tracking are (A-L24)',
+      (tester) async {
+        _tall(tester);
+        for (final (tracked, timeOff) in const [
+          (false, true),
+          (true, true),
+          (false, false),
+          (true, false),
+        ]) {
+          final session = await _signedIn(
+            tester,
+            _employee(tracked: tracked, access: 'company', source: 'department'),
+          );
+          await _plan(tester, session, attendance: false, timeOff: timeOff);
+          final myDayApi = _MyDayApi();
+          final overviewApi = _OverviewApi(timeOff: timeOff);
+          await tester.pumpWidget(
+            _host(session, myDayApi: myDayApi, overviewApi: overviewApi),
+          );
+          await tester.pumpAndSettle();
+          final why = 'tracked=$tracked timeOff=$timeOff';
+          expect(session.homeView, HomeView.myDay, reason: why);
+          expect(session.teamLeaveEnabled, timeOff, reason: why);
+          expect(find.text('MY DAY BAR'), findsOneWidget, reason: why);
+          expect(find.byType(FeatureLockedPane), findsOneWidget, reason: why);
+          expect(_switch(), findsNothing, reason: why);
+          expect(overviewApi.calls, 0, reason: why);
+          expect(myDayApi.calls, 1, reason: why);
+          await tester.pumpWidget(const SizedBox.shrink());
+        }
+      },
+    );
+
+    testWidgets(
+      '2.65, grant set, Attendance on, Time Off off: the overview (or the '
+      "switch) without Who's out; no Team leave row (A-L24)",
+      (tester) async {
+        _tall(tester);
+        for (final tracked in const [false, true]) {
+          final session = await _signedIn(
+            tester,
+            _employee(tracked: tracked, access: 'company', source: 'department'),
+          );
+          await _plan(tester, session, attendance: true, timeOff: false);
+          final myDayApi = _MyDayApi();
+          final overviewApi = _OverviewApi(timeOff: false);
+          await tester.pumpWidget(
+            _host(session, myDayApi: myDayApi, overviewApi: overviewApi),
+          );
+          await tester.pumpAndSettle();
+          final why = 'tracked=$tracked';
+          expect(
+            session.homeView,
+            tracked ? HomeView.dual : HomeView.overview,
+            reason: why,
+          );
+          expect(session.teamLeaveEnabled, isFalse, reason: why);
+          expect(find.text('OVERVIEW BAR'), findsOneWidget, reason: why);
+          expect(_switch(), tracked ? findsOneWidget : findsNothing, reason: why);
+          expect(find.text('42 checked in'), findsOneWidget, reason: why);
+          expect(find.text("Who's out"), findsNothing, reason: why);
+          expect(
+            find.byKey(const ValueKey('ov-see-outlook')),
+            findsNothing,
+            reason: why,
+          );
+          expect(overviewApi.calls, 1, reason: why);
+          expect(myDayApi.calls, 0, reason: why);
+          await tester.pumpWidget(const SizedBox.shrink());
+        }
+      },
+    );
 
     testWidgets(
       'overview answers not_allowed (revoked): My day this run, /me '
@@ -19044,7 +19230,7 @@ Run:
 ```bash
 flutter test
 ```
-Expected: all green. The total is the Task 0 baseline plus the tests added by Tasks 1–9 (a scratch run of this plan on 2026-10-22, after review r4: `+1316: All tests passed!` = 978 at `588a1cb` + 338 new).
+Expected: all green. The total is the Task 0 baseline plus the tests added by Tasks 1–9 (a scratch run of this plan on 2026-10-22, after Willy's r5 answers: `+1319: All tests passed!` = 978 at `588a1cb` + 341 new).
 
 - [ ] **Step 9: Commit**
 
@@ -19083,6 +19269,7 @@ EOF
 > **Lead reconciliation:**
 > - Kept as written; the CLAUDE.md section now names the binding pieces (`ErrorContext.team`, `WhoOutToday.tracked`, the `TeamCache` key builders, `yesterday_incomplete` on My day).
 > - Task order is T0 → T9 as renumbered (A-L11: drill-down + person sheet = Task 7, overview = Task 8).
+> - Willy r5: the CLAUDE.md section states that Team overview is part of Attendance (A-L24) and that colleagues' pending leave is off by default (D3, A-L25).
 
 **Files:**
 - Modify: `pubspec.yaml` (anchor `version: 1.33.0+108`)
@@ -19125,8 +19312,12 @@ Design: `session-assets/2026-10-22-team-leave-mgmt-day/proposal.md` (r3); plans:
 - `/login` + `/me` employee keys → `SessionService.attendanceTracked` / `overviewAccess` / `teamLeaveSource` /
   `teamScopeSig` (prefs `attendance_tracked`, `overview_access`, `team_leave_source`, `team_scope_sig`; missing =
   false / none / off / ''). `homeView` (myDay | overview | dual) and `teamLeaveEnabled` are derived; both also
-  need the SaaS features. With an overview grant but both Attendance and Time Off off, Home stays My day (locked
-  attendance pane + For you), not "For you only" (plan A-L16).
+  need a SaaS feature: Team overview is part of **Attendance** (`homeView` needs `featureAttendance`, Time Off
+  plays no part), Team leave needs Time Off. With an overview grant but no Attendance, Home stays My day (locked
+  attendance pane + week strip + For you; plan A-L16, A-L24). With Attendance but no Time Off the server sends
+  `who_out: null` and the overview hides Who's out and its 30 / 60 / 90 link.
+- Pending (not yet approved) leave of colleagues is an HR setting, **off by default**: `TeamDisclosure.showPending`
+  is true only when the server sends `true` (plan D3, A-L25). Pending chips follow each row's `state`.
 - LEAVE tab: `TeamLeaveTile` after the approvals row (one `leave/team_outlook` call, `summary`); screen
   `lib/screens/team/team_leave_screen.dart` (heat map `heat_map.dart`, text `team_format.dart`, colours
   `team_colors.dart` — the only hex values, dark mode goes there). Apply sheet: `AlsoOffLine` (informational,
