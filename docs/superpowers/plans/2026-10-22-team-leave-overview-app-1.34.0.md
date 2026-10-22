@@ -12,7 +12,7 @@ Old connectors and missing keys fall back to today's behaviour.
 **Architecture:**
 - **Session flags.** `SessionService` stores four new `/login` / `/me` employee keys (the three flags and `team_scope_sig`) and derives `homeView`, `teamLeaveEnabled` and `teamCacheSignature`.
 - **API layer.** `OmniMobileApi` gets five new calls, parsed into tolerant models in `lib/models/team_outlook.dart` and `lib/models/team_overview.dart`.
-- **Cache.** `TeamCache` (SharedPreferences, keyed per db + employee + scope + range, stamped with the scope signature) holds the last good answer for offline display. It is cleared on sign-out and on `not_allowed`. An answer is shown and stored only while the binding taken before its request (employee, signature, generation, `SessionService.requestEpoch`) is still current (A-L15, A-L21). A shown answer keeps that binding: a session notify or a cache clear (`TeamCache.watch`) that makes it stale drops it at once, and every attempt builds its API client from the session of the moment (A-L22).
+- **Cache.** `TeamCache` (SharedPreferences, keyed per db + employee + scope + range, stamped with the scope signature) holds the last good answer for offline display. It is cleared on sign-out and on `not_allowed`. An answer is shown and stored only while the binding taken before its request (employee, signature, generation, `SessionService.requestEpoch`) is still current (A-L15, A-L21). A shown answer keeps that binding: a session notify or a cache clear (`TeamCache.watch`) that makes it stale drops it at once, and every attempt builds its API client from the session of the moment (A-L22). A clear hides its entries from reads before it notifies and sends the removal to storage at once (A-L23).
 - **Screens.**
   - `lib/screens/team/` holds the outlook (heat map) and its formatting helpers.
   - `lib/screens/home/overview/` holds the overview, the drill-down and the person sheet.
@@ -136,7 +136,7 @@ flutter analyze > /tmp/omni-analyze-now.log 2>&1; \
 Added by review r1 (`session-assets/2026-10-22-team-leave-mgmt-day/reviews/tlmd-plan-r1-consolidated.md`):
 
 - **A-L14 — Cache signature = `team_scope_sig` (K1, A1).** `/login` and `/me` send `employee.team_scope_sig` (16 hex characters; the facts that decide what the viewer may see). `SessionService.teamScopeSig` stores it (prefs `team_scope_sig`; malformed or missing = `''`), and `teamCacheSignature` is that signature. Without it (an older connector) the fallback uses names, `'$overviewAccess/$teamLeaveSource/$departmentName/$companyName'`, as the contract does. The `employee` block carries `department_name` / `company_name` and no ids. In the session those names are `employeeDepartment` / `employeeCompanyName`, so the code reads `'$overviewAccess/$teamLeaveSource/$employeeDepartment/$employeeCompanyName'`. A department transfer or an approver change through `/me` therefore drops the old cached answers. Known limit (K1): in the "same approver" leave view, colleagues whose approver changes elsewhere do not change the viewer's signature; the next online fetch corrects it.
-- **A-L15 — Cache binding and generation (A2).** Every caller (Tasks 5, 6, 8) reads the key and the binding (`session.teamCacheSignature` and `TeamCache.generation`, since r2 one `TeamCacheBinding` that also holds the employee and `requestEpoch`, A-L21) together **before** its request and passes it to `TeamCache.write(s, key, body, binding:)`. `clearEmployee` / `clearAll` bump the generation at once. A write is dropped on any mismatch, checked at the call and again inside the queue, right before it stores. Writes and clears run one at a time on a private queue (the session `_persisting` pattern). So a success that lands after an access-lost clear, a sign-out, the same employee signing in again, or a narrowed grant never repopulates the cache.
+- **A-L15 — Cache binding and generation (A2).** Every caller (Tasks 5, 6, 8) reads the key and the binding (`session.teamCacheSignature` and `TeamCache.generation`, since r2 one `TeamCacheBinding` that also holds the employee and `requestEpoch`, A-L21) together **before** its request and passes it to `TeamCache.write(s, key, body, binding:)`. `clearEmployee` / `clearAll` bump the generation at once, after a read barrier that hides the cleared entries from `read` (A-L23). A write is dropped on any mismatch, checked at the call and again inside the queue, right before it stores. Writes and clears run one at a time on a private queue (the session `_persisting` pattern). So a success that lands after an access-lost clear, a sign-out, the same employee signing in again, or a narrowed grant never repopulates the cache.
 - **A-L16 — With neither feature, Home = My day (A11; deviation from the proposal, open question for Willy).** Proposal §2 says "with neither, Home shows For you only". Both plans keep My day instead: `homeView` needs `featureAttendance || featureTimeOff`, the connector answers `feature_unavailable` when both are off, and My day with Attendance off already shows `FeatureLockedPane` + the week strip + For you. Willy to confirm (consolidated review, open question 2).
 - **A-L17 — Bounded answers say so (K2, A9).** When the outlook answers `truncated: true` the screen shows one line under the heat map, "Some rows are not shown." (`teamRowsNotShown`, `team_format.dart`); Who's out shows the same line when `who_out.truncated` is true (`WhoOut.truncated`). The counts (`days[].off`, overlap `more`) are exact server counts and are shown as sent.
 - **A-L18 — `TeamOutlook.view` is `String?` (A8).** It is `null` in the overview context (the server sends `view: null` there); in the team context a missing value reads `'team'`.
@@ -155,7 +155,7 @@ Added by review r1 (`session-assets/2026-10-22-team-leave-mgmt-day/reviews/tlmd-
     - Task 6: the tile's `_teamOutlookBinding`; the overlap line's answers keyed through an `Expando`.
     - Task 7: the drill-down's `_rowsBinding` and the person sheet's `_shownBinding`. Both show team data, uncached.
     - Task 8: `_overviewBinding` / `_lastBinding`. `_last` holds the department chips.
-  - **When it is re-checked.** Every screen listens to `TeamCache.watch(session)`, which is every `SessionService` notify plus every cache clear. The generation is a `ValueNotifier`, so a clear notifies synchronously. On each event, a shown answer whose binding is no longer current is dropped in a `setState` before the next frame, so there is no stale render. The screen then asks again, with three exceptions:
+  - **When it is re-checked.** Every screen listens to `TeamCache.watch(session)`, which is every `SessionService` notify plus every cache clear. The generation is a `ValueNotifier`, so a clear notifies synchronously, and only once `read` already misses the cleared entries (A-L23). On each event, a shown answer whose binding is no longer current is dropped in a `setState` before the next frame, so there is no stale render. The screen then asks again, with three exceptions:
     - A request on the wire is left alone. It checks its own binding when it lands (`_rebind`).
     - Nothing is asked while signed out or while a sign-out runs. A `_reloadPending` flag is set, and the notify that ends the sign-out asks.
     - An access-lost branch clears the cache while its own request is in flight, so it never re-asks itself.
@@ -170,6 +170,16 @@ Added by review r1 (`session-assets/2026-10-22-team-leave-mgmt-day/reviews/tlmd-
     - Each surface has a revoke-after-display test with no request outstanding, followed by a failing refresh: a `/me` scope change, plus a no-notify variant on Tasks 5, 6 and 8. The old data is never found.
     - Credential-sensitive overlapping sign-ins: the fakes record the token they were built with and answer "Team of <token>". A retry after a same-employee or another-employee sign-in during the sign-out hook must send the new token. The old account's answer is neither shown nor cached under the new one.
     - Each fix was mutation-checked in the scratch run: a lifetime client, and no listener or failed-refresh check, both make these tests fail.
+- **A-L23 — A clear takes effect for reads before anyone hears of it (review r4, TLP4-F01).**
+  - **The failure.** In r3, a clear notified listeners (`_generation.value++`) before its removal ran on the queue, and `TeamCache.read` does not use the queue. The removal can wait behind an earlier write that is still waiting on storage. A screen's listener then dropped its answer and asked again under the new binding. If that request failed offline, its cache fallback read the revoked entry, whose signature still matched (a failed `/me` changes nothing), and showed it under the new binding. The removal finished later, with no notify.
+  - **The order of a clear** (`TeamCache._clear`, both `clearEmployee` and `clearAll`):
+    1. A read barrier for the prefix, synchronously (`_barriers`, a count per prefix). From here `read` returns null under that prefix. It checks the barrier after its `getInstance()` await, in the same synchronous step as the lookup.
+    2. The generation, which notifies. A reload a listener starts already reads nothing.
+    3. The removal is sent to storage at once, not behind the queue. SharedPreferences takes each key out of its in-memory copy at once and sends the removal to the platform in order.
+    4. On the queue, after the writes queued before it: a second sweep, then the barrier goes. Writes queued after the clear run later, under the new generation.
+  - **After a restart** the in-memory barrier and generation are gone, so they cannot be what protects an entry. That is step 3's job: the removal does not wait for the queue, so an app killed while the queue waits behind a slow write keeps no entry. The only remaining window is the platform write itself, which no SharedPreferences design can close (a persisted epoch would be the same kind of write). The next online answer clears again.
+  - **Unchanged.** The callers keep every binding check (A-L21, A-L22). The screens need no change: their listener reload and offline fallback now read nothing.
+  - **Test.** Task 3, `an access-lost clear hides the entry from reads before it notifies, …`. A `_HeldStore` (the storage under SharedPreferences) holds an earlier write. An access-lost clear follows. The `TeamCache.changes` listener binds again and reads the cache at once, as the overview's failed reload does. The test checks that the binding is current, the read is null before the deletion completes (the queue still waits) and after it, the removal was already sent to storage, and nothing is stored at the end. Mutation-checked in the scratch run: without the barrier, or without the early removal, the test fails. The Task 6 / Task 8 fallback tests pass unchanged, so no screen-level variant was added.
 
 ---
 ## API contract (verbatim copy from the connector plan; the connector plan wins on any difference)
@@ -418,9 +428,9 @@ Connector lead decisions the app depends on: L1 (who sees type/pending — serve
 | `OmniMobileApi.fetchOverviewPerson(int employeeId)` | `Future<OverviewPerson>` | T2 |
 | `bool isMissingRoute(Object e)` | `lib/services/omni_mobile_api.dart` (top level) | T2 |
 | `bool isAccessLost(Object e)` (`not_allowed`, `names_hidden`, `feature_unavailable`) | same file | T2 |
-| `TeamCache`: `static String key({required SessionService session, required String kind, String context = '-', String view = '-', int? departmentId, required String span})`; `static String outlookKey(SessionService s, {required int days, String context = 'team', String view = 'team', int? departmentId})`; `static String overviewKey(SessionService s, {String day = 'today', int? departmentId})`; `static Future<(Map<String, dynamic> body, DateTime savedAt)?> read(SessionService s, String key)`; `static int get generation`; `static TeamCacheBinding bind(SessionService s)` (A-L21); `static Future<void> write(SessionService s, String key, Map<String, dynamic> body, {required TeamCacheBinding binding})` (A-L15, A-L21); `clearEmployee(s)` / `clearAll()` (both bump `generation`) | `lib/services/team_cache.dart` | T3 |
+| `TeamCache`: `static String key({required SessionService session, required String kind, String context = '-', String view = '-', int? departmentId, required String span})`; `static String outlookKey(SessionService s, {required int days, String context = 'team', String view = 'team', int? departmentId})`; `static String overviewKey(SessionService s, {String day = 'today', int? departmentId})`; `static Future<(Map<String, dynamic> body, DateTime savedAt)?> read(SessionService s, String key)` (null under a clear that has not finished, A-L23); `static int get generation`; `static TeamCacheBinding bind(SessionService s)` (A-L21); `static Future<void> write(SessionService s, String key, Map<String, dynamic> body, {required TeamCacheBinding binding})` (A-L15, A-L21); `clearEmployee(s)` / `clearAll()` (in this order: read barrier, `generation` bump with its notify, removal sent to storage at once, a second sweep on the queue that lifts the barrier; A-L23) | `lib/services/team_cache.dart` | T3 |
 | `TeamCacheBinding`: `const TeamCacheBinding({required int employeeId, required String signature, required int generation, required int requestEpoch})`; `bool isCurrent(SessionService s)` (same employee, signature, `TeamCache.generation`, `requestEpoch`, and `!s.isClearing`). Tasks 5, 6, 8 check it before every response-driven `setState` (A-L21); Tasks 5–8 keep the binding of the answer they show and re-check it on every `TeamCache.watch` event and on a failed refresh (A-L22) | `lib/services/team_cache.dart` | T3 |
-| `TeamCache.changes` (`Listenable`, notifies synchronously on every clear; the generation is a `ValueNotifier<int>`) and `TeamCache.watch(SessionService s)` (`Listenable.merge([s, changes])`) (A-L22) | `lib/services/team_cache.dart` | T3 |
+| `TeamCache.changes` (`Listenable`, notifies synchronously on every clear, once `read` already misses the cleared entries (A-L23); the generation is a `ValueNotifier<int>`) and `TeamCache.watch(SessionService s)` (`Listenable.merge([s, changes])`) (A-L22) | `lib/services/team_cache.dart` | T3 |
 | `SessionService.requestEpoch`: `int` getter; advances synchronously when `clearSession()` / `signOut()` / `logout()` begins and on every new access token (`_saveAccessToken`), whether or not the sign-out wipes (A-L21) | `lib/services/session_service.dart` | T3 |
 | `PillSegments({required List<String> labels, required int value, required ValueChanged<int> onChanged, String? semanticsLabel})` | `lib/widgets/pill_segments.dart` | T4 |
 | `TeamColors` (`cell0`, `cellOff`, `c1`, `c2`, `c3`, `onC3`, `hol`, `holCell`, `holDot`, `leave`, `leaveTint`, `leaveOn`, `accent`, `accentTint`, `onAccentTint`, `muted`, `skeleton`, `chipBorder`, `static Color shade(int off)`, `static Color avatar(int id)`, bucket tones `onTime`, `late`, `notInYet`, `noCheckIn`, `onLeave`, `offToday` (`MyDayTone`), `overviewTile`, `overviewTileYesterday`, the on-tile tokens `onTile`, `onTileSoft`, `onTileFaint`, `tileLine`, `tileTrack`, `tileBadge` (A-L19), `static MyDayTone bucket(String key)`) | `lib/screens/team/team_colors.dart` | T5 |
@@ -4247,6 +4257,7 @@ EOF
 > - Review r1 (A2): `write` takes the `signature` and `generation` the caller read with the key before its request (A-L15); every clear bumps `TeamCache.generation`; writes and clears are serialised. Tasks 5, 6 and 8 take the snapshot before their fetch. The A1 tests (department transfer, approver change through `/me`) live here too.
 > - Review r2 (TLP2-F03, A-L21): the snapshot is one value, `TeamCacheBinding` (`employeeId`, `signature`, `generation`, `requestEpoch`), taken with `TeamCache.bind(s)` and checked with `binding.isCurrent(s)`; `write` takes `binding:` in place of `signature:` / `generation:`. `SessionService.requestEpoch` is a new request-validity counter. It advances synchronously when a sign-out (`clearSession` / `signOut`) or `logout()` begins and when a new access token is saved (a sign-in). It advances whether or not the sign-out then wipes the fields. So an answer that was on the wire across a sign-out whose wipe was skipped (the same employee signed in again during the hook) is still stale. Tasks 5, 6 and 8 check the same binding before every response-driven `setState` (TLP2-F02).
 > - Review r3 (TLP2-F02 rest, A-L22): the generation is a private `ValueNotifier<int>`, so a clear notifies at once. `TeamCache.changes` exposes it and `TeamCache.watch(s)` merges it with the session. The screens of Tasks 5–8 listen to `watch` and drop what they show as soon as its binding is no longer current, with no request outstanding too. One new test (`changes and watch notify at once on every clear`).
+> - Review r4 (TLP4-F01, A-L23): a clear used to notify before its queued removal ran, and `read` bypassed the queue, so a listener's offline reload could read the revoked entry under the new binding. A clear now sets a read barrier first, then notifies, then sends the removal at once and sweeps again on the queue. One new test (`an access-lost clear hides the entry from reads before it notifies, …`) holds an earlier write in a `_HeldStore` (storage under SharedPreferences, imported from `shared_preferences_platform_interface` with an `ignore: depend_on_referenced_packages`, since the app does not list it).
 
 **Files:**
 - Create: `lib/services/team_cache.dart`
@@ -4278,14 +4289,19 @@ EOF
     - `static String outlookKey(SessionService s, {required int days, String context = 'team', String view = 'team', int? departmentId})`. Example: `team_v1|acme|6|outlook|team|team|-|30`.
     - `static String overviewKey(SessionService s, {String day = 'today', int? departmentId})`. Example: `team_v1|acme|6|overview|-|-|5|today`.
   - Reads and writes:
-    - `static Future<(Map<String, dynamic> body, DateTime savedAt)?> read(SessionService s, String key)`. It returns null when the key is absent, the JSON is corrupt, the signature differs from `s.teamCacheSignature`, or the key is not this employee's.
+    - `static Future<(Map<String, dynamic> body, DateTime savedAt)?> read(SessionService s, String key)`. It returns null when the key is absent, the JSON is corrupt, the signature differs from `s.teamCacheSignature`, the key is not this employee's, or a clear of the key's prefix has started and not finished (the read barrier, A-L23). The barrier is checked after the `getInstance()` await, in the same synchronous step as the lookup.
     - `static int get generation`: bumped by every `clearEmployee` / `clearAll` (A-L15). It is a private `ValueNotifier<int>`, so the bump notifies at once.
     - `static Listenable get changes` (notifies synchronously on every clear) and `static Listenable watch(SessionService s)` (`Listenable.merge([s, changes])`: every session notify and every clear). Tasks 5–8 listen to `watch` and re-check the binding of what they show (A-L22).
     - `static TeamCacheBinding bind(SessionService s)`: the session's employee, `teamCacheSignature`, `requestEpoch` and the current `generation` (A-L21).
     - `static Future<void> write(SessionService s, String key, Map<String, dynamic> body, {required TeamCacheBinding binding})`. The caller takes `binding` (= `TeamCache.bind(s)`) together with the key, **before** its request. The write is dropped unless `binding.isCurrent(s)`, checked at the call and again inside the queue right before storing. It stores `{"saved_at": <UTC ISO-8601>, "signature": binding.signature, "body": …}`, then trims to the 24 newest for this employee.
   - Clearing:
-    - `static Future<void> clearEmployee(SessionService s)` bumps the generation at once, then removes every key under `employeePrefix(s)`.
-    - `static Future<void> clearAll()` bumps the generation at once, then removes every `team_v1|` key.
+    - `static Future<void> clearEmployee(SessionService s)` clears every key under `employeePrefix(s)`.
+    - `static Future<void> clearAll()` clears every `team_v1|` key.
+    - Both go through one private `_clear(scope)`, in this order (A-L23):
+      1. **Read barrier, synchronously.** `_barriers[scope]` is counted up, so `read` returns null under `scope` from here on.
+      2. **Generation, synchronously.** `_generation.value++` notifies `changes` at once. A listener that reloads and falls back to the cache already reads nothing.
+      3. **Removal sent at once.** `SharedPreferences.getInstance().then(...)` removes every key under `scope`. It does not wait behind the writes already queued: SharedPreferences takes the key out of its in-memory copy at once and sends the removal to the platform in order. So an app killed before the queue reaches the clear finds no entry after a restart. The barrier lives in memory only and is not needed then.
+      4. **On the queue.** A second sweep runs (`_removeWhere`; its errors are the clear's), then the barrier is counted down. Writes queued after the clear run later, under the new generation.
   - Writes and clears run one at a time on a private queue (`_serial`, the `_persisting` pattern: an idle queue runs at once and keeps no completed future).
 - `SessionService._clearSessionFields` calls `TeamCache.clearAll()`. As a result, `clearSession()`, `signOut()` and `logout()` all clear the cache.
 
@@ -4316,6 +4332,51 @@ import 'package:omni_hr/services/omni_mobile_api.dart';
 import 'package:omni_hr/services/session_service.dart';
 import 'package:omni_hr/services/team_cache.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+// The storage under SharedPreferences, to hold one write (A-L23). It comes
+// with shared_preferences; the app does not list it itself.
+// ignore: depend_on_referenced_packages
+import 'package:shared_preferences_platform_interface/shared_preferences_platform_interface.dart';
+
+/// The platform storage of the A-L23 test: it runs one operation at a
+/// time, in the order sent (as the platform does), and the write of
+/// [holdKey] waits for [release].
+class _HeldStore extends InMemorySharedPreferencesStore {
+  _HeldStore() : super.empty();
+
+  /// The storage key (`flutter.` + the prefs key) whose write is held.
+  String? holdKey;
+  final release = Completer<void>();
+
+  /// True once the held write has reached storage and waits.
+  bool holding = false;
+
+  /// Every removal, in the order it was sent to storage.
+  final removals = <String>[];
+
+  Future<void> _last = Future<void>.value();
+
+  Future<bool> _inOrder(Future<bool> Function() op) {
+    final run = _last.then((_) => op());
+    _last = run.then<void>((_) {}, onError: (Object _) {});
+    return run;
+  }
+
+  @override
+  Future<bool> setValue(String valueType, String key, Object value) =>
+      _inOrder(() async {
+        if (key == holdKey) {
+          holding = true;
+          await release.future;
+        }
+        return super.setValue(valueType, key, value);
+      });
+
+  @override
+  Future<bool> remove(String key) {
+    removals.add(key);
+    return _inOrder(() => super.remove(key));
+  }
+}
 
 class _FakeApi extends OmniMobileApi {
   _FakeApi(this.onMe)
@@ -4697,6 +4758,74 @@ void main() {
       await _write(s, key, _body(2));
       expect(await _teamKeys(), [key]);
     });
+
+    test('an access-lost clear hides the entry from reads before it '
+        'notifies, while its removal still waits behind an earlier write '
+        '(A-L23, TLP4-F01)', () async {
+      final store = _HeldStore();
+      SharedPreferencesStorePlatform.instance = store;
+      // A failed expect must not leave TeamCache's queue stuck behind the
+      // held write for the tests after this one.
+      addTearDown(() async {
+        if (!store.release.isCompleted) store.release.complete();
+        await Future<void>.delayed(Duration.zero);
+      });
+      final s = await _session();
+      final key = TeamCache.overviewKey(s);
+      // The overview shows this entry (colleague details).
+      await _write(s, key, _body(1));
+      expect(await TeamCache.read(s, key), isNotNull);
+
+      // 1. An earlier cache write waits in storage; the queue waits on it.
+      final other = TeamCache.outlookKey(s, days: 30);
+      store.holdKey = 'flutter.$other';
+      final held = _write(s, other, _body(2));
+      await Future<void>.delayed(Duration.zero);
+      expect(store.holding, isTrue);
+
+      // 2. The overview's listener: on the clear's notify it drops what it
+      //    shows and asks again under the new binding. That request fails
+      //    at once (offline), so it falls back to the cache, read under
+      //    the new binding, in the same synchronous step.
+      TeamCacheBinding? rebound;
+      final fallbacks = <Future<(Map<String, dynamic>, DateTime)?>>[];
+      void onClear() {
+        rebound = TeamCache.bind(s);
+        fallbacks.add(TeamCache.read(s, key));
+      }
+
+      TeamCache.changes.addListener(onClear);
+      addTearDown(() => TeamCache.changes.removeListener(onClear));
+
+      // 3. Another screen gets not_allowed: the access-lost clear.
+      var cleared = false;
+      final clear = TeamCache.clearEmployee(s).then((_) => cleared = true);
+      expect(fallbacks, hasLength(1));
+      // The binding the reload took is current: the screen would show
+      // whatever the fallback read returns.
+      expect(rebound!.isCurrent(s), isTrue);
+      expect(await fallbacks.single, isNull);
+      expect(await TeamCache.read(s, key), isNull);
+      // The deletion has not completed: it waits behind the held write.
+      expect(cleared, isFalse);
+      // But the removal is already sent to storage, ahead of TeamCache's
+      // queue: an app killed now keeps no entry for the next start.
+      expect(store.removals, contains('flutter.$key'));
+
+      // 4. The held write lands; the deletion completes.
+      store.release.complete();
+      await held;
+      await clear;
+      expect(cleared, isTrue);
+      expect(await TeamCache.read(s, key), isNull);
+      expect(await _teamKeys(), isEmpty);
+      final stored = await store.getAll();
+      expect(stored.keys.where((k) => k.contains('team_v1|')), isEmpty);
+
+      // A write under the new binding is stored and read again.
+      await _write(s, key, _body(3));
+      expect((await TeamCache.read(s, key))!.$1, _body(3));
+    });
   });
 
   group('request epoch: the session lifecycle (A-L21)', () {
@@ -4941,7 +5070,8 @@ import 'session_service.dart';
 /// elsewhere), a sign-out (even one whose wipe was skipped), a new sign-in
 /// or a signature change is neither shown nor stored. Writes and clears
 /// run one at a time on their own queue (the SessionService `_persisting`
-/// pattern).
+/// pattern). A clear takes effect for reads before anyone hears of it and
+/// sends its removal to storage at once, ahead of that queue (A-L23).
 ///
 /// At most [maxPerEmployee] entries per employee; the oldest go first.
 /// The person sheet is never cached.
@@ -4967,7 +5097,8 @@ class TeamCache {
   /// [TeamCacheBinding].
   static int get generation => _generation.value;
 
-  /// Notifies, synchronously, on every [clearEmployee] / [clearAll].
+  /// Notifies, synchronously, on every [clearEmployee] / [clearAll], once
+  /// [read] already misses the cleared entries (A-L23).
   static Listenable get changes => _generation;
 
   /// Everything that can make a shown team answer stale (A-L22): every
@@ -5035,14 +5166,17 @@ class TeamCache {
       );
 
   /// The stored body and its save time (local), or null when the key is
-  /// absent, corrupt, saved under another signature, or not this
-  /// employee's.
+  /// absent, corrupt, saved under another signature, not this employee's,
+  /// or under a clear that has not finished yet (A-L23).
   static Future<(Map<String, dynamic> body, DateTime savedAt)?> read(
     SessionService s,
     String key,
   ) async {
     if (s.employeeId <= 0 || !key.startsWith(employeePrefix(s))) return null;
     final prefs = await SharedPreferences.getInstance();
+    // Checked after the await, in the same synchronous step as the lookup:
+    // a clear that started while this read waited hides the entry too.
+    if (_barred(key)) return null;
     final raw = prefs.getString(key);
     if (raw == null) return null;
     final Object? value;
@@ -5095,20 +5229,60 @@ class TeamCache {
   }
 
   /// Removes every entry of the signed-in employee (an access-lost
-  /// answer: not_allowed / names_hidden / feature_unavailable). The
-  /// generation moves at once, so a write already queued or on the wire
-  /// is dropped.
-  static Future<void> clearEmployee(SessionService s) {
-    _generation.value++;
-    final employee = employeePrefix(s);
-    return _serial(() => _removeWhere((k) => k.startsWith(employee)));
-  }
+  /// answer: not_allowed / names_hidden / feature_unavailable). Reads miss
+  /// them and the generation moves at once, so a write already queued or
+  /// on the wire is dropped and a reload a listener starts finds nothing
+  /// (A-L23).
+  static Future<void> clearEmployee(SessionService s) =>
+      _clear(employeePrefix(s));
 
-  /// Removes every `team_v1|` entry (sign-out, logout). Bumps the
-  /// generation like [clearEmployee].
-  static Future<void> clearAll() {
+  /// Removes every `team_v1|` entry (sign-out, logout), the same way as
+  /// [clearEmployee].
+  static Future<void> clearAll() => _clear(prefix);
+
+  /// Clears that have started and not finished, by key prefix (A-L23):
+  /// while a prefix is here, [read] returns nothing under it.
+  static final Map<String, int> _barriers = <String, int>{};
+
+  static bool _barred(String key) => _barriers.keys.any(key.startsWith);
+
+  /// The one clear (A-L23), in this order:
+  /// 1. the read barrier for [scope], synchronously: from here on [read]
+  ///    returns nothing under it;
+  /// 2. the generation, which notifies [changes] synchronously: a listener
+  ///    that reloads and falls back to the cache already reads nothing;
+  /// 3. the removal goes to storage now, not behind the writes already
+  ///    queued: SharedPreferences takes each key out of its in-memory copy
+  ///    at once and sends the removal to the platform in order, so an app
+  ///    killed before the queue reaches this clear finds no entry after a
+  ///    restart (the barrier itself lives in memory only);
+  /// 4. on the queue, after the writes queued before it: a second sweep
+  ///    (its errors are this call's), then the barrier goes. Writes queued
+  ///    later run after that, under the new generation.
+  static Future<void> _clear(String scope) {
+    _barriers[scope] = (_barriers[scope] ?? 0) + 1;
     _generation.value++;
-    return _serial(() => _removeWhere((k) => k.startsWith(prefix)));
+    final sent = SharedPreferences.getInstance().then<void>(
+      (prefs) => Future.wait([
+        for (final k in prefs.getKeys().toList())
+          if (k.startsWith(scope)) prefs.remove(k),
+      ]),
+      // A failure here is retried by the sweep below, which reports it.
+      onError: (Object _) {},
+    );
+    return _serial(() async {
+      try {
+        await sent;
+        await _removeWhere((k) => k.startsWith(scope));
+      } finally {
+        final left = _barriers[scope]! - 1;
+        if (left == 0) {
+          _barriers.remove(scope);
+        } else {
+          _barriers[scope] = left;
+        }
+      }
+    });
   }
 
   static bool _mayStore(SessionService s, String key) =>
@@ -5335,7 +5509,10 @@ access-lost answers; clearAll runs from the session wipe, so
 clearSession / signOut / logout all clear it. Every clear notifies
 TeamCache.changes at once; TeamCache.watch(s) merges it with the
 session, for the screens that must drop a shown answer whose binding
-moved.
+moved. A clear sets a read barrier before it notifies (read misses the
+cleared entries even while the removal waits behind an earlier write),
+sends the removal to storage at once and sweeps again on the queue
+(A-L23).
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 EOF
@@ -18867,7 +19044,7 @@ Run:
 ```bash
 flutter test
 ```
-Expected: all green. The total is the Task 0 baseline plus the tests added by Tasks 1–9 (a scratch run of this plan on 2026-10-22, after review r3: `+1315: All tests passed!` = 978 at `588a1cb` + 337 new).
+Expected: all green. The total is the Task 0 baseline plus the tests added by Tasks 1–9 (a scratch run of this plan on 2026-10-22, after review r4: `+1316: All tests passed!` = 978 at `588a1cb` + 338 new).
 
 - [ ] **Step 9: Commit**
 
@@ -18970,7 +19147,9 @@ Design: `session-assets/2026-10-22-team-leave-mgmt-day/proposal.md` (r3); plans:
   it too: a stale answer is neither shown nor stored, the screen clears and asks again (not while signed out).
   Every clear bumps the generation; `requestEpoch` advances when a sign-out / logout begins and on every new
   access token, even when a sign-in during the hook skips the wipe. Writes and clears are serialised. The person
-  sheet is never cached.
+  sheet is never cached. A clear sets a read barrier before it notifies (`read` misses the cleared entries even
+  while the removal waits behind an earlier write) and sends the removal to storage at once, ahead of the queue,
+  so a killed app keeps no entry (A-L23). Never let a clear notify before reads miss its entries.
 - A shown answer keeps its binding (A-L22): the outlook, the LEAVE tile, the overlap line, the overview, the
   drill-down and the person sheet listen to `TeamCache.watch(s)` (every session notify + every clear; the
   generation is a `ValueNotifier`) and drop a stale answer before the next frame, then ask again (not while a
