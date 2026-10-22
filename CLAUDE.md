@@ -55,6 +55,9 @@ Android + iOS employee app for Omni HR (version in pubspec.yaml). Backend = Odoo
 - **New code uses `context.omni`**, never hex literals or the static `AppTheme.<colour>` constants (light-only,
   removed in M5). Pick by job: `accent` = teal text/icons on a card, `brandFill` = teal behind white text;
   `card` (not `Colors.white`) for surfaces.
+- My day's pure helpers (`toneOf`, `buildTimeline`, `daySummaryOf`) take a `MyDayPalette` (light by default, for
+  tests); widgets pass `context.omni.myDay`. White text on fills (`brandFill`, `errorFill`, `successFill`,
+  `checkInFill`, tone fills) — these are deeper in dark; never put white text on `accent` / `button` / `error`.
 - `AppTheme.themeMode` stays `ThemeMode.light` until every screen is migrated (M1–M4); M5 flips it to
   `ThemeMode.system`. Plan + canvas: `session-assets/2026-10-22-dark-mode/plan.md` in the workspace.
 - `test/core/omni_colors_test.dart` checks WCAG contrast of every token pair (dark: all pass; light: a fixed list
