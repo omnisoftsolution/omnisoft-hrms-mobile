@@ -10,9 +10,9 @@
 Old connectors and missing keys fall back to today's behaviour.
 
 **Architecture:**
-- **Session flags.** `SessionService` stores three new `/login` / `/me` employee keys and derives `homeView` and `teamLeaveEnabled`.
+- **Session flags.** `SessionService` stores four new `/login` / `/me` employee keys (the three flags and `team_scope_sig`) and derives `homeView`, `teamLeaveEnabled` and `teamCacheSignature`.
 - **API layer.** `OmniMobileApi` gets five new calls, parsed into tolerant models in `lib/models/team_outlook.dart` and `lib/models/team_overview.dart`.
-- **Cache.** `TeamCache` (SharedPreferences, keyed per db + employee + scope + range) holds the last good answer for offline display. It is cleared on sign-out and on `not_allowed`.
+- **Cache.** `TeamCache` (SharedPreferences, keyed per db + employee + scope + range, stamped with the scope signature) holds the last good answer for offline display. It is cleared on sign-out and on `not_allowed`; an answer is stored only under the signature and generation taken before its request (A-L15).
 - **Screens.**
   - `lib/screens/team/` holds the outlook (heat map) and its formatting helpers.
   - `lib/screens/home/overview/` holds the overview, the drill-down and the person sheet.
@@ -58,16 +58,25 @@ Dark mode is **not** in this plan. It is its own piece of work, app-wide, follow
 - **Read every file before editing it. Edit by quoted anchor text, never by line number** (line numbers are from master 588a1cb and drift). Every subagent brief repeats this rule.
 - **Workspace.** Work only in `/Users/willytanuwiharja/Omnisoft HRMS/omnisoft-hrms-mobile/.claude/worktrees/team-overview` (branch `feat/team-overview`, off master 588a1cb).
 - **No release actions.** Commits stay local: no push, no store build, no TestFlight / Play upload without Willy's word.
-- **Commit messages** end with a blank line and `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
+- **Commit messages** end with a blank line and the `Co-Authored-By:` line your harness's attribution reminder gives; without one, `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` (the default written in every commit below, A-L20).
 - **Version.** 1.33.0+108 → **1.34.0+109** (Task 10).
 
 ### Commands
 Run these from the worktree:
 ```bash
-flutter test                                   # whole suite (green on master)
+flutter test                                   # whole suite (green on master, 978 tests at 588a1cb; silent while compiling, minutes cold, ~20 s warm)
 flutter test test/screens/team/team_leave_screen_test.dart   # one file
 flutter analyze                                # must report no new issues vs Task 0 baseline
 ```
+
+"No new issues vs the Task 0 baseline" is checked with this one command (A12c), from the worktree. It prints the issue lines that are new since Task 0 (empty output = pass):
+```bash
+EV="/Users/willytanuwiharja/Omnisoft HRMS/session-assets/2026-10-22-team-leave-mgmt-day/evidence"
+flutter analyze > /tmp/omni-analyze-now.log 2>&1; \
+  comm -13 <(grep -E '^ *(info|warning|error) •' "$EV/app-baseline-analyze.log" | sed -E 's/:[0-9]+:[0-9]+ •/ •/' | sort -u) \
+           <(grep -E '^ *(info|warning|error) •' /tmp/omni-analyze-now.log | sed -E 's/:[0-9]+:[0-9]+ •/ •/' | sort -u)
+```
+(Line and column numbers are stripped, so an old issue that only moved does not count as new.)
 
 ### Compatibility matrix (must hold; tested in Task 9)
 
@@ -88,13 +97,13 @@ flutter analyze                                # must report no new issues vs Ta
 - **A-L2 — Range memory.** The 30 / 60 / 90 choice is stored per employee in prefs (`team_leave_range|<db>|<employeeId>`); the default is 30. The overview's "See 30 / 60 / 90 days" opens the screen at the stored range with `context: 'overview'` and the overview's current `department_id`.
 - **A-L3 — Cache key and validity (TLMD-07).**
   - The key is `team_v1|<db>|<employeeId>|<kind>|<context>|<view>|<departmentId or ->|<days or day>`.
-  - The stored value is `{saved_at, signature, body}`. `signature` = `overview_access + '/' + team_leave_source` at save time. A read whose signature differs from the current session's is discarded.
+  - The stored value is `{saved_at, signature, body}`. `signature` = `SessionService.teamCacheSignature` as taken before the request (A-L14, A-L15). A read whose signature differs from the current session's is discarded.
   - Cleared:
     - all `team_v1|` keys on `clearSession()` / `logout()`;
     - all of this employee's keys on any `not_allowed` / `names_hidden` / `feature_unavailable` answer from these routes;
     - the person sheet is never cached.
 - **A-L4 — Home switch memory.** The dual-view choice is stored per employee in prefs (`home_mode|<db>|<employeeId>`, `overview` | `my_day`); the default is `overview`.
-- **A-L5 — Fallback is per app run.** When `home/overview` answers missing-route or `not_allowed`, `HomeRoot` shows My day until the next `/me` changes `overview_access` (it re-evaluates on every `SessionService` notify).
+- **A-L5 — Fallback is per app run.** When `home/overview` answers missing-route or `not_allowed`, `HomeRoot` shows My day until the next `/me` changes `overview_access` (it re-evaluates on every `SessionService` notify). The LEAVE tab's Team leave tile follows the same rule after an access-lost answer (review r1 A5, Task 6): hidden while `teamCacheSignature` is still the one that lost it, back once `/me` changes it or a later call answers.
 - **A-L6 — Initials avatars only.** The outlook and overview use an initials circle with a hue taken from the employee id (`hsl(id * 47 % 360, 55%, 45%)`, as in the mockup). No avatar images are fetched (TLMD-13).
 - **A-L7 — Copy for Yesterday.** The connector scores yesterday's missing rows in the morning (connector L4, confirmed by Willy 2026-10-22), so the mockup's "Reviewed overnight" becomes: "Scored by the Daily Review — the same verdicts HR sees, including HR's corrections." With `provisional: true` the copy is: "Still being scored — numbers may change tonight." This is one constant in `lib/screens/home/overview/overview_copy.dart`.
 - **A-L8 — Notification taps while the overview shows.** `HomeShellState` code that uses `_myDayKey.currentContext` (notification tap, approval push) falls back to `_homeNavKey.currentContext` when My day is not mounted, through the top-level `homeTabContext(...)` (Task 9).
@@ -106,6 +115,14 @@ flutter analyze                                # must report no new issues vs Ta
   - **Errors.** `ErrorContext.team` has its own branch in `friendlyError`. It gives "You no longer have access to this view." for `not_allowed` and "This person is no longer in your view." for `not_found`, and keeps the normal transport words for everything else.
   - **Shared widgets.** `lib/screens/team/team_widgets.dart` (`TeamAvatar`, `TeamYouChip`, `TeamPendingChip`, `TeamFilterChip`) serves T5–T9.
   - **Colours.** `TeamColors` names include `cellOff` (the mockup's `cellW`), `holCell` (holiday grey at 88 alpha) and `bucket(String) -> MyDayTone`. `initialsHue(int)` returns a `Color`.
+  - **Copy (review r1, A7).** Where the mockup has the string, the mockup wins:
+    - `names_hidden` / the counts-only line: "Counts only — your company doesn't show names here.";
+    - the outlook day-card title: date · holiday · count ("Mon 9 Nov · Deepavali (observed) · 0 off");
+    - with a department chip selected, the outlook sub-label is that department's name and size ("Fabric · 15 people");
+    - "People you approve" everywhere (view chip and header);
+    - no "on your team" in the overview context ("No one is off in the next N days.").
+  - **Invented copy (no mockup string; kept, for Willy to confirm — consolidated review, open question 3):** Who's out "morning only" / "afternoon only" / "part of the day" / " · pending"; "No one is out today."; "No one is booked off in the next 7 days."; "Showing what you saw at HH:MM"; the no-team bodies for `no_department` / `no_approver` / `no_people` / `off`; "Some rows are not shown." (A-L17); the approver / approvees sub-labels and "1 person".
+  - **One leave-date formatter (open question 1):** the outlook, the day card, the Also-off line and the person sheet all use `leaveWhenLabel` ("Annual Leave · Tue 27 Oct – Wed 28 Oct · 2 days", the same shape as leave history), not the mockup's "Annual Leave Tue 27 – Wed 28 Oct".
 - **A-L10 — Flutter 3.44.6 lint and test traps.**
   - `containsSemantics` is deprecated: use `isSemantics`.
   - A map entry written `if (x != null) 'k': x` trips `use_null_aware_elements`: write `'k': ?x`.
@@ -116,8 +133,19 @@ flutter analyze                                # must report no new issues vs Ta
 - **A-L13 — Overview For you** drops `yesterday_incomplete` items: their "Tell HR" flow lives on My day. A dual-view user still sees them on My day. `LeaveScreen` gains a `teamLeaveBuilder` test seam. `WhoOutToday.tracked` (default `false`) gates the person-sheet tap.
 - **A-L12 — My day's `header` sits above the status tile** (the tile is outside the list), and it also shows while My day loads or after a failed load. `showMyDay()` (used by `navigateToMyDay`) switches without saving the choice; only a tap on the switch saves it.
 
+Added by review r1 (`session-assets/2026-10-22-team-leave-mgmt-day/reviews/tlmd-plan-r1-consolidated.md`):
+
+- **A-L14 — Cache signature = `team_scope_sig` (K1, A1).** `/login` and `/me` send `employee.team_scope_sig` (16 hex characters; the facts that decide what the viewer may see). `SessionService.teamScopeSig` stores it (prefs `team_scope_sig`; malformed or missing = `''`), and `teamCacheSignature` is that signature. Without it (an older connector) the fallback is `'$overviewAccess/$teamLeaveSource/$employeeDepartment/$employeeCompanyName'`. The contract's fallback names `$departmentId/$companyId`, but the `employee` block carries no ids (only `department_name` / `company_name`), so the app uses the names the session has (logged for the lead). A department transfer or an approver change through `/me` therefore drops the old cached answers. Known limit (K1): in the "same approver" leave view, colleagues whose approver changes elsewhere do not change the viewer's signature; the next online fetch corrects it.
+- **A-L15 — Cache binding and generation (A2).** Every caller (Tasks 5, 6, 8) reads the key, `session.teamCacheSignature` and `TeamCache.generation` together **before** its request and passes them to `TeamCache.write(s, key, body, signature:, generation:)`. `clearEmployee` / `clearAll` bump the generation at once. A write is dropped on any mismatch, checked at the call and again inside the queue, right before it stores. Writes and clears run one at a time on a private queue (the session `_persisting` pattern). So a success that lands after an access-lost clear, a sign-out, the same employee signing in again, or a narrowed grant never repopulates the cache.
+- **A-L16 — With neither feature, Home = My day (A11; deviation from the proposal, open question for Willy).** Proposal §2 says "with neither, Home shows For you only". Both plans keep My day instead: `homeView` needs `featureAttendance || featureTimeOff`, the connector answers `feature_unavailable` when both are off, and My day with Attendance off already shows `FeatureLockedPane` + the week strip + For you. Willy to confirm (consolidated review, open question 2).
+- **A-L17 — Bounded answers say so (K2, A9).** When the outlook answers `truncated: true` the screen shows one line under the heat map, "Some rows are not shown." (`teamRowsNotShown`, `team_format.dart`); Who's out shows the same line when `who_out.truncated` is true (`WhoOut.truncated`). The counts (`days[].off`, overlap `more`) are exact server counts and are shown as sent.
+- **A-L18 — `TeamOutlook.view` is `String?` (A8).** It is `null` in the overview context (the server sends `view: null` there); in the team context a missing value reads `'team'`.
+- **A-L19 — On-tile colours (A6).** Text, icons and lines on the overview tiles come from `TeamColors.onTile` / `onTileSoft` / `onTileFaint` / `tileLine` / `tileTrack` / `tileBadge`; the LEAVE tile's face initials use `TeamColors.onC3`. No new widget writes `Colors.white` (`Colors.transparent` stays: it is not a theme colour).
+- **A-L20 — Commit trailer (A14).** Every commit message ends with the `Co-Authored-By:` line that your harness's attribution reminder gives. The plan's `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` is the default when there is no such reminder.
+
 ---
 ## API contract (verbatim copy from the connector plan; the connector plan wins on any difference)
+
 General field rules: `department` is `null` for a person with no department, and `initials` come from the first and last word of the name ("Mei Lin Ong" → "MO", as the app's `EmployeeAvatar`), via the module-level `_omni_initials(name)` in `models/hr_leave_outlook.py`. A request without a valid session token answers 401 `invalid_session`, but a request with no `Authorization` header and no login fields answers 400 `missing_credentials` (existing `_authenticate` behaviour).
 
 All routes have the following properties:
@@ -133,7 +161,7 @@ All routes have the following properties:
 |---|---|---|
 | 200 | `feature_unavailable` (existing `_feature_unavailable_response()`) | outlook / overlap with `time_off` off; overview with both `attendance` and `time_off` off; list / person with `attendance` off |
 | 400 | `invalid_request` | bad `days`, `context`, `view`, `day`, `bucket`, `offset`, `limit`, dates |
-| 400 | `invalid_department` | `department_id` not allowed for this scope |
+| 400 | `invalid_department` | `department_id` that is not a JSON integer (a bool included), or not allowed for this scope; the same answer on `leave/team_outlook` (either context), `home/overview` and `home/overview/list` (L20) |
 | 403 | `not_allowed` | overview routes: no grant, or `company_mismatch`. Outlook: `context:'overview'` without a grant or under `company_mismatch`, or a `view` that is not offered (under `company_mismatch` only `view:'team'` is offered; the team outlook and `team_leave_source` keep working there, as they show only the employee's own company) |
 | 403 | `names_hidden` | list / person under *Counts only* (L2) |
 | 404 | `not_found` | person not in scope, archived or in another company (no oracle) |
@@ -142,19 +170,28 @@ All routes have the following properties:
 ### `/login`, `/me` → `employee` gains (Task 9)
 
 ```json
-{"attendance_tracked": true, "overview_access": "none", "team_leave_source": "department"}
+{"attendance_tracked": true, "overview_access": "none", "team_leave_source": "department",
+ "team_scope_sig": "3f2a9c0d1e4b5a67"}
 ```
 - `attendance_tracked` is `kiosk_enabled`.
 - `overview_access` is the effective value (L10).
 - `team_leave_source` is the company setting `department` | `approver` | `off`, or `off` when `time_off` is off. The app hides the Team leave row on `off`.
-- Old apps ignore the keys. A new app treats a missing key as `false` / `none` / `off`.
+- `team_scope_sig` is a string of exactly 16 lower-case hex characters (`^[0-9a-f]{16}$`): `sha1` of a canonical JSON list of the facts that decide what the viewer may see (L18):
+  - `company_id`, the effective `overview_access`, the effective `team_leave_source`, the viewer's `department_id`;
+  - the viewer's effective leave approver and effective attendance approver (the `ROLE_FIELDS` effective ids);
+  - `omni_team_leave_show_type`, `omni_team_leave_show_pending`, `omni_overview_names`, `omni_overview_show_source`, `omni_overview_show_location`;
+  - the viewer's officer flags (leave officer, attendance officer);
+  - for access `approvees`, the sorted ids of the people the viewer approves (attendance role).
+
+  These ids are hash inputs only: the `employee` block gains no `department_id` / `company_id` keys (it keeps sending `department_name` / `company_name`). The app uses it as the cache signature of every team answer when present. Without it (old connector) the app falls back to `'$overviewAccess/$teamLeaveSource/$departmentName/$companyName'`. Known limit, documented: in the "same approver" leave view, colleagues whose approver changes elsewhere don't change the viewer's signature; the next online fetch corrects it. The value is opaque: the app compares it and never parses it.
+- Old apps ignore the keys. A new app treats a missing key as `false` / `none` / `off`, and a missing `team_scope_sig` as "use the fallback signature".
 
 ### `POST leave/team_outlook` (Task 4)
 
 Body: `{"days": 30|60|90, "context": "team"|"overview", "view": "team"|"approvees"|"company", "department_id": int|null}`.
 - `context` defaults to `team`.
 - `view` defaults to `team` and is used only in the team context.
-- `department_id` is used only in the overview context, for `company` access (any department of the session company) or `department` access (only the viewer's own). Anything else gives `invalid_department`.
+- `department_id` is used only in the overview context, for `company` access (any department of the session company) or `department` access (only the viewer's own). Anything else gives `invalid_department`. A `department_id` that is not a JSON integer (a bool, a string, a float, a list) gives `invalid_department` in either context; an integer in the team context is ignored (L20).
 
 Views offered in the team context (`views` in the answer):
 - `team` when the setting is not `off`;
@@ -190,11 +227,11 @@ Field rules:
 - `leaves[].unit` is `day` | `half_day` | `hours`.
 - `leaves[].type` is `null` unless L1 allows it. `from_period` / `to_period` are `am` | `pm` | `null`; hours follow the `leave/history` rule.
 - `disclosure` gives the **peer** defaults; a row may still carry a type or pending state through L1.
-- `days[].off` counts the distinct people with a visible leave covering the date on a weekday their calendar works. Flexible or no calendar counts every day. `pending` is the pending part of that count.
-- `workday` is true when any person in the set has a calendar line on that weekday.
-- `holiday` is `{"name", "everyone"}` or `null`.
+- `days[].off` counts the distinct people with a visible leave covering the date on a date their calendar works: the calendar has work lines on that date, lunch lines excluded, and on a two-week calendar only that date's week type counts (L23). Flexible or no calendar counts every day. `pending` is the pending part of that count.
+- `workday` is true when any person in the set has calendar work on that date (the same rule).
+- `holiday` is `{"name", "everyone"}` or `null`. `everyone` is true only when every person's calendar has that holiday on that local date (L23); with nobody in the set it is true.
 - `people` lists only people with a leave in range, plus the viewer.
-- At most 3000 leaves; past that, `truncated: true` (ordered by `date_from`, id).
+- At most 3000 **visible** leaves (hidden pending requests are filtered before the bound, L19); past that, `truncated: true` (ordered by `date_from`, id).
 
 ### `POST leave/team_overlap` (Task 4)
 
@@ -204,7 +241,7 @@ Body: `{"date_from": "2026-11-12", "date_to": "2026-11-13"}`, clamped to 92 days
   "from_period": null, "to_period": null, "hour_from": 0.0, "hour_to": 0.0, "unit": "day", "state": "approved"}],
  "more": 0, "empty_reason": null}
 ```
-At most 5 rows, sorted by `date_from` then name; `more` counts the rest. An `off` setting or no team gives an empty list plus `empty_reason`. The answer never carries the leave type.
+At most 5 rows, sorted by `date_from` then name; `more` counts the rest exactly: the number of visible leaves in range (a count under the same visibility rules, L19) minus the rows shown, also past the outlook's row bound. An `off` setting or no team gives an empty list plus `empty_reason`. The answer never carries the leave type.
 
 ### `POST home/overview` (Tasks 7, 8)
 
@@ -220,7 +257,8 @@ Body: `{"day": "today"|"yesterday", "department_id": int|null}`. Gates: grant �
              "checked_in": 42, "expected": 49, "tracked": 54},
   "who_out": {"today": [{"id": 31, "name": "Lina Koh", "initials": "LK", "department": "Fabric",
                           "type": null, "state": "approved", "part": null, "until": "2026-10-23", "back_at": null, "tracked": false}],
-              "next_7": [{"date": "2026-10-23", "people": [{"id": 14, "name": "Priya Nair", "department": "Marketing", "state": "approved"}]}]},
+              "next_7": [{"date": "2026-10-23", "people": [{"id": 14, "name": "Priya Nair", "department": "Marketing", "state": "approved"}]}],
+              "truncated": false},
   "for_you": [],
   "auth_type": "session"
 }
@@ -229,9 +267,10 @@ Body: `{"day": "today"|"yesterday", "department_id": int|null}`. Gates: grant �
 Field rules:
 - `counts` is `null` when `attendance` is off, and `who_out` is `null` when `time_off` is off.
 - `expected` = tracked − on_leave − off_today; `checked_in` = on_time + late.
-- `who_out.today[].part` is `morning` | `afternoon` | `hours` | `null`. `tracked` (`kiosk_enabled`) tells the app whether the row may open the person sheet (L2: only tracked people, only with `names`). `back_at` is the local `HH:MM` the person is due back today, or `null`.
+- `who_out.today[].part` is `morning` | `afternoon` | `hours` | `null`. `hours` only for a genuine "Specific hours" request; a whole-day or multi-day request on an hour-unit type is `null` (a full day), the same rule as the outlook `unit` (L24). The list row `leave.part` follows the same rule. `tracked` (`kiosk_enabled`) tells the app whether the row may open the person sheet (L2: only tracked people, only with `names`). `back_at` is the local `HH:MM` the person is due back today, or `null`.
 - `scope.empty_reason` is `null` | `no_department` | `no_people`.
 - `who_out.next_7` covers the 7 calendar days after today, rest days included (no workday filter): a day appears only when someone in scope has visible leave on it.
+- `who_out.truncated` is true when the visible leaves of [today, today + 7] passed the outlook row bound (3000, L19), so `today` and `next_7` may miss people. It is never dropped silently. The app shows one line, "Some rows are not shown.".
 - `for_you` reuses `hr.employee._omni_my_day_for_you(...)` (the same list and features as My day).
 
 Yesterday (`day: "yesterday"`) replaces `counts` with:
@@ -250,7 +289,11 @@ and sends `live: false`, `who_out: null`. The verdict map (Task 6) uses `resolut
 | `absent` | `absent` |
 | `no_checkout`, `stale_closed`, `no_break`, `long_break`, `ambiguous` | `late` if `late_minutes > 0`, else `on_time` |
 
-A row whose state is `dismissed` counts as `on_time`. Tracked people with no row: `on_leave` when every block of the day is cancelled by leave; `not_reviewed` when work was due (or they punched) but the row could not be scored (lock busy, cap, error, night shift still on duty), which also makes `provisional` true; else `off`. `not_reviewed` is part of `expected` (expected = tracked − on_leave − off).
+A row whose state is `dismissed` counts as `on_time`. "Work was due" uses the Daily Review's calendar day (L21): `omni.attendance.day._expected_source` gives intervals for that local date, so an overnight tail from the day before counts. Tracked people with no row:
+- `not_reviewed` when work was due (or they punched) but no row exists after scoring. The causes are a busy lock, the cap, an error, a concurrent nightly row, the engine declining the day, a night shift still on duty, or a failed commit (L22). Any `not_reviewed` also makes `provisional` true; such people are never `off`.
+- With nothing due and no punch: `off` on a rest day (no scheduled work at all) or a public holiday; else `on_leave` (time off removed the scheduled work).
+
+`not_reviewed` is part of `expected` (expected = tracked − on_leave − off). When the commit of the scored rows fails, the route answers from the stored rows only, with `provisional: true` (L22).
 - `worked` = on_time + late + left_early.
 - `expected` = tracked − on_leave − off; `expected` = worked + absent + not_reviewed.
 
@@ -298,10 +341,7 @@ Field rules:
 - `shift` is `null` on a day with no blocks.
 - The person route needs `attendance` (feature_unavailable otherwise).
 
----
-
-
-Connector lead decisions the app depends on: L1 (who sees type/pending — server-side), L2 (counts only: list/person 403 `names_hidden`, Who's out names still sent but not tappable), L3 (`source` mobile|kiosk|other, `kiosk_name`, `location`), L4 (missing yesterday rows scored on the fly on the first request; `provisional` when some could not be), L8 (`summary` always present), L10 (`overview_access` is the effective value), L12 (yesterday rows are committed by the server), L13 (the overview follows shift blocks: a night worker's 22:00 block reads Not in yet / Later today, flexible schedules never No check-in), L14 (`back_at` is null after an afternoon leave).
+Connector lead decisions the app depends on: L1 (who sees type/pending — server-side), L2 (counts only: list/person 403 `names_hidden`, Who's out names still sent but not tappable), L3 (`source` mobile|kiosk|other, `kiosk_name`, `location`), L4 (missing yesterday rows scored on the fly on the first request; `provisional` when some could not be), L8 (`summary` always present), L10 (`overview_access` is the effective value), L12 (yesterday rows are committed by the server), L13 (the overview follows shift blocks: a night worker's 22:00 block reads Not in yet / Later today, flexible schedules never No check-in), L14 (`back_at` is null after an afternoon leave). L18 (`team_scope_sig`: 16 lower-case hex, opaque; the app's cache signature), L19 (visibility filtered before any row bound; exact overlap `more`; `who_out.truncated`), L20 (`invalid_department` for any bad `department_id`), L21 (Yesterday uses the Daily Review's calendar day; due + no row = `not_reviewed`, never `off`), L22 (a failed commit answers from stored rows with `provisional: true`), L23 (heat-map dates follow each calendar's week type; holiday `everyone` per calendar), L24 (`part: hours` only for genuine Specific hours).
 
 ---
 
@@ -337,7 +377,8 @@ Connector lead decisions the app depends on: L1 (who sees type/pending — serve
 | `SessionService.attendanceTracked` / `overviewAccess` / `teamLeaveSource` | `bool` / `String` (`none`…) / `String` (`off`…) getters | T1 |
 | `SessionService.homeView` | `HomeView` getter: `overviewAccess != 'none' && (featureAttendance \|\| featureTimeOff)` → `attendanceTracked ? dual : overview`, else `myDay` | T1 |
 | `SessionService.teamLeaveEnabled` | `bool` getter: `featureTimeOff && teamLeaveSource != 'off'` | T1 |
-| `SessionService.teamCacheSignature` | `String` getter `'$overviewAccess/$teamLeaveSource'` | T1 |
+| `SessionService.teamScopeSig` | `String` getter: `employee.team_scope_sig` (16 hex, K1), `''` when missing or malformed; prefs `team_scope_sig` | T1 |
+| `SessionService.teamCacheSignature` | `String` getter: `teamScopeSig` when not empty, else `'$overviewAccess/$teamLeaveSource/$employeeDepartment/$employeeCompanyName'` (A-L14) | T1 |
 | `TeamOutlook.fromJson`, `TeamLeaveRow`, `TeamDay`, `TeamHoliday`, `TeamSummary`, `TeamPerson`, `TeamScope` | `lib/models/team_outlook.dart` | T2 |
 | `TeamOverview.fromJson`, `OverviewCounts`, `ReviewedDay` (incl. `notReviewed`), `WhoOut`, `WhoOutToday` (incl. `bool tracked`), `WhoOutDay`, `OverviewRow`, `OverviewRowLeave {String? type; String state; String? part; String? backAt; DateTime? until}`, `OverviewShift` (`String get label`), `OverviewPage`, `OverviewPerson`, `OverviewPunch` | `lib/models/team_overview.dart` | T2 |
 | `OmniMobileApi.fetchTeamOutlook({int days = 30, String context = 'team', String view = 'team', int? departmentId})` | `Future<TeamOutlook>` | T2 |
@@ -347,10 +388,11 @@ Connector lead decisions the app depends on: L1 (who sees type/pending — serve
 | `OmniMobileApi.fetchOverviewPerson(int employeeId)` | `Future<OverviewPerson>` | T2 |
 | `bool isMissingRoute(Object e)` | `lib/services/omni_mobile_api.dart` (top level) | T2 |
 | `bool isAccessLost(Object e)` (`not_allowed`, `names_hidden`, `feature_unavailable`) | same file | T2 |
-| `TeamCache`: `static String key({required SessionService session, required String kind, String context = '-', String view = '-', int? departmentId, required String span})`; `static String outlookKey(SessionService s, {required int days, String context = 'team', String view = 'team', int? departmentId})`; `static String overviewKey(SessionService s, {String day = 'today', int? departmentId})`; `static Future<(Map<String, dynamic> body, DateTime savedAt)?> read(SessionService s, String key)`; `static Future<void> write(SessionService s, String key, Map<String, dynamic> body)`; `clearEmployee(s)` / `clearAll()` | `lib/services/team_cache.dart` | T3 |
+| `TeamCache`: `static String key({required SessionService session, required String kind, String context = '-', String view = '-', int? departmentId, required String span})`; `static String outlookKey(SessionService s, {required int days, String context = 'team', String view = 'team', int? departmentId})`; `static String overviewKey(SessionService s, {String day = 'today', int? departmentId})`; `static Future<(Map<String, dynamic> body, DateTime savedAt)?> read(SessionService s, String key)`; `static int get generation`; `static Future<void> write(SessionService s, String key, Map<String, dynamic> body, {required String signature, required int generation})` (A-L15); `clearEmployee(s)` / `clearAll()` (both bump `generation`) | `lib/services/team_cache.dart` | T3 |
 | `PillSegments({required List<String> labels, required int value, required ValueChanged<int> onChanged, String? semanticsLabel})` | `lib/widgets/pill_segments.dart` | T4 |
-| `TeamColors` (`cell0`, `cellOff`, `c1`, `c2`, `c3`, `onC3`, `hol`, `holCell`, `holDot`, `leave`, `leaveTint`, `leaveOn`, `accent`, `accentTint`, `onAccentTint`, `muted`, `skeleton`, `chipBorder`, `static Color shade(int off)`, `static Color avatar(int id)`, bucket tones `onTime`, `late`, `notInYet`, `noCheckIn`, `onLeave`, `offToday` (`MyDayTone`), `overviewTile`, `overviewTileYesterday`, `static MyDayTone bucket(String key)`) | `lib/screens/team/team_colors.dart` | T5 |
-| `leaveWhenLabel(TeamLeaveRow r)`, `monthLabel(DateTime m)`, `dayTitle(DateTime d)`, `Color initialsHue(int id)`, `List<TeamLeaveRow> leavesOnByName(TeamOutlook o, DateTime day)`, `DateTime outlookToday(TeamOutlook o)` | `lib/screens/team/team_format.dart` | T5 |
+| `TeamColors` (`cell0`, `cellOff`, `c1`, `c2`, `c3`, `onC3`, `hol`, `holCell`, `holDot`, `leave`, `leaveTint`, `leaveOn`, `accent`, `accentTint`, `onAccentTint`, `muted`, `skeleton`, `chipBorder`, `static Color shade(int off)`, `static Color avatar(int id)`, bucket tones `onTime`, `late`, `notInYet`, `noCheckIn`, `onLeave`, `offToday` (`MyDayTone`), `overviewTile`, `overviewTileYesterday`, the on-tile tokens `onTile`, `onTileSoft`, `onTileFaint`, `tileLine`, `tileTrack`, `tileBadge` (A-L19), `static MyDayTone bucket(String key)`) | `lib/screens/team/team_colors.dart` | T5 |
+| `leaveWhenLabel(TeamLeaveRow r)`, `monthLabel(DateTime m)`, `dayTitle(DateTime d)`, `Color initialsHue(int id)`, `List<TeamLeaveRow> leavesOnByName(TeamOutlook o, DateTime day)`, `DateTime outlookToday(TeamOutlook o)`, `const teamRowsNotShown` ("Some rows are not shown.", A-L17) | `lib/screens/team/team_format.dart` | T5 |
+| `WhoOut.truncated` (`bool`, `who_out.truncated`, K2) | `lib/models/team_overview.dart` | T2 |
 | `TeamLeaveScreen({String context = 'team', int? departmentId, int? initialDays, apiBuilder, appBar})` | `lib/screens/team/team_leave_screen.dart` | T5 |
 | `TeamLeaveRow` widget is named `TeamLeaveTile` (avoids clashing with the model `TeamLeaveRow`) | `lib/screens/leave/team_leave_row.dart` | T6 |
 | `TeamOverlapLookup({required Future<TeamOverlap> Function(DateTime from, DateTime to) fetch, required VoidCallback onChanged, Duration delay = const Duration(milliseconds: 400)})`, `alsoOffText`, line widget | `lib/screens/leave/also_off_line.dart` | T6 |
@@ -360,7 +402,7 @@ Connector lead decisions the app depends on: L1 (who sees type/pending — serve
 | `Future<void> openForYouItem(BuildContext context, ForYouItem item, {required ForYouTapGuard guard, required OmniMobileApi Function() api, required Future<void> Function() refreshSession, required Future<void> Function() refresh, void Function(int)? onOpenLeave, void Function(int)? onOpenExpense, Widget Function(ForYouItem, ExpenseRecord?)? destinationBuilder})`, `ForYouTapGuard`, `forYouDestination`, `findForYouExpense` | `lib/screens/home/my_day/for_you_navigation.dart` | T8 |
 | `OverviewDrillScreen({required String bucket, required OverviewCounts counts, int? departmentId, required String scopeLabel, apiBuilder, appBar})` | T7 |
 | `showOverviewPersonSheet(BuildContext context, {required int employeeId, required OmniMobileApi api})` | T7 |
-| `TeamOverviewScreen({apiBuilder, appBar, Widget? header, onOpenLeave, onOpenExpense, VoidCallback? onUnavailable})` + public `TeamOverviewScreenState.refresh()`; calls `onUnavailable` on `isMissingRoute` / `isAccessLost` (after starting the cache clear and `refreshMe()`); one `fetchOverview` per refresh; test seams `refreshSession`, `destinationBuilder`, `outlookBuilder`, `onBucketTap`, `onPersonTap` | `lib/screens/home/overview/team_overview_screen.dart` | T8 |
+| `TeamOverviewScreen({apiBuilder, appBar, Widget? header, onOpenLeave, onOpenExpense, VoidCallback? onUnavailable})` + public `TeamOverviewScreenState.refresh()`; calls `onUnavailable` on `isMissingRoute` / `isAccessLost` (right after *starting* the cache clear and `refreshMe()`, both `unawaited`; A4); one `fetchOverview` per refresh; test seams `refreshSession`, `destinationBuilder`, `outlookBuilder`, `onBucketTap`, `onPersonTap` | `lib/screens/home/overview/team_overview_screen.dart` | T8 |
 | `HomeRoot({required GlobalKey<MyDayScreenState> myDayKey, required GlobalKey<TeamOverviewScreenState> overviewKey, onOpenLeave, onOpenExpense, myDayBuilder, overviewBuilder})` + `HomeRootState.refresh()` / `showMyDay()`; top-level `homeTabContext(...)`, `homeModeKey(SessionService)` | `lib/screens/home/home_root.dart` | T9 |
 | `MyDayScreen({…, Widget? header})` (new optional param, rendered first in its list) | T9 |
 
@@ -372,12 +414,14 @@ Connector lead decisions the app depends on: L1 (who sees type/pending — serve
 
 > **Lead reconciliation:**
 > - The front matter already says "four mockup sources"; this task copies all four.
-> - Step 5 commits the plan file only if it is still untracked; `flutter pub get` comes first (A-L10).
+> - `flutter pub get` comes first (A-L10).
+> - Review r1 (A3): the plan is already committed on the branch (HEAD = the plan commit over `588a1cb`, clean tree), so Step 1 expects that, the plan file is not added again, and the commit is titled "docs: mockup sources …". Line numbers quoted in this plan are still from `588a1cb` (true for every code file: the plan commit changes no code).
+> - Review r1 (A12a/b): the source folder's other files are board stubs (not copied); the full `flutter test` run is silent while it compiles (a few minutes cold, about 20 s warm), and its last line is the baseline.
 
 **Files:**
 - Create: `docs/superpowers/plans/assets/2026-10-22-team-mockups/TeamLeave.dc.html`, `Overview.dc.html`, `Main.dc.html`, `Backend.dc.html` (copied byte for byte, not edited)
 - Create (outside the repo, not committed): `/Users/willytanuwiharja/Omnisoft HRMS/session-assets/2026-10-22-team-leave-mgmt-day/evidence/app-baseline.txt`, plus the raw logs `app-baseline-test.log` and `app-baseline-analyze.log` in the same folder
-- Commit: the four copies, plus the plan file if it is still untracked
+- Commit: the four copies
 - Test: none (this task records the baseline)
 
 **Interfaces:**
@@ -399,12 +443,14 @@ Connector lead decisions the app depends on: L1 (who sees type/pending — serve
 ```bash
 cd "/Users/willytanuwiharja/Omnisoft HRMS/omnisoft-hrms-mobile/.claude/worktrees/team-overview"
 git branch --show-current          # expect: feat/team-overview
-git log --oneline -1               # expect: 588a1cb release: 1.33.0+108 store notes (Play changelog + TestFlight What to Test)
-git status --porcelain             # expect only: ?? docs/superpowers/plans/2026-10-22-team-leave-overview-app-1.34.0.md
+git log --oneline 588a1cb..HEAD    # expect: only plan commits ("docs: implementation plan — team leave outlook + team overview (app 1.34.0)", and any later "docs: …plan…" fix)
+git merge-base --is-ancestor 588a1cb HEAD && echo "on 588a1cb"   # expect: on 588a1cb
+git status --porcelain             # expect: nothing (a clean tree; the plan is already committed)
+git diff --stat 588a1cb HEAD       # expect: only docs/superpowers/plans/2026-10-22-team-leave-overview-app-1.34.0.md
 flutter --version
 flutter pub get
 ```
-Expected: the branch is `feat/team-overview` at `588a1cb`, and `flutter pub get` ends with "Got dependencies!" (or "Changed N dependencies!"). If the branch or the HEAD differs, stop and tell the lead.
+Expected: the branch is `feat/team-overview`; the commits over `588a1cb` change only the plan file; the tree is clean; `flutter pub get` ends with "Got dependencies!" (or "Changed N dependencies!"). The plan commit's sha changes whenever the lead amends the plan, so check the diff against `588a1cb`, not a fixed sha. If the branch differs, `588a1cb` is not an ancestor, anything besides the plan changed, or the tree is not clean, stop and tell the lead.
 
 - [ ] **Step 2: Run the whole suite and the analyzer on the untouched branch**
 
@@ -417,8 +463,10 @@ tail -n 3 "$EV/app-baseline-test.log"
 flutter analyze > "$EV/app-baseline-analyze.log" 2>&1; echo "flutter analyze exit: $?"
 tail -n 5 "$EV/app-baseline-analyze.log"
 ```
+The full `flutter test` run prints nothing for a while (it compiles every test file first) and can take a few minutes on a cold build; a warm run on this Mac took about 20 s. Let it finish. Its **last line** is the baseline line (`+N ~S -F`): copy it as it is.
+
 Expected:
-- `flutter test` ends with a line like `00:41 +1234: All tests passed!` (CLAUDE.md: the suite is green on master).
+- `flutter test` ends with a line like `00:15 +978: All tests passed!` (CLAUDE.md: the suite is green on master). A scratch copy of `588a1cb` gave exactly that on 2026-10-22 (978 tests); use your own number.
 - `flutter analyze` ends with `No issues found!` or `N issues found.`. A non-zero analyze exit with only infos or warnings is still a baseline; record it as it is.
 
 - [ ] **Step 3: Write the baseline file**
@@ -429,7 +477,7 @@ Create `/Users/willytanuwiharja/Omnisoft HRMS/session-assets/2026-10-22-team-lea
 Omni HR mobile — baseline before team leave + Team overview (app 1.34.0)
 Date: 2026-10-22
 Worktree: /Users/willytanuwiharja/Omnisoft HRMS/omnisoft-hrms-mobile/.claude/worktrees/team-overview
-Branch: feat/team-overview @ 588a1cb (master 1.33.0+108)
+Branch: feat/team-overview @ <plan commit sha> (the plan commit over 588a1cb = master 1.33.0+108)
 Flutter: <first line of `flutter --version`>
 
 flutter test
@@ -457,6 +505,8 @@ ls -l "$DST"
 ```
 Expected: `TeamLeave ok`, `Overview ok`, `Main ok`, `Backend ok`. The listing shows four files, roughly 38 KB, 36 KB, 14 KB and 8 KB. If a source file is missing, stop and tell the lead; do not take a copy from anywhere else.
 
+The source folder also holds `OV-Counts`, `OV-Dept`, `OV-Dual`, `OV-Location`, `TL-Empty`, `TL-NoTeam` (`.dc.html`) and `canvas.json`. Those are board stubs of the design canvas (each is a few hundred bytes that only imports `Overview` or `TeamLeave` with other props), so they are not copied; later tasks never look for them.
+
 - [ ] **Step 5: Commit**
 
 ```bash
@@ -465,11 +515,9 @@ git add docs/superpowers/plans/assets/2026-10-22-team-mockups/TeamLeave.dc.html 
         docs/superpowers/plans/assets/2026-10-22-team-mockups/Overview.dc.html \
         docs/superpowers/plans/assets/2026-10-22-team-mockups/Main.dc.html \
         docs/superpowers/plans/assets/2026-10-22-team-mockups/Backend.dc.html
-# Only if `git status --porcelain` still lists it as untracked (??):
-git add docs/superpowers/plans/2026-10-22-team-leave-overview-app-1.34.0.md
-git status --porcelain     # expect only the files above, staged (A)
+git status --porcelain     # expect only the four files above, staged (A)
 git commit -m "$(cat <<'EOF'
-docs: team leave + Team overview plan and mockup sources (app 1.34.0)
+docs: mockup sources for team leave + Team overview (app 1.34.0)
 
 Copies the TeamLeave, Overview, Main and Backend mockup sources the
 later tasks take copy and colours from. Baseline before any code change
@@ -489,6 +537,7 @@ Put the real final lines from Step 3 into the message. Expected: one new commit 
 
 > **Lead reconciliation:**
 > - The derived getters read the public getters, so the fake-subclass sessions of Tasks 5–9 get a matching `teamCacheSignature` and `homeView`.
+> - Review r1 (A1 / K1): the session also stores `employee.team_scope_sig` (`teamScopeSig`), and `teamCacheSignature` is that signature when present, else the fallback built from the grant, the setting, the department and the company (A-L14). A department transfer or an approver change through `/me` therefore changes the signature, and Task 3's cache drops the old answers.
 > - No other change: names match the interface table and are used as-is by Tasks 3, 6 and 9.
 
 **Files:**
@@ -514,8 +563,9 @@ Put the real final lines from Step 3 into the message. Expected: one new commit 
   - `String get teamLeaveSource`: `'department'` | `'approver'` | `'off'`. Missing or unknown reads as `'off'`.
   - `HomeView get homeView`: `overviewAccess != 'none' && (featureAttendance || featureTimeOff)` gives `attendanceTracked ? HomeView.dual : HomeView.overview`; otherwise `HomeView.myDay`.
   - `bool get teamLeaveEnabled`: `featureTimeOff && teamLeaveSource != 'off'`.
-  - `String get teamCacheSignature`: `'$overviewAccess/$teamLeaveSource'`.
-  - Prefs keys `attendance_tracked` (bool), `overview_access` (String), `team_leave_source` (String). They belong to the login session: `clearSession()` and `logout()` remove them.
+  - `String get teamScopeSig`: `employee.team_scope_sig` (K1) when it is 16 lower-case hex characters, else `''`.
+  - `String get teamCacheSignature`: `teamScopeSig` when not empty, else the fallback `'$overviewAccess/$teamLeaveSource/$employeeDepartment/$employeeCompanyName'` (A-L14).
+  - Prefs keys `attendance_tracked` (bool), `overview_access` (String), `team_leave_source` (String), `team_scope_sig` (String). They belong to the login session: `clearSession()` and `logout()` remove them.
 
 **Implementer notes:**
 - Read every file before editing it. Edit by quoted anchor text, never by line number.
@@ -560,30 +610,53 @@ Map<String, dynamic> _employee({
   Object? tracked,
   Object? access,
   Object? source,
+  Object? sig,
+  String? department,
 }) =>
     {
       'id': 6,
       'name': 'Mei Lin Ong',
+      'department_name': ?department,
       'attendance_tracked': ?tracked,
       'overview_access': ?access,
       'team_leave_source': ?source,
+      'team_scope_sig': ?sig,
     };
 
-Map<String, dynamic> _login({Object? tracked, Object? access, Object? source}) =>
+Map<String, dynamic> _login({
+  Object? tracked,
+  Object? access,
+  Object? source,
+  Object? sig,
+}) =>
     {
       'success': true,
       'access_token': 'tok-A',
       'expires_at': '2099-01-01 00:00:00',
       'auth_source': 'omni',
       'user': {'id': 9, 'login': 'meilin', 'name': 'Mei Lin Ong'},
-      'employee': _employee(tracked: tracked, access: access, source: source),
+      'employee': _employee(
+          tracked: tracked, access: access, source: source, sig: sig),
     };
 
-Map<String, dynamic> _me({Object? tracked, Object? access, Object? source}) => {
+Map<String, dynamic> _me({
+  Object? tracked,
+  Object? access,
+  Object? source,
+  Object? sig,
+  String? department,
+}) =>
+    {
       'success': true,
       'auth_source': 'omni',
       'user': {'id': 9, 'login': 'meilin', 'name': 'Mei Lin Ong'},
-      'employee': _employee(tracked: tracked, access: access, source: source),
+      'employee': _employee(
+        tracked: tracked,
+        access: access,
+        source: source,
+        sig: sig,
+        department: department,
+      ),
     };
 
 /// Sets the SaaS plan features the getters read.
@@ -611,7 +684,9 @@ void main() {
     expect(s.teamLeaveSource, 'off');
     expect(s.homeView, HomeView.myDay);
     expect(s.teamLeaveEnabled, isFalse);
-    expect(s.teamCacheSignature, 'none/off');
+    expect(s.teamScopeSig, '');
+    // No server signature: grant / setting / department / company.
+    expect(s.teamCacheSignature, 'none/off//');
   });
 
   test('a /login body with the keys sets all three flags', () async {
@@ -621,7 +696,7 @@ void main() {
     expect(s.attendanceTracked, isTrue);
     expect(s.overviewAccess, 'department');
     expect(s.teamLeaveSource, 'approver');
-    expect(s.teamCacheSignature, 'department/approver');
+    expect(s.teamCacheSignature, 'department/approver//');
 
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getBool('attendance_tracked'), isTrue);
@@ -744,7 +819,105 @@ void main() {
     expect(again.attendanceTracked, isTrue);
     expect(again.overviewAccess, 'approvees');
     expect(again.teamLeaveSource, 'approver');
-    expect(again.teamCacheSignature, 'approvees/approver');
+    expect(again.teamCacheSignature, 'approvees/approver//');
+  });
+
+  group('team_scope_sig (K1, A-L14)', () {
+    const sigA = '3f9a0c1d2e4b5a69';
+    const sigB = '0123456789abcdef';
+
+    test('a valid signature is stored, loaded back and used as the cache '
+        'signature', () async {
+      final s = SessionService();
+      await s.saveLoginResponse(
+          _login(tracked: true, access: 'company', source: 'department',
+              sig: sigA));
+      expect(s.teamScopeSig, sigA);
+      expect(s.teamCacheSignature, sigA);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('team_scope_sig'), sigA);
+
+      final again = SessionService();
+      await again.load();
+      expect(again.teamScopeSig, sigA);
+      expect(again.teamCacheSignature, sigA);
+    });
+
+    test('an approver change arrives as a new signature through /me and '
+        'notifies', () async {
+      final s = SessionService();
+      await s.saveLoginResponse(
+          _login(access: 'approvees', source: 'approver', sig: sigA));
+      var notified = 0;
+      s.addListener(() => notified++);
+      // Same grant and setting; only the people approved changed.
+      await s.refreshMeWith(_FakeApi(() async =>
+          _me(access: 'approvees', source: 'approver', sig: sigB)));
+      expect(s.teamCacheSignature, sigB);
+      expect(notified, greaterThan(0));
+    });
+
+    test('without a signature, a department transfer through /me changes '
+        'the fallback signature', () async {
+      final s = SessionService();
+      await s.saveLoginResponse(_login(access: 'department', source: 'department'));
+      await s.refreshMeWith(_FakeApi(() async =>
+          _me(access: 'department', source: 'department',
+              department: 'Marketing')));
+      final before = s.teamCacheSignature;
+      expect(before, 'department/department/Marketing/');
+      await s.refreshMeWith(_FakeApi(() async =>
+          _me(access: 'department', source: 'department',
+              department: 'Fabric')));
+      expect(s.teamCacheSignature, 'department/department/Fabric/');
+      expect(s.teamCacheSignature, isNot(before));
+    });
+
+    test('a malformed or missing signature reads as none; a /me without it '
+        'drops the stored one', () async {
+      final s = SessionService();
+      for (final bad in <Object?>[
+        'XYZ',
+        '3F9A0C1D2E4B5A69', // upper case
+        '3f9a0c1d2e4b5a6', // 15 characters
+        42,
+        true,
+      ]) {
+        await s.refreshMeWith(_FakeApi(() async =>
+            _me(access: 'company', source: 'department', sig: bad)));
+        expect(s.teamScopeSig, '', reason: '$bad');
+        expect(s.teamCacheSignature, 'company/department//', reason: '$bad');
+      }
+      await s.refreshMeWith(_FakeApi(() async =>
+          _me(access: 'company', source: 'department', sig: sigA)));
+      expect(s.teamScopeSig, sigA);
+      await s.refreshMeWith(
+          _FakeApi(() async => _me(access: 'company', source: 'department')));
+      expect(s.teamScopeSig, '');
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('team_scope_sig'), '');
+    });
+
+    test('load() ignores a malformed stored signature', () async {
+      SharedPreferences.setMockInitialValues({
+        'overview_access': 'company',
+        'team_leave_source': 'department',
+        'team_scope_sig': 'not-a-signature',
+      });
+      final s = SessionService();
+      await s.load();
+      expect(s.teamScopeSig, '');
+    });
+
+    test('clearSession removes the signature', () async {
+      final s = SessionService();
+      await s.saveLoginResponse(
+          _login(access: 'company', source: 'department', sig: sigA));
+      await s.clearSession();
+      expect(s.teamScopeSig, '');
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.containsKey('team_scope_sig'), isFalse);
+    });
   });
 
   test('load() reads an unknown stored value as the default', () async {
@@ -880,6 +1053,8 @@ Insert directly after it:
   static const _kAttendanceTracked = 'attendance_tracked';
   static const _kOverviewAccess = 'overview_access';
   static const _kTeamLeaveSource = 'team_leave_source';
+  static const _kTeamScopeSig = 'team_scope_sig';
+  static final _teamScopeSigPattern = RegExp(r'^[0-9a-f]{16}$');
   static const _overviewAccessValues = {
     'none',
     'approvees',
@@ -898,6 +1073,7 @@ Insert directly after it:
   bool _attendanceTracked = false;
   String _overviewAccess = 'none';
   String _teamLeaveSource = 'off';
+  String _teamScopeSig = '';
 ```
 
 **3d.** Find:
@@ -937,9 +1113,23 @@ Insert directly after it:
   /// The LEAVE tab's Team leave row and the apply sheet's "Also off" line.
   bool get teamLeaveEnabled => featureTimeOff && teamLeaveSource != 'off';
 
+  /// `employee.team_scope_sig` (connector 2.65.0+, K1): 16 hex characters
+  /// that change whenever anything that decides what the viewer may see
+  /// changes (company, grant, setting, department, approvers, disclosure
+  /// settings, officer flags, the approvees). '' when the key is missing
+  /// or malformed.
+  String get teamScopeSig => _teamScopeSig;
+
   /// Stored with every TeamCache entry; an entry saved under another
-  /// grant or setting is not shown (A-L3).
-  String get teamCacheSignature => '$overviewAccess/$teamLeaveSource';
+  /// signature is not shown (A-L3, A-L14). The server's [teamScopeSig]
+  /// when sent; without it (older connector) the grant, the setting, the
+  /// department and the company as this session knows them. The session
+  /// has the department and company names, not their ids (the `employee`
+  /// block carries no ids), so the fallback uses the names.
+  String get teamCacheSignature => teamScopeSig.isNotEmpty
+      ? teamScopeSig
+      : '$overviewAccess/$teamLeaveSource/$employeeDepartment/'
+          '$employeeCompanyName';
 ```
 
 **3e.** In `load()`, find:
@@ -953,6 +1143,7 @@ Insert directly after it:
         _oneOf(prefs.getString(_kOverviewAccess), _overviewAccessValues, 'none');
     _teamLeaveSource =
         _oneOf(prefs.getString(_kTeamLeaveSource), _teamLeaveSourceValues, 'off');
+    _teamScopeSig = _scopeSigOf(prefs.getString(_kTeamScopeSig));
 ```
 
 **3f.** In `saveLoginResponse`, find:
@@ -995,22 +1186,30 @@ Insert directly **before** it (it follows `_writeAttendanceKioskOnly`):
         _oneOf(employee['overview_access'], _overviewAccessValues, 'none');
     final source =
         _oneOf(employee['team_leave_source'], _teamLeaveSourceValues, 'off');
+    final sig = _scopeSigOf(employee['team_scope_sig']);
     final changed = tracked != _attendanceTracked ||
         access != _overviewAccess ||
-        source != _teamLeaveSource;
+        source != _teamLeaveSource ||
+        sig != _teamScopeSig;
     _attendanceTracked = tracked;
     _overviewAccess = access;
     _teamLeaveSource = source;
+    _teamScopeSig = sig;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_kAttendanceTracked, tracked);
     await prefs.setString(_kOverviewAccess, access);
     await prefs.setString(_kTeamLeaveSource, source);
+    await prefs.setString(_kTeamScopeSig, sig);
     if (changed) notifyListeners();
   }
 
   /// [value] when it is one of [allowed], else [fallback].
   static String _oneOf(Object? value, Set<String> allowed, String fallback) =>
       value is String && allowed.contains(value) ? value : fallback;
+
+  /// A `team_scope_sig` (16 lower-case hex characters), else ''.
+  static String _scopeSigOf(Object? value) =>
+      value is String && _teamScopeSigPattern.hasMatch(value) ? value : '';
 
 ```
 
@@ -1025,6 +1224,7 @@ Replace with:
     _attendanceTracked = false;
     _overviewAccess = 'none';
     _teamLeaveSource = 'off';
+    _teamScopeSig = '';
     _leaveApprovalsEnabled = false;
 ```
 
@@ -1038,6 +1238,7 @@ Replace with:
     await prefs.remove(_kAttendanceTracked);
     await prefs.remove(_kOverviewAccess);
     await prefs.remove(_kTeamLeaveSource);
+    await prefs.remove(_kTeamScopeSig);
 ```
 
 `logout()` needs no edit: `_logout()` calls `_clearSessionFields(notify: false)` inside its own `_persisting` body.
@@ -1050,7 +1251,7 @@ flutter test test/services/session_team_flags_test.dart
 flutter test test/services/
 ```
 Expected:
-- the new file prints `All tests passed!` (13 tests);
+- the new file prints `All tests passed!` (19 tests);
 - `test/services/` stays green. That includes `session_kiosk_only_test.dart`, `session_leave_approvals_test.dart`, `session_logout_test.dart`, `session_push_hook_test.dart` and `session_save_login_response_test.dart`, which exercise the same `_persisting` bodies.
 
 - [ ] **Step 5: Analyze**
@@ -1069,13 +1270,14 @@ git add lib/services/session_service.dart test/services/session_team_flags_test.
 git commit -m "$(cat <<'EOF'
 Session: team leave + Team overview flags from /login and /me
 
-Stores employee.attendance_tracked, overview_access and
-team_leave_source (connector 2.65.0) through the existing persistence
+Stores employee.attendance_tracked, overview_access, team_leave_source
+and team_scope_sig (connector 2.65.0) through the existing persistence
 queue, next to the kiosk-only flag, so a /me that lands after a
 sign-out or another sign-in is dropped. Missing or unknown values read
-as false / 'none' / 'off' (older connector = today's behaviour).
+as false / 'none' / 'off' / '' (older connector = today's behaviour).
 Derives homeView (myDay / overview / dual), teamLeaveEnabled and
-teamCacheSignature. clearSession() and logout() remove the keys.
+teamCacheSignature (the server signature, else grant / setting /
+department / company). clearSession() and logout() remove the keys.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 EOF
@@ -1091,6 +1293,7 @@ EOF
 > - Contract additions are parsed and tested: `ReviewedDay.notReviewed` (`reviewed.counts.not_reviewed`) and `WhoOutToday.tracked` (default `false`).
 > - Model names here are binding for Tasks 3–9 (A-L9): `raw`, `lateCount`, `countOf` / `buckets` / `totalBar`, `leavesOn` / `person`, `OverviewShift`, `OverviewRowLeave`, `OverviewRow.note` (the `note.kind` string).
 > - Verified in a scratch copy: Tasks 1–9 in order analyze clean and the whole suite passes.
+> - Review r1: A7 — `names_hidden` reads "Counts only — your company doesn't show names here." (the mockup sentence, as `OverviewCopy.countsOnly`); A8 — `TeamOutlook.view` is `String?`, null in the overview context (A-L18); K2 — `WhoOut.truncated`; A13 — an intermediate commit after the models (Step 4b), then the API and error words.
 
 **Files:**
 - Create: `lib/models/team_outlook.dart`, `lib/models/team_overview.dart`
@@ -1114,7 +1317,7 @@ EOF
 - Produces:
   - **`lib/models/team_outlook.dart`**
     - `class TeamOutlook` with `TeamOutlook.fromJson(Map<String, dynamic> json)` and these fields:
-      - `String context` (default `'team'`), `String view` (default `'team'`), `List<String> views`;
+      - `String context` (default `'team'`), `String? view` (default `'team'` in the team context; always `null` in the overview context, A-L18), `List<String> views`;
       - `DateTime? rangeFrom`, `DateTime? rangeTo`, `int rangeDays` (default 30), `DateTime? today`;
       - `TeamScope? team`, `String? emptyReason`, `TeamDisclosure disclosure`;
       - `List<TeamDepartment> departments`, `TeamSummary summary`, `List<TeamPerson> people`;
@@ -1168,7 +1371,7 @@ EOF
       - `int get totalWorked` (`worked ?? onTime + lateCount + leftEarly`), `totalTracked` (the fallback sum includes `notReviewed`), `totalExpected`;
       - `int countOf(String bucket)` (also answers `'not_reviewed'`);
       - `static const buckets = ['on_time', 'late', 'left_early', 'absent', 'on_leave', 'off']`.
-    - `class WhoOut {List<WhoOutToday> today; List<WhoOutDay> next7}`.
+    - `class WhoOut {List<WhoOutToday> today; List<WhoOutDay> next7; bool truncated}` (`who_out.truncated`, K2; default `false`).
     - `class WhoOutToday`:
       - `int id`, `String name`, `String initials`, `String department`;
       - `String? type`, `String state`;
@@ -1203,7 +1406,7 @@ EOF
     - top-level `bool isMissingRoute(Object e)` and `bool isAccessLost(Object e)`.
   - **`lib/core/error_messages.dart`**:
     - `ErrorContext.team`;
-    - in every context: `names_hidden` → "Your company shows counts only here." and `invalid_department` → "That department isn't available any more.";
+    - in every context: `names_hidden` → "Counts only — your company doesn't show names here." and `invalid_department` → "That department isn't available any more.";
     - with `context: ErrorContext.team` only: `not_allowed` → "You no longer have access to this view." and `not_found` → "This person is no longer in your view.".
 
 **Implementer notes:**
@@ -1562,6 +1765,23 @@ void main() {
 
     test('truncated: true is read', () {
       expect(TeamOutlook.fromJson({'truncated': true}).truncated, isTrue);
+    });
+
+    test('view is null in the overview context (the server sends null)', () {
+      final o = TeamOutlook.fromJson({
+        'context': 'overview',
+        'view': null,
+        'views': <String>[],
+      });
+      expect(o.context, 'overview');
+      expect(o.view, isNull);
+      // Even a stray value is not read as a selected team-context chip.
+      expect(
+          TeamOutlook.fromJson({'context': 'overview', 'view': 'team'}).view,
+          isNull);
+      // The team context keeps the 'team' default.
+      expect(TeamOutlook.fromJson({'context': 'team', 'view': null}).view,
+          'team');
     });
   });
 
@@ -1966,6 +2186,20 @@ void main() {
       expect(o.whoOut!.today.single.until, isNull);
       expect(o.whoOut!.today.single.state, 'approved');
       expect(o.whoOut!.next7, isEmpty);
+      expect(o.whoOut!.truncated, isFalse); // no key = complete
+    });
+
+    test('who_out.truncated is read; only a real true counts', () {
+      expect(
+          TeamOverview.fromJson({
+            'who_out': {'today': [], 'next_7': [], 'truncated': true},
+          }).whoOut!.truncated,
+          isTrue);
+      expect(
+          TeamOverview.fromJson({
+            'who_out': {'today': [], 'next_7': [], 'truncated': 'true'},
+          }).whoOut!.truncated,
+          isFalse);
     });
   });
 
@@ -2505,8 +2739,9 @@ class TeamOutlook {
   /// team | overview.
   final String context;
 
-  /// team | approvees | company.
-  final String view;
+  /// team | approvees | company in the team context (default 'team');
+  /// null in the overview context, where the server sends `view: null`.
+  final String? view;
 
   /// The views this viewer may switch between (team context).
   final List<String> views;
@@ -2562,9 +2797,10 @@ class TeamOutlook {
     final context = _str(json['context']);
     final view = _str(json['view']);
     final days = _int(range['days']);
+    final overview = context == 'overview';
     return TeamOutlook(
       context: context.isEmpty ? 'team' : context,
-      view: view.isEmpty ? 'team' : view,
+      view: overview ? null : (view.isEmpty ? 'team' : view),
       views: [
         if (views is List)
           for (final v in views)
@@ -2972,7 +3208,15 @@ class WhoOut {
   final List<WhoOutToday> today;
   final List<WhoOutDay> next7;
 
-  const WhoOut({this.today = const [], this.next7 = const []});
+  /// `who_out.truncated` (K2): the server bounded the rows, so some people
+  /// out are not listed. False when the key is missing (older connector).
+  final bool truncated;
+
+  const WhoOut({
+    this.today = const [],
+    this.next7 = const [],
+    this.truncated = false,
+  });
 
   factory WhoOut.fromJson(Map<String, dynamic> json) => WhoOut(
     today: _maps(json['today']).map(WhoOutToday.fromJson).toList(),
@@ -2980,6 +3224,7 @@ class WhoOut {
         .map(WhoOutDay.tryParse)
         .whereType<WhoOutDay>()
         .toList(),
+    truncated: json['truncated'] == true,
   );
 }
 
@@ -3311,6 +3556,28 @@ flutter test test/models/team_outlook_test.dart test/models/team_overview_test.d
 ```
 Expected: `All tests passed!`.
 
+- [ ] **Step 4b: Intermediate commit — the models (A13)**
+
+Run `flutter analyze` and the compare command in Global Constraints → Commands (it must print nothing). Then:
+
+```bash
+cd "/Users/willytanuwiharja/Omnisoft HRMS/omnisoft-hrms-mobile/.claude/worktrees/team-overview"
+git add lib/models/team_outlook.dart lib/models/team_overview.dart \
+  test/models/team_outlook_test.dart test/models/team_overview_test.dart
+git commit -m "$(cat <<'EOF'
+Team leave + Team overview: models
+
+TeamOutlook / TeamOverlap / TeamOverview / OverviewPage / OverviewPerson
+parse the connector 2.65.0 answers tolerantly (every key optional, local
+calendar dates, rows without a date dropped, unknown For-you kinds
+dropped, view null in the overview context, who_out.truncated) and keep
+the raw body for the offline cache. Nothing calls them yet.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+EOF
+)"
+```
+
 - [ ] **Step 5: Write the failing API and error-message tests**
 
 Create `test/services/team_api_test.dart`:
@@ -3628,8 +3895,8 @@ void main() {
   group('friendlyError for team leave and Team overview', () {
     test('names_hidden and invalid_department, in any context', () {
       expect(friendlyError(ApiException('names_hidden')),
-          'Your company shows counts only here.');
-      expect(team('names_hidden'), 'Your company shows counts only here.');
+          "Counts only — your company doesn't show names here.");
+      expect(team('names_hidden'), "Counts only — your company doesn't show names here.");
       expect(friendlyError(ApiException('invalid_department')),
           "That department isn't available any more.");
       expect(team('invalid_department'),
@@ -3868,7 +4135,7 @@ Insert directly **before** it:
 ```dart
   // --- Team leave / Team overview (connector 2.65.0) ---
   if (raw.contains('names_hidden')) {
-    return 'Your company shows counts only here.';
+    return "Counts only — your company doesn't show names here.";
   }
   if (raw.contains('invalid_department')) {
     return "That department isn't available any more.";
@@ -3919,17 +4186,12 @@ Expected: the Task 0 baseline list, with no new issue. A new `unused_element` me
 
 ```bash
 cd "/Users/willytanuwiharja/Omnisoft HRMS/omnisoft-hrms-mobile/.claude/worktrees/team-overview"
-git add lib/models/team_outlook.dart lib/models/team_overview.dart \
-  lib/services/omni_mobile_api.dart lib/core/error_messages.dart \
-  test/models/team_outlook_test.dart test/models/team_overview_test.dart \
+git add lib/services/omni_mobile_api.dart lib/core/error_messages.dart \
   test/services/team_api_test.dart test/core/error_messages_team_test.dart
 git commit -m "$(cat <<'EOF'
-Team leave + Team overview: models, API calls, error words
+Team leave + Team overview: API calls, error words
 
-TeamOutlook / TeamOverlap / TeamOverview / OverviewPage / OverviewPerson
-parse the connector 2.65.0 answers tolerantly (every key optional, local
-calendar dates, rows without a date dropped, unknown For-you kinds
-dropped) and keep the raw body for the offline cache. OmniMobileApi gets
+OmniMobileApi gets
 fetchTeamOutlook, fetchTeamOverlap, fetchOverview, fetchOverviewList and
 fetchOverviewPerson, plus isMissingRoute (HTML 404 / unknown_route) and
 isAccessLost (not_allowed / names_hidden / feature_unavailable).
@@ -3949,6 +4211,7 @@ EOF
 > - The key builders `TeamCache.outlookKey(s, {days, context, view, departmentId})` and `TeamCache.overviewKey(s, {day, departmentId})` are binding (A-L9). Tasks 5–8 never build keys by hand, so the LEAVE row and the outlook share the 30-day entry (A-L1).
 > - `read` is async and returns `(Map<String, dynamic> body, DateTime savedAt)?`; `write` is dropped while signed out, while a sign-out runs, or for another employee's key. Tests that cache therefore need `employeeId > 0`.
 > - `logout()` needs no own edit: `_logout()` reaches `_clearSessionFields`, which calls `TeamCache.clearAll()`.
+> - Review r1 (A2): `write` takes the `signature` and `generation` the caller read with the key before its request (A-L15); every clear bumps `TeamCache.generation`; writes and clears are serialised. Tasks 5, 6 and 8 take the snapshot before their fetch. The A1 tests (department transfer, approver change through `/me`) live here too.
 
 **Files:**
 - Create: `lib/services/team_cache.dart`
@@ -3959,7 +4222,7 @@ EOF
 
 **Interfaces:**
 - Consumes (Task 1):
-  - `SessionService.teamCacheSignature` (`'$overviewAccess/$teamLeaveSource'`);
+  - `SessionService.teamCacheSignature` (`teamScopeSig`, else `'$overviewAccess/$teamLeaveSource/$employeeDepartment/$employeeCompanyName'`, A-L14);
   - `SessionService.employeeId`, `clientDb` and `isClearing` (existing).
 - Produces (`lib/services/team_cache.dart`), as `class TeamCache` with static members only:
   - `static const prefix = 'team_v1|'`;
@@ -3973,10 +4236,12 @@ EOF
     - `static String overviewKey(SessionService s, {String day = 'today', int? departmentId})`. Example: `team_v1|acme|6|overview|-|-|5|today`.
   - Reads and writes:
     - `static Future<(Map<String, dynamic> body, DateTime savedAt)?> read(SessionService s, String key)`. It returns null when the key is absent, the JSON is corrupt, the signature differs from `s.teamCacheSignature`, or the key is not this employee's.
-    - `static Future<void> write(SessionService s, String key, Map<String, dynamic> body)`. It stores `{"saved_at": <UTC ISO-8601>, "signature": …, "body": …}`, then trims to the 24 newest for this employee.
+    - `static int get generation`: bumped by every `clearEmployee` / `clearAll` (A-L15).
+    - `static Future<void> write(SessionService s, String key, Map<String, dynamic> body, {required String signature, required int generation})`. The caller reads `signature` (= `s.teamCacheSignature`) and `generation` (= `TeamCache.generation`) together with the key, **before** its request. The write is dropped on any mismatch with the session's signature or the current generation, checked at the call and again inside the queue right before storing. It stores `{"saved_at": <UTC ISO-8601>, "signature": …, "body": …}`, then trims to the 24 newest for this employee.
   - Clearing:
-    - `static Future<void> clearEmployee(SessionService s)` removes every key under `employeePrefix(s)`.
-    - `static Future<void> clearAll()` removes every `team_v1|` key.
+    - `static Future<void> clearEmployee(SessionService s)` bumps the generation at once, then removes every key under `employeePrefix(s)`.
+    - `static Future<void> clearAll()` bumps the generation at once, then removes every `team_v1|` key.
+  - Writes and clears run one at a time on a private queue (`_serial`, the `_persisting` pattern: an idle queue runs at once and keeps no completed future).
 - `SessionService._clearSessionFields` calls `TeamCache.clearAll()`. As a result, `clearSession()`, `signOut()` and `logout()` all clear the cache.
 
 **Implementer notes:**
@@ -4016,11 +4281,12 @@ class _FakeApi extends OmniMobileApi {
 }
 
 /// A signed-in ACME session for employee [employeeId] with the given
-/// grant / setting (Task 1 flags), no network.
+/// grant / setting / scope signature (Task 1 flags), no network.
 Future<SessionService> _session({
   int employeeId = 6,
   String access = 'company',
   String source = 'department',
+  String? sig,
 }) async {
   final s = SessionService();
   await s.saveCompany(
@@ -4029,18 +4295,51 @@ Future<SessionService> _session({
     clientUrl: 'https://acme.test',
     clientDb: 'acme',
   );
-  await s.saveLoginResponse({
-    'access_token': 'tok-$employeeId',
-    'user': {'id': employeeId + 100, 'login': 'u$employeeId', 'name': 'U'},
-    'employee': {
-      'id': employeeId,
-      'name': 'Employee $employeeId',
-      'overview_access': access,
-      'team_leave_source': source,
-    },
-  });
+  await s.saveLoginResponse(_loginBody(employeeId, access, source, sig));
   return s;
 }
+
+Map<String, dynamic> _loginBody(
+  int employeeId,
+  String access,
+  String source,
+  String? sig,
+) =>
+    {
+      'access_token': 'tok-$employeeId',
+      'user': {'id': employeeId + 100, 'login': 'u$employeeId', 'name': 'U'},
+      'employee': {
+        'id': employeeId,
+        'name': 'Employee $employeeId',
+        'overview_access': access,
+        'team_leave_source': source,
+        'team_scope_sig': ?sig,
+      },
+    };
+
+/// A /me answer for employee 6.
+Map<String, dynamic> _me({
+  String access = 'company',
+  String source = 'department',
+  String? sig,
+  String? department,
+}) =>
+    {
+      'success': true,
+      'employee': {
+        'id': 6,
+        'name': 'Employee 6',
+        'department_name': ?department,
+        'overview_access': access,
+        'team_leave_source': source,
+        'team_scope_sig': ?sig,
+      },
+    };
+
+/// A write whose binding is taken right now (no fetch in between).
+Future<void> _write(SessionService s, String key, Map<String, dynamic> body) =>
+    TeamCache.write(s, key, body,
+        signature: s.teamCacheSignature, generation: TeamCache.generation);
 
 Map<String, dynamic> _body(int n) => {
       'success': true,
@@ -4096,7 +4395,7 @@ void main() {
     test('round trip keeps the body and the save time', () async {
       final s = await _session();
       final key = TeamCache.outlookKey(s, days: 30);
-      await TeamCache.write(s, key, _body(2));
+      await _write(s, key, _body(2));
 
       final hit = await TeamCache.read(s, key);
       expect(hit, isNotNull);
@@ -4107,7 +4406,18 @@ void main() {
       final prefs = await SharedPreferences.getInstance();
       final stored = jsonDecode(prefs.getString(key)!) as Map<String, dynamic>;
       expect(stored.keys, containsAll(['saved_at', 'signature', 'body']));
-      expect(stored['signature'], 'company/department');
+      // No server signature: the A-L14 fallback (no department, no company
+      // name in this session).
+      expect(stored['signature'], 'company/department//');
+    });
+
+    test('the server signature is what an entry is stored under', () async {
+      final s = await _session(sig: '3f9a0c1d2e4b5a69');
+      final key = TeamCache.overviewKey(s);
+      await _write(s, key, _body(1));
+      final prefs = await SharedPreferences.getInstance();
+      final stored = jsonDecode(prefs.getString(key)!) as Map<String, dynamic>;
+      expect(stored['signature'], '3f9a0c1d2e4b5a69');
     });
 
     test('an absent key reads as null', () async {
@@ -4119,20 +4429,55 @@ void main() {
         () async {
       final s = await _session(access: 'company', source: 'department');
       final key = TeamCache.overviewKey(s);
-      await TeamCache.write(s, key, _body(1));
+      await _write(s, key, _body(1));
       expect(await TeamCache.read(s, key), isNotNull);
 
       // HR narrows the grant: the /me that says so changes the signature.
-      await s.refreshMeWith(_FakeApi(() async => {
-            'success': true,
-            'employee': {
-              'id': 6,
-              'name': 'Employee 6',
-              'overview_access': 'department',
-              'team_leave_source': 'department',
-            },
-          }));
-      expect(s.teamCacheSignature, 'department/department');
+      await s.refreshMeWith(
+          _FakeApi(() async => _me(access: 'department', source: 'department')));
+      expect(s.teamCacheSignature, 'department/department//');
+      expect(await TeamCache.read(s, key), isNull);
+    });
+
+    test('a department transfer through /me invalidates the entries (A1)',
+        () async {
+      final s = await _session(access: 'department', source: 'department');
+      await s.refreshMeWith(_FakeApi(() async =>
+          _me(access: 'department', source: 'department',
+              department: 'Marketing')));
+      final key = TeamCache.outlookKey(s, days: 30);
+      await _write(s, key, _body(1));
+      expect(await TeamCache.read(s, key), isNotNull);
+
+      // Same grant, same setting: only the department changed.
+      await s.refreshMeWith(_FakeApi(() async =>
+          _me(access: 'department', source: 'department',
+              department: 'Fabric')));
+      expect(await TeamCache.read(s, key), isNull);
+
+      // A connector that sends team_scope_sig: the server signature
+      // changes on the transfer, so the entry goes the same way.
+      await s.refreshMeWith(_FakeApi(() async => _me(
+          access: 'department', source: 'department',
+          department: 'Fabric', sig: '1111111111111111')));
+      await _write(s, key, _body(2));
+      expect(await TeamCache.read(s, key), isNotNull);
+      await s.refreshMeWith(_FakeApi(() async => _me(
+          access: 'department', source: 'department',
+          department: 'Marketing', sig: '2222222222222222')));
+      expect(await TeamCache.read(s, key), isNull);
+    });
+
+    test('an approver change through /me (new team_scope_sig) invalidates '
+        'the entries (A1)', () async {
+      final s = await _session(
+          access: 'approvees', source: 'approver', sig: '3f9a0c1d2e4b5a69');
+      final key = TeamCache.overviewKey(s);
+      await _write(s, key, _body(1));
+      expect(await TeamCache.read(s, key), isNotNull);
+      // Grant and setting unchanged; the people approved changed.
+      await s.refreshMeWith(_FakeApi(() async => _me(
+          access: 'approvees', source: 'approver', sig: '0123456789abcdef')));
       expect(await TeamCache.read(s, key), isNull);
     });
 
@@ -4169,12 +4514,12 @@ void main() {
     test('a write for another employee, or while signed out, is dropped',
         () async {
       final s = await _session(employeeId: 6);
-      await TeamCache.write(s, 'team_v1|acme|7|overview|-|-|-|today', _body(1));
+      await _write(s, 'team_v1|acme|7|overview|-|-|-|today', _body(1));
       expect(await _teamKeys(), isEmpty);
 
       final key = TeamCache.overviewKey(s);
       await s.clearSession();
-      await TeamCache.write(s, key, _body(1)); // a fetch that landed late
+      await _write(s, key, _body(1)); // a fetch that landed late
       expect(await _teamKeys(), isEmpty);
     });
 
@@ -4184,10 +4529,103 @@ void main() {
       final hook = Completer<void>();
       s.onSessionClearing = () => hook.future;
       final out = s.clearSession(); // waits in the hook: isClearing is true
-      await TeamCache.write(s, key, _body(1));
+      await _write(s, key, _body(1));
       hook.complete();
       await out;
       expect(await _teamKeys(), isEmpty);
+    });
+  });
+
+  group('binding: signature + generation taken before the fetch (A-L15)', () {
+    test('clearEmployee and clearAll bump the generation', () async {
+      final s = await _session();
+      final g0 = TeamCache.generation;
+      await TeamCache.clearEmployee(s);
+      expect(TeamCache.generation, g0 + 1);
+      await TeamCache.clearAll();
+      expect(TeamCache.generation, g0 + 2);
+      await s.clearSession(); // the session wipe calls clearAll
+      expect(TeamCache.generation, g0 + 3);
+    });
+
+    test('a delayed success after an access-lost clear is dropped', () async {
+      final s = await _session();
+      final key = TeamCache.overviewKey(s);
+      // The request starts under company access…
+      final signature = s.teamCacheSignature;
+      final generation = TeamCache.generation;
+      // …another screen gets not_allowed: clear + /me (department now).
+      await TeamCache.clearEmployee(s);
+      await s.refreshMeWith(
+          _FakeApi(() async => _me(access: 'department', source: 'department')));
+      // The old company-wide answer lands last.
+      await TeamCache.write(s, key, _body(9),
+          signature: signature, generation: generation);
+      expect(await _teamKeys(), isEmpty);
+      expect(await TeamCache.read(s, key), isNull);
+    });
+
+    test('a delayed success after a clear is dropped even when the signature '
+        'did not change', () async {
+      final s = await _session();
+      final key = TeamCache.outlookKey(s, days: 30);
+      final signature = s.teamCacheSignature;
+      final generation = TeamCache.generation;
+      await TeamCache.clearEmployee(s); // feature_unavailable, say
+      expect(s.teamCacheSignature, signature);
+      await TeamCache.write(s, key, _body(9),
+          signature: signature, generation: generation);
+      expect(await _teamKeys(), isEmpty);
+    });
+
+    test('a write taken under the old signature is dropped after a /me '
+        'narrowed the grant (no clear in between)', () async {
+      final s = await _session(access: 'company');
+      final key = TeamCache.overviewKey(s);
+      final signature = s.teamCacheSignature;
+      final generation = TeamCache.generation;
+      await s.refreshMeWith(
+          _FakeApi(() async => _me(access: 'department', source: 'department')));
+      await TeamCache.write(s, key, _body(9),
+          signature: signature, generation: generation);
+      expect(await _teamKeys(), isEmpty);
+    });
+
+    test('a delayed success after the same employee signed in again is '
+        'dropped', () async {
+      final s = await _session(employeeId: 6);
+      final key = TeamCache.overviewKey(s);
+      final signature = s.teamCacheSignature;
+      final generation = TeamCache.generation;
+      await s.clearSession();
+      await s.saveLoginResponse(
+          _loginBody(6, 'company', 'department', null));
+      // Same employee, same key, same signature: only the generation tells
+      // the old request apart.
+      expect(TeamCache.overviewKey(s), key);
+      expect(s.teamCacheSignature, signature);
+      await TeamCache.write(s, key, _body(9),
+          signature: signature, generation: generation);
+      expect(await _teamKeys(), isEmpty);
+
+      // A request started in the new sign-in is stored.
+      await _write(s, key, _body(1));
+      expect((await TeamCache.read(s, key))!.$1, _body(1));
+    });
+
+    test('writes and clears run one at a time: a clear called while a write '
+        'is on its way wins', () async {
+      final s = await _session();
+      final key = TeamCache.overviewKey(s);
+      final write = _write(s, key, _body(1)); // not awaited yet
+      final clear = TeamCache.clearEmployee(s);
+      await Future.wait([write, clear]);
+      expect(await _teamKeys(), isEmpty);
+
+      // And a write queued after a clear finishes is stored.
+      await TeamCache.clearEmployee(s);
+      await _write(s, key, _body(2));
+      expect(await _teamKeys(), [key]);
     });
   });
 
@@ -4196,7 +4634,7 @@ void main() {
       final s = await _session();
       for (var i = 0; i < 26; i++) {
         TeamCache.clock = () => t0.add(Duration(minutes: i));
-        await TeamCache.write(
+        await _write(
           s,
           TeamCache.key(session: s, kind: TeamCache.kindOutlook, span: '$i'),
           _body(i),
@@ -4215,7 +4653,7 @@ void main() {
       final key = TeamCache.outlookKey(s, days: 30);
       for (var i = 0; i < 30; i++) {
         TeamCache.clock = () => t0.add(Duration(minutes: i));
-        await TeamCache.write(s, key, _body(i));
+        await _write(s, key, _body(i));
       }
       expect(await _teamKeys(), [key]);
       final (body, savedAt) = (await TeamCache.read(s, key))!;
@@ -4231,7 +4669,7 @@ void main() {
       final s = await _session(employeeId: 6);
       for (var i = 0; i < 25; i++) { // the 25th write trims employee 6
         TeamCache.clock = () => t0.add(Duration(minutes: i));
-        await TeamCache.write(
+        await _write(
           s,
           TeamCache.key(session: s, kind: TeamCache.kindOverview, span: '$i'),
           _body(i),
@@ -4250,8 +4688,8 @@ void main() {
       await prefs.setString('team_v1|other|6|overview|-|-|-|today', '{}');
       await prefs.setString('team_leave_range|acme|6', '60');
       final s = await _session(employeeId: 6);
-      await TeamCache.write(s, TeamCache.overviewKey(s), _body(1));
-      await TeamCache.write(s, TeamCache.outlookKey(s, days: 30), _body(2));
+      await _write(s, TeamCache.overviewKey(s), _body(1));
+      await _write(s, TeamCache.outlookKey(s, days: 30), _body(2));
 
       await TeamCache.clearEmployee(s);
       expect(await _teamKeys(), [
@@ -4266,7 +4704,7 @@ void main() {
       await prefs.setString('team_v1|acme|7|overview|-|-|-|today', '{}');
       await prefs.setString('home_mode|acme|6', 'my_day');
       final s = await _session();
-      await TeamCache.write(s, TeamCache.overviewKey(s), _body(1));
+      await _write(s, TeamCache.overviewKey(s), _body(1));
       await TeamCache.clearAll();
       expect(await _teamKeys(), isEmpty);
       expect(prefs.getString('home_mode|acme|6'), 'my_day');
@@ -4275,8 +4713,8 @@ void main() {
 
     test('sign-out (clearSession) clears the cache, routing stays', () async {
       final s = await _session();
-      await TeamCache.write(s, TeamCache.overviewKey(s), _body(1));
-      await TeamCache.write(s, TeamCache.outlookKey(s, days: 60), _body(2));
+      await _write(s, TeamCache.overviewKey(s), _body(1));
+      await _write(s, TeamCache.outlookKey(s, days: 60), _body(2));
       await s.clearSession();
       expect(await _teamKeys(), isEmpty);
       final prefs = await SharedPreferences.getInstance();
@@ -4285,7 +4723,7 @@ void main() {
 
     test('logout clears the cache too', () async {
       final s = await _session();
-      await TeamCache.write(s, TeamCache.overviewKey(s), _body(1));
+      await _write(s, TeamCache.overviewKey(s), _body(1));
       await s.logout();
       expect(await _teamKeys(), isEmpty);
     });
@@ -4308,13 +4746,13 @@ void main() {
           'team_leave_source': 'department',
         },
       });
-      await TeamCache.write(s, TeamCache.overviewKey(s), _body(3));
+      await _write(s, TeamCache.overviewKey(s), _body(3));
       expect(await _teamKeys(), isEmpty); // isClearing: dropped
       hook.complete();
       await out;
       expect(s.employeeId, 8);
       expect(s.isLoggedIn, isTrue);
-      await TeamCache.write(s, TeamCache.overviewKey(s), _body(3));
+      await _write(s, TeamCache.overviewKey(s), _body(3));
       final hit = await TeamCache.read(s, TeamCache.overviewKey(s));
       expect(hit!.$1, _body(3));
     });
@@ -4335,6 +4773,7 @@ Expected: compile error `Error when reading 'lib/services/team_cache.dart': No s
 Create `lib/services/team_cache.dart`:
 
 ```dart
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -4348,11 +4787,20 @@ import 'session_service.dart';
 /// `team_v1|<db>|<employeeId>|<kind>|<context>|<view>|<departmentId or ->|<span>`.
 ///
 /// Each value is `{saved_at, signature, body}`. An entry saved under
-/// another grant or setting ([SessionService.teamCacheSignature]) is not
+/// another signature ([SessionService.teamCacheSignature]: the server's
+/// `team_scope_sig`, else grant / setting / department / company) is not
 /// shown. Cleared:
 /// - all `team_v1|` keys on every sign-out (SessionService calls
 ///   [clearAll] from its session wipe);
 /// - this employee's keys on an access-lost answer ([clearEmployee]).
+///
+/// Binding (A-L15): a caller takes the key, [SessionService.teamCacheSignature]
+/// and [generation] **before** it sends the request and passes them to
+/// [write]. Every clear bumps [generation], so an answer that was on the
+/// wire across a clear (an access-lost answer elsewhere, a sign-out, the
+/// same employee signing in again) or across a signature change is
+/// dropped. Writes and clears run one at a time on their own queue (the
+/// SessionService `_persisting` pattern).
 ///
 /// At most [maxPerEmployee] entries per employee; the oldest go first.
 /// The person sheet is never cached.
@@ -4370,6 +4818,12 @@ class TeamCache {
   /// Save-time clock; tests replace it.
   @visibleForTesting
   static DateTime Function() clock = DateTime.now;
+
+  static int _generation = 0;
+
+  /// Bumped by [clearEmployee] and [clearAll]. Read it with the key, before
+  /// the request, and hand it to [write].
+  static int get generation => _generation;
 
   /// `team_v1|<db>|<employeeId>|`.
   static String employeePrefix(SessionService s) =>
@@ -4446,41 +4900,83 @@ class TeamCache {
   }
 
   /// Stores [body] under [key] for the signed-in employee, then keeps the
-  /// [maxPerEmployee] newest entries. Dropped when no employee is signed
-  /// in, a sign-out is running, or [key] is not this employee's: a fetch
-  /// that lands after a sign-out never writes the old team back.
+  /// [maxPerEmployee] newest entries. [signature] and [generation] are the
+  /// values the caller took before its request (A-L15). Dropped when no
+  /// employee is signed in, a sign-out is running, [key] is not this
+  /// employee's, the session's signature is no longer [signature], or a
+  /// clear ran since [generation] was read: a fetch that lands after a
+  /// sign-out, an access-lost clear or a narrowed grant never writes the
+  /// old team back. Checked again inside the queue, right before storing.
   static Future<void> write(
     SessionService s,
     String key,
-    Map<String, dynamic> body,
-  ) async {
-    if (!_mayStore(s, key)) return;
+    Map<String, dynamic> body, {
+    required String signature,
+    required int generation,
+  }) {
+    bool current() =>
+        _mayStore(s, key) &&
+        s.teamCacheSignature == signature &&
+        _generation == generation;
+    if (!current()) return Future<void>.value();
     final String value;
     try {
       value = jsonEncode({
         'saved_at': clock().toUtc().toIso8601String(),
-        'signature': s.teamCacheSignature,
+        'signature': signature,
         'body': body,
       });
     } on JsonUnsupportedObjectError {
-      return;
+      return Future<void>.value();
     }
-    final prefs = await SharedPreferences.getInstance();
-    if (!_mayStore(s, key)) return;
-    await prefs.setString(key, value);
-    await _trim(prefs, employeePrefix(s));
+    return _serial(() async {
+      final prefs = await SharedPreferences.getInstance();
+      if (!current()) return;
+      await prefs.setString(key, value);
+      await _trim(prefs, employeePrefix(s));
+    });
   }
 
   /// Removes every entry of the signed-in employee (an access-lost
-  /// answer: not_allowed / names_hidden / feature_unavailable).
-  static Future<void> clearEmployee(SessionService s) =>
-      _removeWhere((k) => k.startsWith(employeePrefix(s)));
+  /// answer: not_allowed / names_hidden / feature_unavailable). The
+  /// generation moves at once, so a write already queued or on the wire
+  /// is dropped.
+  static Future<void> clearEmployee(SessionService s) {
+    _generation++;
+    final employee = employeePrefix(s);
+    return _serial(() => _removeWhere((k) => k.startsWith(employee)));
+  }
 
-  /// Removes every `team_v1|` entry (sign-out, logout).
-  static Future<void> clearAll() => _removeWhere((k) => k.startsWith(prefix));
+  /// Removes every `team_v1|` entry (sign-out, logout). Bumps the
+  /// generation like [clearEmployee].
+  static Future<void> clearAll() {
+    _generation++;
+    return _serial(() => _removeWhere((k) => k.startsWith(prefix)));
+  }
 
   static bool _mayStore(SessionService s, String key) =>
       s.employeeId > 0 && !s.isClearing && key.startsWith(employeePrefix(s));
+
+  /// One queue for every write and clear (the SessionService
+  /// `_persisting` pattern): an idle queue runs [body] at once and keeps
+  /// no completed future, so nothing waits on another zone's microtask
+  /// queue (widget tests run in a fake-async zone). Never call a
+  /// SessionService locked method from [body].
+  static Future<void> _serial(Future<void> Function() body) {
+    final previous = _tail;
+    final run = previous == null ? body() : previous.then((_) => body());
+    final tail = run.then<void>((_) {}, onError: (Object _) {});
+    _tail = tail;
+    unawaited(
+      tail.then((_) {
+        if (identical(_tail, tail)) _tail = null;
+      }),
+    );
+    return run;
+  }
+
+  /// The last write or clear queued; null when the queue is idle.
+  static Future<void>? _tail;
 
   static Future<void> _removeWhere(bool Function(String key) test) async {
     final prefs = await SharedPreferences.getInstance();
@@ -4576,11 +5072,14 @@ TeamCache: per-employee offline cache for the team screens (A-L3)
 
 SharedPreferences entries team_v1|<db>|<employee>|<kind>|<context>|
 <view>|<department>|<span> holding {saved_at, signature, body}. A read
-under another grant/setting signature, a corrupt entry or another
-employee's key is ignored; a write after or during a sign-out is
-dropped; at most 24 entries per employee (oldest out). clearEmployee
-for access-lost answers; clearAll runs from the session wipe, so
-clearSession / signOut / logout all clear it.
+under another scope signature (team_scope_sig, else grant / setting /
+department / company), a corrupt entry or another employee's key is
+ignored. A write carries the signature and generation taken before its
+request and is dropped on any mismatch (a clear, a sign-out, the same
+employee signing in again, a narrowed grant), or during a sign-out;
+writes and clears are serialised; at most 24 entries per employee
+(oldest out). clearEmployee for access-lost answers; clearAll runs from
+the session wipe, so clearSession / signOut / logout all clear it.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 EOF
@@ -4912,6 +5411,12 @@ EOF
 > - `initialsHue(int)` returns a `Color` (A-L9); `TeamColors.avatar(id)` returns it. Every error text uses `friendlyError(e, context: ErrorContext.team)`.
 > - `team_widgets.dart` (`TeamAvatar`, `TeamYouChip`, `TeamPendingChip`, `TeamFilterChip`) and `TeamColors.bucket()` serve Tasks 6–8.
 > - Copy invented here (approver / approvees sub-labels, "1 person", one "No team to show yet" title) stays unless Willy changes it.
+> - Review r1:
+>   - A2: `_load` takes the cache binding (`teamCacheSignature`, `TeamCache.generation`) with the key before the fetch and passes it to `write` (A-L15).
+>   - A6: `TeamColors` gains the on-tile tokens Task 8's tiles use (A-L19).
+>   - A7: mockup strings win — the day-card title is "Mon 9 Nov · Deepavali (observed) · 0 off"; a department chip's sub-label is that department's name and size ("Fabric · 15 people"); the view chip is "People you approve"; the overview context's empty body has no "on your team".
+>   - A9: one line "Some rows are not shown." under the heat map when `truncated` (A-L17).
+>   - A13: one intermediate commit after Step 8 (colours, format, widgets, heat map), then the screen.
 
 **Files:**
 - Create: `lib/screens/team/team_colors.dart`, `lib/screens/team/team_format.dart`, `lib/screens/team/team_widgets.dart`, `lib/screens/team/heat_map.dart`, `lib/screens/team/team_leave_screen.dart`
@@ -4920,13 +5425,13 @@ EOF
 
 **Interfaces:**
 - Consumes:
-  - T1: `SessionService.overviewAccess` (`String`), `SessionService.teamLeaveSource` (`String`), `SessionService.teamCacheSignature` (`String`, `'$overviewAccess/$teamLeaveSource'`); existing `clientDb`, `employeeId`, `clientUrl`, `token`, `refreshMe()`.
+  - T1: `SessionService.overviewAccess` (`String`), `SessionService.teamLeaveSource` (`String`), `SessionService.teamCacheSignature` (`String`: `teamScopeSig`, else the A-L14 fallback); existing `clientDb`, `employeeId`, `clientUrl`, `token`, `refreshMe()`.
   - T2: `TeamOutlook.fromJson` (fields `raw`, `context`, `view`, `views`, `today` (`DateTime?`), `team` (`TeamScope?`: `kind`, `label`, `size`), `emptyReason`, `disclosure`, `departments`, `people`, `leaves`, `days`, `isEmpty`) and its helpers `leavesOn(day)` / `person(id)`; `TeamLeaveRow`, `TeamDay`, `TeamHoliday`, `TeamPerson`; `OmniMobileApi.fetchTeamOutlook({int days = 30, String context = 'team', String view = 'team', int? departmentId})` → `Future<TeamOutlook>`; `bool isAccessLost(Object e)` (top level in `omni_mobile_api.dart`); `ErrorContext.team` (in `error_messages.dart`).
-  - T3: `TeamCache.outlookKey(s, {required int days, String context = 'team', String view = 'team', int? departmentId})`, `TeamCache.read(s, key)` → `Future<(Map<String, dynamic>, DateTime)?>`, `TeamCache.write(s, key, body)`, `TeamCache.clearEmployee(s)`.
+  - T3: `TeamCache.outlookKey(s, {required int days, String context = 'team', String view = 'team', int? departmentId})`, `TeamCache.read(s, key)` → `Future<(Map<String, dynamic>, DateTime)?>`, `TeamCache.generation`, `TeamCache.write(s, key, body, {required String signature, required int generation})` (A-L15), `TeamCache.clearEmployee(s)`.
   - T4: `PillSegments({required List<String> labels, required int value, required ValueChanged<int> onChanged, String? semanticsLabel})`.
 - Produces:
-  - `lib/screens/team/team_colors.dart`: `class TeamColors` with `cell0`, `cellOff`, `c1`, `c2`, `c3`, `onC3`, `hol`, `holCell`, `holDot`, `leave`, `leaveTint`, `leaveOn`, `accent`, `accentTint`, `onAccentTint`, `muted`, `skeleton`, `chipBorder`, `static Color shade(int off)`, `static Color avatar(int id)` (= `initialsHue(id)`), bucket tones `onTime`, `late`, `notInYet`, `noCheckIn`, `onLeave`, `offToday` (`MyDayTone`), `overviewTile`, `overviewTileYesterday`, `static MyDayTone bucket(String key)`.
-  - `lib/screens/team/team_format.dart` (pure): `String leaveWhenLabel(TeamLeaveRow r)`, `String monthLabel(DateTime m)`, `String dayTitle(DateTime d)`, `Color initialsHue(int id)` (A-L9), plus `clockLabel`, `dayOnly`, `isoDay`, `peopleCount`, `daysCount`, `heatDayLabel`, `privacyLine`, `teamScopeSubLabel`, `teamEmptyReasonText`, `leavesOnByName(o, day)` (`o.leavesOn(day)` sorted by name), `outlookToday(o)`, `defaultTeamDay`.
+  - `lib/screens/team/team_colors.dart`: `class TeamColors` with `cell0`, `cellOff`, `c1`, `c2`, `c3`, `onC3`, `hol`, `holCell`, `holDot`, `leave`, `leaveTint`, `leaveOn`, `accent`, `accentTint`, `onAccentTint`, `muted`, `skeleton`, `chipBorder`, `static Color shade(int off)`, `static Color avatar(int id)` (= `initialsHue(id)`), bucket tones `onTime`, `late`, `notInYet`, `noCheckIn`, `onLeave`, `offToday` (`MyDayTone`), `overviewTile`, `overviewTileYesterday`, the on-tile tokens `onTile` (white), `onTileSoft` (white 0.9), `onTileFaint` (white 0.85), `tileLine` (white 0.22), `tileTrack` (white 0.14), `tileBadge` (white 0.18) used by Task 8's tiles (A-L19), `static MyDayTone bucket(String key)`.
+  - `lib/screens/team/team_format.dart` (pure): `String leaveWhenLabel(TeamLeaveRow r)`, `String monthLabel(DateTime m)`, `String dayTitle(DateTime d)`, `Color initialsHue(int id)` (A-L9), `const teamRowsNotShown` (A-L17), plus `clockLabel`, `dayOnly`, `isoDay`, `peopleCount`, `daysCount`, `heatDayLabel`, `privacyLine`, `teamScopeSubLabel`, `teamEmptyReasonText`, `leavesOnByName(o, day)` (`o.leavesOn(day)` sorted by name), `outlookToday(o)`, `defaultTeamDay`.
   - `lib/screens/team/team_widgets.dart`: `TeamAvatar({required int id, required String initials, double size = 32})`, `TeamYouChip()`, `TeamPendingChip()`, `TeamFilterChip({required String label, required bool selected, required VoidCallback onTap})`.
   - `lib/screens/team/heat_map.dart`: `TeamHeatMap({required TeamOutlook outlook, required DateTime? selected, required ValueChanged<DateTime> onSelect})`; cell keys `ValueKey('heat-cell-<YYYY-MM-DD>')` (every day), `ValueKey('heat-tap-<YYYY-MM-DD>')` (in-range days only), `ValueKey('heat-hol-dot-<YYYY-MM-DD>')`.
   - `lib/screens/team/team_leave_screen.dart`: `TeamLeaveScreen({Key? key, String context = 'team', int? departmentId, int? initialDays, OmniMobileApi Function(SessionService)? apiBuilder, PreferredSizeWidget? appBar})`, public `TeamLeaveScreenState.refresh()`, and top-level `teamLeaveRanges`, `teamLeaveViewLabels`, `teamLeaveRangeKey(s)`, `readTeamLeaveRange(s)`, `saveTeamLeaveRange(s, days)`. Its cache key is `TeamCache.outlookKey(...)` (no own key builder), so Task 6's 30-day entry is the same one (A-L1).
@@ -4954,6 +5459,7 @@ EOF
 - **Tests:**
   - `RefreshIndicator` arms only after a drag of a quarter of the view height, so on the 4000 px test view the pull-down test drags 1500 px.
   - The `OmniAppBar` title test needs both `SessionService` and `NotificationService` providers (`NotificationService()` has a no-arg constructor and polls nothing until started).
+  - That test is the first to pump the real `OmniAppBar`. google_fonts may print font-loading messages to the log (it only `debugPrint`s; nothing fails; a scratch run on 2026-10-22 printed none). Such noise is harmless; do not "fix" it by loading fonts in the test.
 
 - [ ] **Step 1: Write the fixture and the format tests (failing)**
 
@@ -5016,6 +5522,7 @@ Map<String, dynamic> outlookJson({
   Map<String, Map<String, Object>> holidays = const {},
   List<Map<String, dynamic>> people = fixturePeople,
   List<Map<String, dynamic>> leaves = fixtureLeaves,
+  bool truncated = false,
 }) {
   final last = DateTime(fixtureToday.year, fixtureToday.month, fixtureToday.day + days - 1);
   return {
@@ -5049,7 +5556,7 @@ Map<String, dynamic> outlookJson({
     'holidays': [
       for (final e in holidays.entries) {'date': e.key, ...e.value},
     ],
-    'truncated': false,
+    'truncated': truncated,
     'auth_type': 'session',
   };
 }
@@ -5067,6 +5574,7 @@ TeamOutlook outlook({
   Map<String, int>? off,
   Map<String, Map<String, Object>> holidays = const {},
   List<Map<String, dynamic>>? leaves,
+  bool truncated = false,
 }) => TeamOutlook.fromJson(
   outlookJson(
     days: days,
@@ -5083,6 +5591,7 @@ TeamOutlook outlook({
     off: off ?? const {'2026-10-22': 2, '2026-11-12': 1, '2026-11-13': 1},
     holidays: holidays,
     leaves: leaves ?? fixtureLeaves,
+    truncated: truncated,
   ),
 );
 
@@ -5284,7 +5793,10 @@ void main() {
         ],
       );
       expect(teamScopeSubLabel(company), '60 people · 6 departments');
-      expect(teamScopeSubLabel(company, departmentId: 2), '60 people');
+      // A department chip: that department's name and size (mockup).
+      expect(teamScopeSubLabel(company, departmentId: 2), 'D2 · 10 people');
+      // An id the list does not hold: the scope size.
+      expect(teamScopeSubLabel(company, departmentId: 99), '60 people');
     });
 
     test('teamEmptyReasonText for every reason', () {
@@ -5461,6 +5973,28 @@ class TeamColors {
   static const overviewTile = AppTheme.primary;
   static const overviewTileYesterday = AppTheme.secondary;
 
+  // ---- On the overview tiles (Overview.dc.html white overlays) ---------
+  // Text, icons and lines drawn on [overviewTile] / [overviewTileYesterday].
+  // New widgets never write Colors.white (A-L19): the dark pass changes
+  // these names only.
+  /// Headline text and icons on a tile.
+  static const onTile = Color(0xFFFFFFFF);
+
+  /// Secondary text on a tile (white at 0.9).
+  static const onTileSoft = Color(0xE6FFFFFF);
+
+  /// The quietest text on a tile: the live line, the reviewed copy (0.85).
+  static const onTileFaint = Color(0xD9FFFFFF);
+
+  /// The divider on a tile (white at 0.22).
+  static const tileLine = Color(0x38FFFFFF);
+
+  /// The bar's empty track on a tile (white at 0.14).
+  static const tileTrack = Color(0x24FFFFFF);
+
+  /// The icon badge behind the tile's group icon (white at 0.18).
+  static const tileBadge = Color(0x2EFFFFFF);
+
   /// Tone of an overview bucket key (`on_time`, `late`, `not_in_yet`,
   /// `no_check_in`, `on_leave`, `off_today`); unknown keys read as off.
   static MyDayTone bucket(String key) => switch (key) {
@@ -5521,6 +6055,11 @@ bool _sameDay(DateTime a, DateTime b) =>
 
 /// '1 person', '12 people'.
 String peopleCount(int n) => n == 1 ? '1 person' : '$n people';
+
+/// The one line shown when the server bounded the rows (K2, A-L17): under
+/// the heat map when the outlook says `truncated`, under Who's out when
+/// `who_out.truncated` (Task 8).
+const teamRowsNotShown = 'Some rows are not shown.';
 
 /// '1 day', '2 days', '1.5 days'.
 String daysCount(double n) {
@@ -5585,7 +6124,9 @@ String privacyLine({required bool showType, required bool showPending}) =>
     (showType ? 'Leave type shown' : 'Shown as “On leave” — no type or reason') +
     (showPending ? ' · includes pending requests' : ' · approved leave only');
 
-/// The line under the team name in the outlook header.
+/// The line under the team name in the outlook header. With a department
+/// chip selected (overview context), the mockup shows that department:
+/// its name and its size from `departments[]` ("Fabric · 10 people").
 String teamScopeSubLabel(TeamOutlook o, {int? departmentId}) {
   final people = peopleCount(o.team?.size ?? 0);
   switch (o.team?.kind) {
@@ -5597,9 +6138,13 @@ String teamScopeSubLabel(TeamOutlook o, {int? departmentId}) {
       return 'People you approve · $people';
     default:
       final n = o.departments.length;
-      if (n > 0 && departmentId == null) {
-        return '$people · $n department${n == 1 ? '' : 's'}';
+      if (departmentId != null) {
+        for (final d in o.departments) {
+          if (d.id == departmentId) return '${d.name} · ${peopleCount(d.size)}';
+        }
+        return people;
       }
+      if (n > 0) return '$people · $n department${n == 1 ? '' : 's'}';
       return people;
   }
 }
@@ -6371,6 +6916,27 @@ class _MonthCard extends StatelessWidget {
 Run: `flutter test test/screens/team/heat_map_test.dart`
 Expected: PASS (11 tests).
 
+- [ ] **Step 8b: Intermediate commit — the building blocks (A13)**
+
+Run `flutter analyze` first (no new issues vs the Task 0 baseline: use the compare command in Global Constraints → Commands). Then:
+
+```bash
+cd "/Users/willytanuwiharja/Omnisoft HRMS/omnisoft-hrms-mobile/.claude/worktrees/team-overview"
+git add lib/screens/team/team_colors.dart lib/screens/team/team_format.dart lib/screens/team/team_widgets.dart lib/screens/team/heat_map.dart test/screens/team/team_fixture.dart test/screens/team/team_format_test.dart test/screens/team/heat_map_test.dart
+git commit -m "$(cat <<'EOF'
+app: team colours, format helpers, shared widgets and the heat map
+
+TeamColors (heat map, leave, bucket and on-tile tones: the only team
+file with hex), the pure team_format helpers (dates, leave wording,
+sub-labels, empty-reason text), TeamAvatar / You / Pending / filter
+chips and TeamHeatMap (month grids, shade = people off, PH, today and
+selected rings). No screen uses them yet.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+EOF
+)"
+```
+
 - [ ] **Step 9: Write the screen tests (failing)**
 
 Create `test/screens/team/team_leave_screen_test.dart`:
@@ -6573,7 +7139,26 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('heat-tap-2026-11-09')));
     await tester.pumpAndSettle();
-    expect(find.text('Mon 9 Nov · 0 off · Deepavali (observed)'), findsOneWidget);
+    // Mockup order: date · holiday · count.
+    expect(find.text('Mon 9 Nov · Deepavali (observed) · 0 off'), findsOneWidget);
+  });
+
+  testWidgets('a truncated answer says some rows are not shown', (
+    tester,
+  ) async {
+    _tall(tester);
+    await tester.pumpWidget(_host(_FakeApi([outlook(truncated: true)])));
+    await tester.pumpAndSettle();
+    expect(find.text('Some rows are not shown.'), findsOneWidget);
+    // The counts stay the server's: the day card title is unchanged.
+    expect(find.text('Thu 22 Oct · 2 off'), findsOneWidget);
+  });
+
+  testWidgets('a complete answer has no truncation line', (tester) async {
+    _tall(tester);
+    await tester.pumpWidget(_host(_FakeApi([outlook()])));
+    await tester.pumpAndSettle();
+    expect(find.text('Some rows are not shown.'), findsNothing);
   });
 
   testWidgets('nobody off today: the busiest day is selected', (tester) async {
@@ -6627,10 +7212,10 @@ void main() {
     await tester.pumpWidget(_host(api));
     await tester.pumpAndSettle();
     expect(find.text('My team'), findsOneWidget);
-    expect(find.text('People I approve'), findsOneWidget);
+    expect(find.text('People you approve'), findsOneWidget);
     expect(find.text('Everyone'), findsOneWidget);
 
-    await tester.tap(find.text('People I approve'));
+    await tester.tap(find.text('People you approve'));
     await tester.pumpAndSettle();
     expect(api.calls.last['view'], 'approvees');
     expect(api.calls.last['context'], 'team');
@@ -6670,13 +7255,39 @@ void main() {
     // No privacy line outside the team context.
     expect(find.textContaining('includes pending requests'), findsNothing);
 
+    // A department chip: the header names that department and its size.
+    expect(find.text('Marketing · 20 people'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('dept-9')));
     await tester.pumpAndSettle();
     expect(api.calls.last['department_id'], 9);
+    expect(find.text('Fabric · 15 people'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('dept-all')));
     await tester.pumpAndSettle();
     expect(api.calls.last['department_id'], isNull);
     expect(find.text('60 people · 2 departments'), findsOneWidget);
+  });
+
+  testWidgets('overview context, nobody off: no "your team" wording', (
+    tester,
+  ) async {
+    _tall(tester);
+    await tester.pumpWidget(
+      _host(
+        _FakeApi([
+          outlook(
+            context: 'overview',
+            team: const {'kind': 'overview', 'label': 'Novaworks', 'size': 60},
+            off: const {},
+            leaves: const [],
+          ),
+        ]),
+        context: 'overview',
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text("Everyone's in"), findsOneWidget);
+    expect(find.text('No one is off in the next 30 days.'), findsOneWidget);
+    expect(find.textContaining('your team'), findsNothing);
   });
 
   testWidgets('the team context never sends a department', (tester) async {
@@ -6728,7 +7339,13 @@ void main() {
   ) async {
     _tall(tester);
     final session = _Session();
-    await TeamCache.write(session, _key(session), outlookJson());
+    await TeamCache.write(
+      session,
+      _key(session),
+      outlookJson(),
+      signature: session.teamCacheSignature,
+      generation: TeamCache.generation,
+    );
     final api = _FakeApi([ApiException('network_error')]);
     await tester.pumpWidget(_host(api, session: session));
     await tester.pumpAndSettle();
@@ -6745,7 +7362,13 @@ void main() {
   testWidgets('a cache under another grant is not shown', (tester) async {
     final session = _Session();
     final other = _OtherGrantSession();
-    await TeamCache.write(other, _key(session), outlookJson());
+    await TeamCache.write(
+      other,
+      _key(session),
+      outlookJson(),
+      signature: other.teamCacheSignature,
+      generation: TeamCache.generation,
+    );
     await tester.pumpWidget(
       _host(_FakeApi([ApiException('network_error')]), session: session),
     );
@@ -6788,7 +7411,13 @@ void main() {
   ) async {
     final session = _Session();
     final key = _key(session);
-    await TeamCache.write(session, key, outlookJson());
+    await TeamCache.write(
+      session,
+      key,
+      outlookJson(),
+      signature: session.teamCacheSignature,
+      generation: TeamCache.generation,
+    );
     await tester.pumpWidget(
       _host(_FakeApi([ApiException('not_allowed')]), session: session),
     );
@@ -6806,6 +7435,25 @@ void main() {
     await tester.pumpWidget(_host(_FakeApi([outlook()]), session: session));
     await tester.pumpAndSettle();
     expect(await TeamCache.read(session, _key(session)), isNotNull);
+  });
+
+  testWidgets('an answer that lands after a cache clear is shown but not '
+      'stored (A-L15)', (tester) async {
+    final session = _Session();
+    final api = _FakeApi([outlook()])..gate = Completer<void>();
+    await tester.pumpWidget(_host(api, session: session));
+    await tester.pump();
+    await tester.pump();
+    expect(api.calls.length, 1);
+    // Another screen got not_allowed while this request was on the wire.
+    await tester.runAsync(() => TeamCache.clearEmployee(session));
+    api.gate!.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('Marketing'), findsOneWidget);
+    expect(
+      await tester.runAsync(() => TeamCache.read(session, _key(session))),
+      isNull,
+    );
   });
 
   testWidgets('overlapping refreshes share one request', (tester) async {
@@ -6925,7 +7573,7 @@ const teamLeaveRanges = [30, 60, 90];
 /// app does not know is not offered.
 const teamLeaveViewLabels = {
   'team': 'My team',
-  'approvees': 'People I approve',
+  'approvees': 'People you approve',
   'company': 'Everyone',
 };
 
@@ -6949,7 +7597,7 @@ Future<void> saveTeamLeaveRange(SessionService s, int days) async {
 /// calendar heat map (D1); tap a day to see who.
 ///
 /// [context] `'team'` is the LEAVE tab's "Team leave" (views: My team /
-/// People I approve / Everyone); `'overview'` is the Team overview's
+/// People you approve / Everyone); `'overview'` is the Team overview's
 /// "Leave outlook" (people of the overview grant, department chips for
 /// company access, starting on [departmentId]).
 class TeamLeaveScreen extends StatefulWidget {
@@ -7090,7 +7738,11 @@ class TeamLeaveScreenState extends State<TeamLeaveScreen> {
 
   Future<void> _load(int seq) async {
     final session = context.read<SessionService>();
+    // The cache binding is taken with the key, before the request (A-L15):
+    // an answer that lands after a clear or a scope change is not stored.
     final key = _cacheKey(session);
+    final signature = session.teamCacheSignature;
+    final generation = TeamCache.generation;
     try {
       final outlook = await _api.fetchTeamOutlook(
         days: _days,
@@ -7107,7 +7759,13 @@ class TeamLeaveScreenState extends State<TeamLeaveScreen> {
         _lostError = null;
         _selected = _keepOrDefault(outlook);
       });
-      await TeamCache.write(session, key, outlook.raw);
+      await TeamCache.write(
+        session,
+        key,
+        outlook.raw,
+        signature: signature,
+        generation: generation,
+      );
     } catch (e) {
       if (!mounted || seq != _seq) return;
       if (isAccessLost(e)) {
@@ -7280,6 +7938,18 @@ class TeamLeaveScreenState extends State<TeamLeaveScreen> {
           onSelect: (d) => setState(() => _selected = d),
         ),
       );
+      if (o.truncated) {
+        // The server bounded the rows (K2): the counts stay exact, some
+        // names are missing from the day card (A-L17).
+        out.add(const SizedBox(height: 8));
+        out.add(
+          const Text(
+            teamRowsNotShown,
+            key: ValueKey('team-truncated'),
+            style: TextStyle(fontSize: 12, color: TeamColors.muted),
+          ),
+        );
+      }
       add(_dayCard(o, _selected ?? defaultTeamDay(o)));
     }
     return out;
@@ -7438,7 +8108,11 @@ class TeamLeaveScreenState extends State<TeamLeaveScreen> {
     iconBg: TeamColors.accentTint,
     iconFg: TeamColors.accent,
     title: "Everyone's in",
-    body: 'No one on your team is off in the next $_days days.',
+    // The overview context (HR, a company or a department) is not "your
+    // team" (A-L9).
+    body: _isOverview
+        ? 'No one is off in the next $_days days.'
+        : 'No one on your team is off in the next $_days days.',
     action: _days == 90
         ? null
         : OutlinedButton(
@@ -7462,9 +8136,11 @@ class TeamLeaveScreenState extends State<TeamLeaveScreen> {
     }
     final off = entry?.off ?? 0;
     final holiday = entry?.holiday;
+    // Mockup `selTitle`: date · holiday · "N off".
     final title =
-        '${dayTitle(day)} · $off off'
-        '${holiday != null && holiday.name.isNotEmpty ? ' · ${holiday.name}' : ''}';
+        '${dayTitle(day)}'
+        '${holiday != null && holiday.name.isNotEmpty ? ' · ${holiday.name}' : ''}'
+        ' · $off off';
     // days[].off is the server's count; the rows are the leaves covering the
     // day, shown only when that count says someone is off.
     final rows = off > 0 ? leavesOnByName(o, day) : const <TeamLeaveRow>[];
@@ -7641,7 +8317,7 @@ class _Skeleton extends StatelessWidget {
 - [ ] **Step 12: Run the team tests and the whole suite**
 
 Run: `flutter test test/screens/team/`
-Expected: PASS (22 format + 11 heat map + 24 screen = 57 tests).
+Expected: PASS (22 format + 11 heat map + 28 screen = 61 tests).
 
 Run: `flutter test`
 Expected: all green (the Task 0 total plus the tests added since).
@@ -7654,17 +8330,17 @@ Expected: no new issues compared with the Task 0 baseline. Check by hand: `grep 
 - [ ] **Step 14: Commit**
 
 ```bash
-git add lib/screens/team/team_colors.dart lib/screens/team/team_format.dart lib/screens/team/team_widgets.dart lib/screens/team/heat_map.dart lib/screens/team/team_leave_screen.dart test/screens/team/team_fixture.dart test/screens/team/team_format_test.dart test/screens/team/heat_map_test.dart test/screens/team/team_leave_screen_test.dart
+git add lib/screens/team/team_leave_screen.dart test/screens/team/team_leave_screen_test.dart
 git commit -m "$(cat <<'EOF'
 app: Team leave outlook screen (heat map, 30/60/90, tap a day)
 
 TeamLeaveScreen for the team and overview contexts: header, view and
-department chips, remembered range (A-L2), privacy line, month heat map
-(shade = people off, PH, today / selected rings), selected-day card with
-You and dashed Pending chips, empty / no-team / loading states. Cached
+department chips, remembered range (A-L2), privacy line, the heat map,
+selected-day card with You and dashed Pending chips, "Some rows are not
+shown." on a truncated answer, empty / no-team / loading states. Cached
 answer shows at once (A-L1); a failed refresh keeps it under the red
-strip; not_allowed clears the cache and re-pulls /me (A-L3). All hex in
-team_colors.dart (with the overview bucket tones).
+strip; not_allowed clears the cache and re-pulls /me (A-L3); an answer
+is stored only under the binding taken before its fetch (A-L15).
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 EOF
@@ -7680,6 +8356,11 @@ EOF
 > - `also_off_line.dart` (line widget, `alsoOffText`, `TeamOverlapLookup`) and the `LeaveScreen.teamLeaveBuilder` seam are in the File map and A-L13.
 > - The apply sheet also asks once on open for the default dates (same 400 ms debounce); the line never changes the submit state.
 > - No user-facing error text here: every error hides the tile's live data or the line, so no `friendlyError` call is added.
+> - Review r1:
+>   - A2: `_refreshTeamLeave` takes the cache binding with the key before the fetch (A-L15).
+>   - A5: after an access-lost answer the tile is hidden (`_teamLeaveLostAt`) while the session's `teamCacheSignature` is still the one that lost it — the A-L5 rule. A `/me` that changes the scope (seen in `didChangeDependencies`) or a later successful call brings it back. A plain "until the next notify" would not hold: the `/me` this screen itself starts notifies at once.
+>   - A6: `_Faces` initials use `TeamColors.onC3`, not `Colors.white`.
+>   - A10: `TeamOverlapLookup` forgets the asked dates after an error, so the same dates are asked again.
 
 **Files:**
 - Create: `lib/screens/leave/team_leave_row.dart` (`TeamLeaveTile`)
@@ -7691,7 +8372,7 @@ EOF
 - Consumes:
   - T1: `SessionService.teamLeaveEnabled` (`bool`), `SessionService.teamCacheSignature` (used inside `TeamCache`), existing `clientDb`, `employeeId`, `refreshMe()`.
   - T2: `OmniMobileApi.fetchTeamOutlook({int days = 30, String context = 'team', String view = 'team', int? departmentId})` → `Future<TeamOutlook>`; `OmniMobileApi.fetchTeamOverlap(DateTime from, DateTime to)` → `Future<TeamOverlap>`; `bool isMissingRoute(Object e)`; `bool isAccessLost(Object e)`; the model fields `TeamOutlook.fromJson`, `.raw`, `.summary`, `.emptyReason`, `TeamSummary.thisWeekOff` / `.label` / `.faces` (`TeamFace.id` / `.initials`), `TeamOverlap.fromJson` / `.people` (`List<TeamLeaveRow>`) / `.more`, `TeamLeaveRow.name` / `.state`.
-  - T3: `TeamCache.outlookKey(SessionService s, {required int days, …})`, `TeamCache.read(s, key)` → `Future<(Map<String, dynamic> body, DateTime savedAt)?>`, `TeamCache.write(s, key, Map<String, dynamic> body)`, `TeamCache.clearEmployee(s)`; nothing is stored or read while `employeeId <= 0`.
+  - T3: `TeamCache.outlookKey(SessionService s, {required int days, …})`, `TeamCache.read(s, key)` → `Future<(Map<String, dynamic> body, DateTime savedAt)?>`, `TeamCache.generation`, `TeamCache.write(s, key, Map<String, dynamic> body, {required String signature, required int generation})` (A-L15), `TeamCache.clearEmployee(s)`; nothing is stored or read while `employeeId <= 0`.
   - T5: `TeamLeaveScreen({String context = 'team', int? departmentId, int? initialDays, OmniMobileApi Function(SessionService session)? apiBuilder, PreferredSizeWidget? appBar})`, `String leaveWhenLabel(TeamLeaveRow r)`, `TeamColors.avatar(int id)` → `Color`, `TeamColors.leaveTint`, `.leaveOn`, `.accentTint`, `.onAccentTint` (`static const Color`).
   - Existing: `AppTheme`, `PrimaryButton`.
 - Produces:
@@ -8202,6 +8883,36 @@ void main() {
       lookup.dispose();
     });
 
+    testWidgets('after an error the same dates are asked again (A10)', (
+      tester,
+    ) async {
+      var asked = 0;
+      final lookup = TeamOverlapLookup(
+        fetch: (from, to) async {
+          asked++;
+          if (asked == 1) throw ApiException('network_error');
+          return _overlap([_p('Rachel Wong', '2026-11-12', '2026-11-12')]);
+        },
+        onChanged: () {},
+      );
+      lookup.schedule(d12, d13);
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump();
+      expect(lookup.visible, isFalse);
+      // The sheet schedules the unchanged dates again (a rebuild, a
+      // re-open of the picker): the blip is retried.
+      lookup.schedule(d12, d13);
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump();
+      expect(asked, 2);
+      expect(lookup.visible, isTrue);
+      // A success remembers the dates again: no third ask.
+      lookup.schedule(d12, d13);
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(asked, 2);
+      lookup.dispose();
+    });
+
     testWidgets('an older connector (HTML 404) is not asked again', (
       tester,
     ) async {
@@ -8489,7 +9200,7 @@ class _Faces extends StatelessWidget {
                 child: Text(
                   faces[i].initials,
                   style: const TextStyle(
-                    color: Colors.white,
+                    color: TeamColors.onC3,
                     fontSize: 10,
                     fontWeight: FontWeight.w700,
                   ),
@@ -8653,7 +9364,8 @@ class TeamOverlapLookup {
 
   /// Call after the dates changed, inside the caller's setState (the old
   /// answer is cleared without [onChanged]; the caller's rebuild hides
-  /// it). The same dates as last time are not asked again.
+  /// it). The same dates as last time are not asked again, unless that
+  /// last ask failed.
   void schedule(DateTime from, DateTime to) {
     if (_disposed || _unavailable) return;
     final key = '${_day(from)}|${_day(to)}';
@@ -8675,6 +9387,9 @@ class TeamOverlapLookup {
       debugPrint('leave/team_overlap unavailable: $e');
       if (_disposed || seq != _seq) return;
       _value = null;
+      // Forget the dates, so the same dates are asked again on the next
+      // schedule (a network blip must not leave the line empty for good).
+      _askedFor = '';
       if (isMissingRoute(e)) _unavailable = true;
     }
     onChanged();
@@ -8690,7 +9405,7 @@ class TeamOverlapLookup {
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `flutter test test/screens/team_leave_tile_test.dart test/screens/also_off_line_test.dart`
-Expected: PASS (all tests).
+Expected: PASS (9 tile + 16 also-off = 25 tests).
 
 - [ ] **Step 5: Write the failing LeaveScreen tests**
 
@@ -8848,6 +9563,9 @@ class _TeamSession extends SessionService {
   final bool approver;
   int meRefreshes = 0;
 
+  /// The cache signature (A-L14); [changeScope] plays a /me that changed it.
+  String scope = '1111111111111111';
+
   @override
   int get employeeId => 6;
 
@@ -8861,11 +9579,29 @@ class _TeamSession extends SessionService {
   bool get leaveApprovalsEnabled => approver;
 
   @override
+  String get teamCacheSignature => scope;
+
+  void changeScope(String next) {
+    scope = next;
+    notifyListeners();
+  }
+
+  @override
   Future<bool> refreshMe() async {
     meRefreshes++;
     return true;
   }
 }
+
+/// A test-side write with the binding taken right now.
+Future<void> _write(SessionService s, Map<String, dynamic> body) =>
+    TeamCache.write(
+      s,
+      _key(s),
+      body,
+      signature: s.teamCacheSignature,
+      generation: TeamCache.generation,
+    );
 
 Widget _host(_Api api, SessionService session, {Key? key}) => MultiProvider(
   providers: [
@@ -8963,9 +9699,7 @@ void main() {
 
     testWidgets('offline: falls back to the cached summary', (tester) async {
       final session = _TeamSession();
-      await tester.runAsync(
-        () => TeamCache.write(session, _key(session), _outlookJson(off: 3)),
-      );
+      await tester.runAsync(() => _write(session, _outlookJson(off: 3)));
       final api = _Api()..outlookError = ApiException('network_error');
       await tester.pumpWidget(_host(api, session));
       await tester.pumpAndSettle();
@@ -8980,13 +9714,10 @@ void main() {
       expect(find.text('No team to show yet'), findsOneWidget);
     });
 
-    testWidgets('lost access clears the cache and re-pulls /me', (
-      tester,
-    ) async {
+    testWidgets('lost access clears the cache, re-pulls /me and hides the '
+        'tile (no dead tile, A5)', (tester) async {
       final session = _TeamSession();
-      await tester.runAsync(
-        () => TeamCache.write(session, _key(session), _outlookJson()),
-      );
+      await tester.runAsync(() => _write(session, _outlookJson()));
       final api = _Api()..outlookError = ApiException('not_allowed');
       await tester.pumpWidget(_host(api, session));
       await tester.pumpAndSettle();
@@ -8998,6 +9729,43 @@ void main() {
       );
       expect(cached, isNull);
       expect(find.textContaining('out this week'), findsNothing);
+      expect(find.byKey(_tile), findsNothing);
+      // A session notify that leaves the scope as it was keeps it hidden.
+      session.changeScope(session.scope);
+      await tester.pumpAndSettle();
+      expect(find.byKey(_tile), findsNothing);
+      expect(api.outlookCalls, 1);
+    });
+
+    testWidgets('after lost access, a /me that changes the scope brings the '
+        'tile back and asks again', (tester) async {
+      final session = _TeamSession();
+      final api = _Api()..outlookError = ApiException('feature_unavailable');
+      await tester.pumpWidget(_host(api, session));
+      await tester.pumpAndSettle();
+      expect(find.byKey(_tile), findsNothing);
+      expect(api.outlookCalls, 1);
+
+      api.outlookError = null;
+      session.changeScope('2222222222222222');
+      await tester.pumpAndSettle();
+      expect(api.outlookCalls, 2);
+      expect(find.byKey(_tile), findsOneWidget);
+      expect(find.text('2 out this week · Marketing'), findsOneWidget);
+    });
+
+    testWidgets('after lost access, a pull-down that answers brings the '
+        'tile back', (tester) async {
+      final session = _TeamSession();
+      final api = _Api()..outlookError = ApiException('not_allowed');
+      final key = GlobalKey<LeaveScreenState>();
+      await tester.pumpWidget(_host(api, session, key: key));
+      await tester.pumpAndSettle();
+      expect(find.byKey(_tile), findsNothing);
+      api.outlookError = null;
+      await key.currentState!.refresh();
+      await tester.pumpAndSettle();
+      expect(find.byKey(_tile), findsOneWidget);
     });
 
     testWidgets('opens the outlook on the tab navigator; refreshes on return', (
@@ -9200,6 +9968,13 @@ Replace with:
   /// until a later call answers.
   bool _teamLeaveMissing = false;
 
+  /// The session's [SessionService.teamCacheSignature] when the outlook
+  /// last answered access-lost (not_allowed / names_hidden /
+  /// feature_unavailable): the tile is hidden while the session still
+  /// says this — the per-run rule A-L5 gives Home — and comes back (and
+  /// asks again) once /me changes the scope or a later call answers.
+  String? _teamLeaveLostAt;
+
   /// Drops an outlook answer that a newer refresh has overtaken.
   int _teamSeq = 0;
 ```
@@ -9245,16 +10020,26 @@ Replace with:
     final session = context.read<SessionService>();
     if (!session.teamLeaveEnabled) return;
     final seq = ++_teamSeq;
-    // The same key the outlook screen opens with (A-L1, Task 3).
+    // The same key the outlook screen opens with (A-L1, Task 3), and the
+    // cache binding taken before the request (A-L15).
     final key = TeamCache.outlookKey(session, days: 30);
+    final signature = session.teamCacheSignature;
+    final generation = TeamCache.generation;
     try {
       final outlook = await _api(session).fetchTeamOutlook();
       if (!mounted || seq != _teamSeq) return;
       setState(() {
         _teamOutlook = outlook;
         _teamLeaveMissing = false;
+        _teamLeaveLostAt = null;
       });
-      await TeamCache.write(session, key, outlook.raw);
+      await TeamCache.write(
+        session,
+        key,
+        outlook.raw,
+        signature: signature,
+        generation: generation,
+      );
     } catch (e) {
       if (!mounted || seq != _teamSeq) return;
       if (isMissingRoute(e)) {
@@ -9262,7 +10047,11 @@ Replace with:
         return;
       }
       if (isAccessLost(e)) {
-        setState(() => _teamOutlook = null);
+        // No dead tile: hidden while the scope is the one that lost it.
+        setState(() {
+          _teamOutlook = null;
+          _teamLeaveLostAt = session.teamCacheSignature;
+        });
         await TeamCache.clearEmployee(session);
         await session.refreshMe();
         return;
@@ -9271,6 +10060,21 @@ Replace with:
       final cached = await TeamCache.read(session, key);
       if (!mounted || seq != _teamSeq || cached == null) return;
       setState(() => _teamOutlook = TeamOutlook.fromJson(cached.$1));
+    }
+  }
+
+  /// The list watches the session (`_buildList`), so every session notify
+  /// lands here first. A /me that changed the scope after an access-lost
+  /// answer brings the tile back and asks the outlook again. Computed
+  /// here, never assigned in `build`.
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final lostAt = _teamLeaveLostAt;
+    if (lostAt == null) return;
+    if (context.read<SessionService>().teamCacheSignature != lostAt) {
+      _teamLeaveLostAt = null;
+      unawaited(_refreshTeamLeave());
     }
   }
 
@@ -9337,7 +10141,10 @@ Replace with:
 ```dart
   Widget _buildList() {
     final session = context.watch<SessionService>();
-    final showTeam = session.teamLeaveEnabled && !_teamLeaveMissing;
+    final lostAt = _teamLeaveLostAt;
+    final lost = lostAt != null && lostAt == session.teamCacheSignature;
+    final showTeam =
+        session.teamLeaveEnabled && !_teamLeaveMissing && !lost;
     // The optional rows above the leave types, in this order: Leave
     // approvals (approvers), then Team leave.
     final rows = <Widget>[
@@ -9524,15 +10331,15 @@ Note: `_overlap.visible` in `build` creates the idle lookup on first build when 
 - [ ] **Step 8: Run the tests to verify they pass**
 
 Run: `flutter test test/screens/leave_screen_team_test.dart test/screens/leave_screen_test.dart test/screens/team_leave_tile_test.dart test/screens/also_off_line_test.dart test/screens/leave_approvals_row_test.dart`
-Expected: PASS (all; the existing `leave_screen_test.dart` and `leave_approvals_row_test.dart` unchanged and green).
+Expected: PASS (all; `leave_screen_team_test.dart` has 17 tests — 11 tile + 6 sheet; the existing `leave_screen_test.dart` and `leave_approvals_row_test.dart` unchanged and green).
 
 Then the whole suite: `flutter test`
 Expected: PASS, total = Task 5 total + the new tests.
 
 - [ ] **Step 9: Lint**
 
-Run: `flutter analyze`
-Expected: no new issues compared with the Task 0 baseline (`session-assets/2026-10-22-team-leave-mgmt-day/evidence/app-baseline.txt`).
+Run: `flutter analyze`, then the compare command in Global Constraints → Commands.
+Expected: no new issues compared with the Task 0 baseline (`session-assets/2026-10-22-team-leave-mgmt-day/evidence/app-baseline.txt`): the compare command prints nothing.
 
 - [ ] **Step 10: Commit**
 
@@ -9543,11 +10350,14 @@ Team leave tile on the LEAVE tab + "Also off on these dates" in the apply sheet
 
 - TeamLeaveTile under the approvals row: N out this week, two faces,
   NEW until the first open (per employee); one 30-day outlook call per
-  refresh (A-L1), cached, cached fallback offline, hidden after an HTML
-  404, cache cleared + /me on lost access.
+  refresh (A-L1), cached under the binding taken before the call
+  (A-L15), cached fallback offline, hidden after an HTML 404; lost
+  access clears the cache, re-pulls /me and hides the tile until the
+  scope changes.
 - Apply sheet: debounced (400 ms) team overlap, newest dates win,
-  hidden on any error / missing route / empty list, never touches
-  SUBMIT; "See team leave" pops the sheet and the tab pushes the outlook.
+  hidden on any error / missing route / empty list (the same dates are
+  asked again after an error), never touches SUBMIT; "See team leave"
+  pops the sheet and the tab pushes the outlook.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 EOF
@@ -9564,6 +10374,7 @@ EOF
 > - Every error text, the 404 included, goes through `friendlyError(e, context: ErrorContext.team)` (A-L9).
 > - `OverviewDrillScreen` has the `appBar` seam (interface table); access-lost answers clear the employee's cache and re-pull /me (A-L3). The sheet is never cached.
 > - Leave line keeps T5's single date format ("Leave · Annual Leave · Tue 27 Oct – Wed 28 Oct · 2 days"), not the mockup's shorter shape.
+> - Review r1: the `names_hidden` text the tests expect is now the mockup's "Counts only — your company doesn't show names here." (A7, Task 2); Step 7 ends with the baseline compare command (A12c).
 
 **Files:**
 - Create: `lib/screens/home/overview/overview_copy.dart` (the bucket table; Task 8 adds its copy to this file later)
@@ -9578,7 +10389,7 @@ EOF
     - `OmniMobileApi.fetchOverviewList({required String bucket, int? departmentId, int offset = 0, int limit = 50})` → `Future<OverviewPage>`;
     - `OmniMobileApi.fetchOverviewPerson(int employeeId)` → `Future<OverviewPerson>`;
     - `bool isAccessLost(Object e)`;
-    - `ErrorContext.team` with `friendlyError(e, context: ErrorContext.team)`: `not_allowed` → "You no longer have access to this view.", `not_found` → "This person is no longer in your view.", `names_hidden` → "Your company shows counts only here." (every error text here goes through it, A-L9);
+    - `ErrorContext.team` with `friendlyError(e, context: ErrorContext.team)`: `not_allowed` → "You no longer have access to this view.", `not_found` → "This person is no longer in your view.", `names_hidden` → "Counts only — your company doesn't show names here." (every error text here goes through it, A-L9);
     - the models, with T2's names: `OverviewCounts` (`countOf`, `buckets`), `OverviewPage` (`bucket`, `total`, `nextOffset`, `rows`), `OverviewRow` (`firstIn`, `kioskName`, `location` are `String?`; `note` is the `note.kind` string or null; `leave` is an `OverviewRowLeave?` whose `part` / `backAt` are `String?`), `OverviewShift` (`start`, `end`, `blocks`, `label`), `OverviewPerson` (flattened; `note`, `leaveWeek` `List<TeamLeaveRow>?`), `OverviewPunch` (`kioskName`, `location` `String?`), `TeamLeaveRow`.
   - From T3: `TeamCache.clearEmployee(SessionService s)` → `Future<void>`.
   - From T5: `TeamColors.bucket(String)`, `TeamColors.leaveTint`, `TeamColors.leaveOn`, `dayTitle(DateTime)`, `leaveWhenLabel(TeamLeaveRow)`, `TeamAvatar({id, initials, size})` and `TeamYouChip()` from `lib/screens/team/team_widgets.dart`.
@@ -10000,7 +10811,7 @@ void main() {
       _FakeApi(ApiException('names_hidden')),
       session: session,
     );
-    expect(find.text('Your company shows counts only here.'), findsOneWidget);
+    expect(find.text("Counts only — your company doesn't show names here."), findsOneWidget);
     expect(session.refreshes, 1);
     final prefs = await SharedPreferences.getInstance();
     expect(
@@ -10707,7 +11518,7 @@ void main() {
         expect(find.byType(OverviewDrillScreen), findsNothing);
         expect(find.text('OPEN'), findsOneWidget);
         expect(
-          find.text('Your company shows counts only here.'),
+          find.text("Counts only — your company doesn't show names here."),
           findsOneWidget,
         );
         expect(session.refreshes, 1);
@@ -11913,6 +12724,7 @@ flutter test test/screens/my_day test/screens/home
 Expected:
 - `flutter analyze`: "No issues found!";
 - `flutter test`: all green (nothing outside the new files changed).
+- Then the whole-project check against the Task 0 baseline: the compare command in Global Constraints → Commands prints nothing.
 
 - [ ] **Step 8: Commit**
 
@@ -11952,6 +12764,13 @@ EOF
 > - `WhoOutToday.tracked` is in the contract and Task 2 (default `false`); the person-sheet tap needs `names && sections.attendance && tracked`. `yesterday_incomplete` items are dropped (A-L13).
 > - Every error text uses `friendlyError(e, context: ErrorContext.team)`; the cache key is `TeamCache.overviewKey` (today only).
 > - Invented Who's out wording ("afternoon only", "part of the day", empty-list lines) stays unless Willy changes it.
+> - Review r1:
+>   - A2: `_load` takes the cache binding (`teamCacheSignature`, `TeamCache.generation`) with the key before `fetchOverview` and passes it to `write` (A-L15).
+>   - A4: on lost access the cache clear and `refreshMe()` are started with `unawaited`, then `setState` + `onUnavailable` run at once, as Task 7 does; Home no longer waits for a `/me` on a slow link.
+>   - A6: the two tiles take every white from the `TeamColors` on-tile tokens (A-L19); no `Colors.white`.
+>   - A7: the counts-only sentence is the mockup's "Counts only — your company doesn't show names here." (`OverviewCopy.countsOnly`, the same text Task 2 gives `names_hidden`).
+>   - A9: one line "Some rows are not shown." under Who's out when `who_out.truncated` (A-L17).
+>   - A13: an intermediate commit right after Step 3 (the `openForYouItem` move), then the rest.
 
 **Files:**
 - Create: `lib/screens/home/my_day/for_you_navigation.dart`
@@ -11964,9 +12783,10 @@ EOF
 - Consumes:
   - T1: `SessionService.teamCacheSignature` (inside `TeamCache`); existing `leaveApprovalsEnabled`, `leaveApprovalsPendingCount`, `refreshMe()`, `employeeName`, `userName`, `userLogin`.
   - T2: `OmniMobileApi.fetchOverview({String day = 'today', int? departmentId})` → `Future<TeamOverview>`; `isMissingRoute(Object)`, `isAccessLost(Object)`; `friendlyError(e, context: ErrorContext.team)` for every error text here ("You no longer have access to this view.", "That department isn't available any more.", the usual transport words). Model fields: `TeamOverview.raw`, `.date` (`DateTime?`), `.asOf`, `.live`, `.scope` (`label`, `emptyReason`), `.departments` (`List<TeamDepartment>`, from `team_outlook.dart`), `.sections.attendance` / `.leave`, `.names`, `.counts` (`OverviewCounts?`: `countOf`, `totalCheckedIn`, `totalExpected`, `totalTracked`; the late field is `lateCount`), `.reviewed` (`ReviewedDay?`: `date`, `provisional`, `countOf`, `buckets`, `totalWorked`, `totalExpected`; `notReviewed` is part of expected and gets no tile), `.whoOut` (`today` / `next7`; `WhoOutToday.tracked`), `.forYou`.
-  - T3: `TeamCache.overviewKey(s, {String day = 'today', int? departmentId})`, `read` (async, `(body, savedAt)?`), `write`, `clearEmployee`.
+  - T3: `TeamCache.overviewKey(s, {String day = 'today', int? departmentId})`, `read` (async, `(body, savedAt)?`), `generation`, `write(s, key, body, {required String signature, required int generation})` (A-L15), `clearEmployee`.
   - T4: `PillSegments({required List<String> labels, required int value, required ValueChanged<int> onChanged, String? semanticsLabel})`.
-  - T5: `TeamLeaveScreen`, `dayTitle`, `TeamAvatar`, `TeamColors.bucket` / `.overviewTile` / `.overviewTileYesterday` / `.leaveTint` / `.leaveOn` / `.accentTint` / `.onAccentTint` / `.chipBorder`.
+  - T5: `TeamLeaveScreen`, `dayTitle`, `teamRowsNotShown`, `TeamAvatar`, `TeamColors.bucket` / `.overviewTile` / `.overviewTileYesterday` / `.onTile` / `.onTileSoft` / `.onTileFaint` / `.tileLine` / `.tileTrack` / `.tileBadge` / `.muted` / `.leaveTint` / `.leaveOn` / `.accentTint` / `.onAccentTint` / `.chipBorder`.
+  - T2 (review r1): `WhoOut.truncated` (`who_out.truncated`, K2).
   - T7: `OverviewDrillScreen({required String bucket, required OverviewCounts counts, int? departmentId, required String scopeLabel, apiBuilder, appBar})`, `showOverviewPersonSheet(BuildContext context, {required int employeeId, required OmniMobileApi api})`, and in `overview_copy.dart` `overviewBucketOrder`, `overviewBucketLabel(String)`, `overviewBucketHint(String)`, `overviewCountOf(counts, bucket)`.
   - Existing: `ForYouList`, `ForYouItem`, `MyDayTone` (`my_day_colors.dart`), `helloTitle` (`my_day_display.dart`), `myDayRefreshFailed` (`error_messages.dart`), `ErrorStateView`, `OmniAppBar`.
 - Produces:
@@ -11974,7 +12794,7 @@ EOF
   - `lib/screens/home/overview/overview_copy.dart` (added below Task 7's bucket table): `class OverviewCopy` (every other overview string).
   - `lib/screens/home/overview/overview_tiles.dart`: `MyDayTone overviewTone(String id)` (Today keys plus Yesterday's `left_early` / `absent` / `off`), `class OverviewCell`, `todayCells`, `yesterdayCells`, `OverviewTodayTile`, `OverviewYesterdayTile`, `OverviewCountGrid({required List<OverviewCell> cells, void Function(String bucket)? onTap})`.
   - `lib/screens/home/overview/who_out_card.dart`: `String whoOutTodayLine(WhoOutToday p, {required DateTime today})`, `String next7DayLabel(DateTime d)`, `String next7Names(List<WhoOutToday> people)`, `WhoOutCard`.
-  - `lib/screens/home/overview/team_overview_screen.dart`: `TeamOverviewScreen({Key? key, OmniMobileApi Function(SessionService)? apiBuilder, PreferredSizeWidget? appBar, Widget? header, void Function(int)? onOpenLeave, void Function(int)? onOpenExpense, VoidCallback? onUnavailable, refreshSession, destinationBuilder, outlookBuilder, onBucketTap, onPersonTap})`, public `TeamOverviewScreenState.refresh()`. A count tile (names only) pushes Task 7's `OverviewDrillScreen` on the tab Navigator; a Who's out row (names, Attendance and `tracked`) opens `showOverviewPersonSheet`. `onBucketTap` / `onPersonTap` replace those two in tests. Keys: `ov-today-tile`, `ov-yesterday-tile`, `ov-tile-<bucket>`, `ov-bar-<bucket>`, `ov-legend-<bucket>`, `ov-out-<id>`, `ov-next-<i>`, `ov-see-outlook`, `ov-dept-all`, `ov-dept-<id>`, `ov-counts-only`, `ov-empty`, `ov-refresh-strip`.
+  - `lib/screens/home/overview/team_overview_screen.dart`: `TeamOverviewScreen({Key? key, OmniMobileApi Function(SessionService)? apiBuilder, PreferredSizeWidget? appBar, Widget? header, void Function(int)? onOpenLeave, void Function(int)? onOpenExpense, VoidCallback? onUnavailable, refreshSession, destinationBuilder, outlookBuilder, onBucketTap, onPersonTap})`, public `TeamOverviewScreenState.refresh()`. A count tile (names only) pushes Task 7's `OverviewDrillScreen` on the tab Navigator; a Who's out row (names, Attendance and `tracked`) opens `showOverviewPersonSheet`. `onBucketTap` / `onPersonTap` replace those two in tests. Keys: `ov-today-tile`, `ov-yesterday-tile`, `ov-tile-<bucket>`, `ov-bar-<bucket>`, `ov-legend-<bucket>`, `ov-out-<id>`, `ov-next-<i>`, `ov-see-outlook`, `ov-who-out-truncated`, `ov-dept-all`, `ov-dept-<id>`, `ov-counts-only`, `ov-empty`, `ov-refresh-strip`.
 
 **Implementer notes:**
 - Read every file before editing it. Edit by quoted anchor text, never by line number.
@@ -11982,7 +12802,7 @@ EOF
 - After the move `my_day_screen.dart` no longer uses `ApprovalsScreen`, `ExpenseDetailScreen` or `PayslipsScreen`; remove those three imports or `flutter analyze` reports `unused_import`. `ExpenseRecord` stays imported (the `destinationBuilder` field type).
 - Refresh contract = My day's: `refresh()` shares one in-flight request (`_inFlight ??=`); first build, pull-down, `AppLifecycleListener.onResume`, return from a pushed screen, and `HomeRoot` (T9) call it. No polling.
 - A day or department switch must not be swallowed by the shared in-flight request: `_select` changes the selection, waits for the running request (whose answer `_load` then drops as stale — it compares the `day` / `departmentId` it started with), then calls `refresh()`.
-- Cache (A-L3): only a successful **today** answer is written; on a failure with nothing on screen, today's cached answer for the same department is shown with the red strip and "Showing what you saw at HH:MM". Yesterday is never cached. Lost access (`isAccessLost`) clears this employee's cache, re-pulls /me and calls `onUnavailable`; a missing route only calls `onUnavailable` (HomeRoot shows My day for the run, A-L5).
+- Cache (A-L3): only a successful **today** answer is written, under the binding taken before the fetch (A-L15); on a failure with nothing on screen, today's cached answer for the same department is shown with the red strip and "Showing what you saw at HH:MM". Yesterday is never cached. Lost access (`isAccessLost`) starts the cache clear and the /me re-pull (both `unawaited`) and calls `onUnavailable` straight away; a missing route only calls `onUnavailable` (HomeRoot shows My day for the run, A-L5).
 - `invalid_department` (a department removed since the chips loaded): show the friendly text in a snackbar, go back to "All" and load again inside the same request.
 - Counts only (`names: false`, L2): count tiles and Who's out rows are not tappable; Who's out names are still shown; the lock line shows. Who's out rows need `names`, `sections.attendance` (the person route needs Attendance) and `WhoOutToday.tracked` (contract; an untracked person would 404).
 - `yesterday_incomplete` For-you items are dropped here (A-L13): their "Tell HR" flow lives on My day.
@@ -12236,6 +13056,26 @@ Replace with:
 
 Run: `flutter test test/screens/my_day/`
 Expected: PASS (same count as Step 1 plus the rest of the folder, all green).
+
+- [ ] **Step 3b: Intermediate commit — the behaviour-preserving move (A13)**
+
+Run `flutter analyze` and the compare command in Global Constraints → Commands (it must print nothing: in particular no `unused_import` in `my_day_screen.dart`). Then:
+
+```bash
+cd "/Users/willytanuwiharja/Omnisoft HRMS/omnisoft-hrms-mobile/.claude/worktrees/team-overview"
+git add lib/screens/home/my_day/for_you_navigation.dart lib/screens/home/my_day/my_day_screen.dart
+git commit -m "$(cat <<'EOF'
+My day: For-you taps moved into openForYouItem (no behaviour change)
+
+for_you_navigation.dart holds ForYouTapGuard, forYouDestination,
+findForYouExpense and openForYouItem, moved verbatim from
+MyDayScreen._onTap so the Team overview can share them. The My day
+tests pass unchanged.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+EOF
+)"
+```
 
 - [ ] **Step 4: Write the failing tests for the copy, the tones and the Who's out text**
 
@@ -12632,7 +13472,6 @@ class OverviewTodayTile extends StatelessWidget {
       for (final id in barBuckets)
         if (counts.countOf(id) > 0) (id, counts.countOf(id)),
     ];
-    final soft = Colors.white.withValues(alpha: 0.9);
     return Container(
       key: const ValueKey('ov-today-tile'),
       padding: const EdgeInsets.all(18),
@@ -12649,12 +13488,12 @@ class OverviewTodayTile extends StatelessWidget {
                 width: 56,
                 height: 56,
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.18),
+                  color: TeamColors.tileBadge,
                   borderRadius: BorderRadius.circular(18),
                 ),
                 child: const Icon(
                   Icons.groups_outlined,
-                  color: Colors.white,
+                  color: TeamColors.onTile,
                   size: 30,
                 ),
               ),
@@ -12666,7 +13505,7 @@ class OverviewTodayTile extends StatelessWidget {
                     Text(
                       OverviewCopy.checkedIn(counts.totalCheckedIn),
                       style: const TextStyle(
-                        color: Colors.white,
+                        color: TeamColors.onTile,
                         fontSize: 24,
                         fontWeight: FontWeight.w700,
                         height: 1.15,
@@ -12678,7 +13517,10 @@ class OverviewTodayTile extends StatelessWidget {
                         counts.totalExpected,
                         scopeLabel,
                       ),
-                      style: TextStyle(color: soft, fontSize: 13),
+                      style: const TextStyle(
+                        color: TeamColors.onTileSoft,
+                        fontSize: 13,
+                      ),
                     ),
                   ],
                 ),
@@ -12686,7 +13528,7 @@ class OverviewTodayTile extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 14),
-          Divider(height: 1, color: Colors.white.withValues(alpha: 0.22)),
+          const Divider(height: 1, color: TeamColors.tileLine),
           const SizedBox(height: 14),
           ExcludeSemantics(
             child: ClipRRect(
@@ -12694,7 +13536,7 @@ class OverviewTodayTile extends StatelessWidget {
               child: SizedBox(
                 height: 12,
                 child: ColoredBox(
-                  color: Colors.white.withValues(alpha: 0.14),
+                  color: TeamColors.tileTrack,
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
@@ -12731,8 +13573,8 @@ class OverviewTodayTile extends StatelessWidget {
                     const SizedBox(width: 5),
                     Text(
                       '${overviewBucketLabel(id)} $n',
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.92),
+                      style: const TextStyle(
+                        color: TeamColors.onTileSoft,
                         fontSize: 11,
                       ),
                     ),
@@ -12744,8 +13586,8 @@ class OverviewTodayTile extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               OverviewCopy.liveLine(asOf, counts.totalTracked),
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.85),
+              style: const TextStyle(
+                color: TeamColors.onTileFaint,
                 fontSize: 12,
               ),
             ),
@@ -12783,7 +13625,7 @@ class OverviewYesterdayTile extends StatelessWidget {
           Text(
             OverviewCopy.worked(reviewed.totalWorked),
             style: const TextStyle(
-              color: Colors.white,
+              color: TeamColors.onTile,
               fontSize: 24,
               fontWeight: FontWeight.w700,
               height: 1.15,
@@ -12796,20 +13638,20 @@ class OverviewYesterdayTile extends StatelessWidget {
               reviewed.date,
               scopeLabel,
             ),
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.9),
+            style: const TextStyle(
+              color: TeamColors.onTileSoft,
               fontSize: 13,
             ),
           ),
           const SizedBox(height: 10),
-          Divider(height: 1, color: Colors.white.withValues(alpha: 0.22)),
+          const Divider(height: 1, color: TeamColors.tileLine),
           const SizedBox(height: 10),
           Text(
             reviewed.provisional
                 ? OverviewCopy.reviewedProvisional
                 : OverviewCopy.reviewedFinal,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.85),
+            style: const TextStyle(
+              color: TeamColors.onTileFaint,
               fontSize: 12,
             ),
           ),
@@ -13118,6 +13960,17 @@ class WhoOutCard extends StatelessWidget {
                     ],
                   ),
                 ),
+              // The server bounded the rows (who_out.truncated, K2): one
+              // quiet line (A-L17).
+              if (whoOut.truncated)
+                const Padding(
+                  key: ValueKey('ov-who-out-truncated'),
+                  padding: EdgeInsets.fromLTRB(16, 6, 16, 0),
+                  child: Text(
+                    teamRowsNotShown,
+                    style: TextStyle(fontSize: 12, color: TeamColors.muted),
+                  ),
+                ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
                 child: OutlinedButton(
@@ -13248,6 +14101,7 @@ Map<String, dynamic> _json({
   bool provisional = false,
   Map<String, dynamic>? counts,
   List<Map<String, dynamic>> forYou = const [],
+  bool whoOutTruncated = false,
 }) => {
   'success': true,
   'day': day,
@@ -13347,6 +14201,7 @@ Map<String, dynamic> _json({
               ],
             },
           ],
+          'truncated': whoOutTruncated,
         }
       : null,
   'for_you': forYou,
@@ -13442,6 +14297,7 @@ Widget _host(
   SessionService? session,
   _Log? log,
   Widget? header,
+  Future<void> Function()? refreshSession,
 }) => ChangeNotifierProvider<SessionService>(
   create: (_) => session ?? _Session(),
   child: MaterialApp(
@@ -13453,7 +14309,7 @@ Widget _host(
       onOpenLeave: (id) => log?.leave.add(id),
       onOpenExpense: (id) => log?.expense.add(id),
       onUnavailable: () => log?.unavailable++,
-      refreshSession: () async => log?.sessionRefreshes++,
+      refreshSession: refreshSession ?? () async => log?.sessionRefreshes++,
       destinationBuilder: (item, expense) => Scaffold(
         appBar: AppBar(),
         body: Text('DEST ${item.kind}'),
@@ -13868,6 +14724,22 @@ void main() {
     });
   });
 
+  testWidgets("a truncated Who's out says some rows are not shown (A9)", (
+    tester,
+  ) async {
+    _tall(tester);
+    await tester.pumpWidget(_host(_Api([_json(whoOutTruncated: true)])));
+    await tester.pumpAndSettle();
+    expect(find.text('Some rows are not shown.'), findsOneWidget);
+  });
+
+  testWidgets("a complete Who's out has no truncation line", (tester) async {
+    _tall(tester);
+    await tester.pumpWidget(_host(_Api([_json()])));
+    await tester.pumpAndSettle();
+    expect(find.text('Some rows are not shown.'), findsNothing);
+  });
+
   group('lost access', () {
     testWidgets('not_allowed clears the cache, re-pulls /me, falls back', (
       tester,
@@ -13895,6 +14767,53 @@ void main() {
       );
       expect(find.text('You no longer have access to this view.'), findsOneWidget);
       expect(find.text('42 checked in'), findsNothing);
+    });
+
+    testWidgets('lost access falls back at once, without waiting for /me '
+        '(A4)', (tester) async {
+      _tall(tester);
+      final log = _Log();
+      final me = Completer<void>(); // a /me on a slow link
+      var meStarted = 0;
+      await tester.pumpWidget(
+        _host(
+          _Api([ApiException('not_allowed')]),
+          log: log,
+          refreshSession: () {
+            meStarted++;
+            return me.future;
+          },
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(meStarted, 1);
+      expect(log.unavailable, 1);
+      expect(find.text('You no longer have access to this view.'), findsOneWidget);
+      me.complete();
+      await tester.pumpAndSettle();
+      expect(log.unavailable, 1);
+    });
+
+    testWidgets('an answer that lands after a cache clear is shown but not '
+        'stored (A-L15)', (tester) async {
+      _tall(tester);
+      final session = _Session();
+      final api = _Api([_json()])..gate = Completer<void>();
+      await tester.pumpWidget(_host(api, session: session));
+      await tester.pump();
+      expect(api.calls, ['today/-']);
+      // Another screen got not_allowed while this request was on the wire.
+      await tester.runAsync(() => TeamCache.clearEmployee(session));
+      api.gate!.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('42 checked in'), findsOneWidget);
+      expect(
+        await tester.runAsync(
+          () => TeamCache.read(session, TeamCache.overviewKey(session)),
+        ),
+        isNull,
+      );
     });
 
     testWidgets('an older connector (HTML 404) falls back, cache kept', (
@@ -14174,8 +15093,11 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
     final departmentId = _departmentId;
     final session = context.read<SessionService>();
     // Only today is ever written; the key is the same for a yesterday
-    // request, which never reads or writes it.
+    // request, which never reads or writes it. The cache binding is taken
+    // with the key, before the request (A-L15).
     final cacheKey = TeamCache.overviewKey(session, departmentId: departmentId);
+    final signature = session.teamCacheSignature;
+    final generation = TeamCache.generation;
     try {
       final overview = await _api().fetchOverview(
         day: day,
@@ -14190,17 +15112,26 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
         _refreshFailed = false;
       });
       if (day == 'today') {
-        unawaited(TeamCache.write(session, cacheKey, overview.raw));
+        unawaited(
+          TeamCache.write(
+            session,
+            cacheKey,
+            overview.raw,
+            signature: signature,
+            generation: generation,
+          ),
+        );
       }
       _syncApprovals(session, overview);
     } catch (e) {
       if (!mounted || day != _day || departmentId != _departmentId) return;
       if (isMissingRoute(e) || isAccessLost(e)) {
         if (isAccessLost(e)) {
-          await TeamCache.clearEmployee(session);
-          if (!mounted) return;
-          await _refreshSession();
-          if (!mounted) return;
+          // Started, not awaited (as Task 7 does): Home falls back to My
+          // day at once instead of waiting for a /me on a slow link (A4).
+          // The clear bumps the cache generation synchronously.
+          unawaited(TeamCache.clearEmployee(session));
+          unawaited(_refreshSession());
         }
         setState(() {
           _overview = null;
@@ -14641,28 +15572,29 @@ Expected: PASS, total = Task 7 total + the new tests.
 
 - [ ] **Step 12: Lint**
 
-Run: `flutter analyze`
-Expected: no new issues compared with the Task 0 baseline. In particular no `unused_import` in `my_day_screen.dart` (Step 2a removed the three) and no `use_build_context_synchronously` (every use of `context` after an `await` is behind a `mounted` / `context.mounted` check).
+Run: `flutter analyze`, then the compare command in Global Constraints → Commands.
+Expected: the compare command prints nothing (no new issues compared with the Task 0 baseline). In particular no `unused_import` in `my_day_screen.dart` (Step 2a removed the three) and no `use_build_context_synchronously` (every use of `context` after an `await` is behind a `mounted` / `context.mounted` check).
 
 - [ ] **Step 13: Commit**
 
 ```bash
-git add lib/screens/home/my_day/for_you_navigation.dart lib/screens/home/my_day/my_day_screen.dart lib/screens/home/overview/overview_copy.dart lib/screens/home/overview/overview_tiles.dart lib/screens/home/overview/who_out_card.dart lib/screens/home/overview/team_overview_screen.dart test/screens/home/overview/overview_format_test.dart test/screens/home/overview/team_overview_screen_test.dart
+git add lib/screens/home/overview/overview_copy.dart lib/screens/home/overview/overview_tiles.dart lib/screens/home/overview/who_out_card.dart lib/screens/home/overview/team_overview_screen.dart test/screens/home/overview/overview_format_test.dart test/screens/home/overview/team_overview_screen_test.dart
 git commit -m "$(cat <<'EOF'
-Team overview screen; My day's For-you taps moved into openForYouItem
+Team overview screen
 
 - TeamOverviewScreen (home/overview): department chips, Today · live /
   Yesterday · reviewed, the teal tile with the exclusive bar, six count
   tiles (tappable only with names; they open the Task 7 drill-down), the
   counts-only line, Who's out (today + next 7; tracked rows open the
-  person sheet), See 30 / 60 / 90 days into the outlook (overview
-  context + department), For you (without yesterday_incomplete).
+  person sheet; "Some rows are not shown." when truncated), See 30 /
+  60 / 90 days into the outlook (overview context + department), For
+  you (without yesterday_incomplete) through openForYouItem.
 - overview_copy.dart gains OverviewCopy below the Task 7 bucket table.
 - My day's refresh contract; last answer kept under the red strip;
-  today's answer cached for offline (A-L3); missing route / lost access
-  report onUnavailable (A-L5), lost access clears the cache + /me.
-- openForYouItem (for_you_navigation.dart) shared by My day and the
-  overview, moved without behaviour change.
+  today's answer cached for offline under the binding taken before the
+  fetch (A-L3, A-L15); missing route / lost access report onUnavailable
+  at once (A-L5); lost access starts the cache clear + /me.
+- Tile whites come from the TeamColors on-tile tokens (A-L19).
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 EOF
@@ -14674,7 +15606,8 @@ EOF
 ### Task 9: HomeRoot, the Team overview | My day switch, fallbacks, HomeShell keys
 
 > **Lead reconciliation:**
-> - Consumes Task 8's `TeamOverviewScreen` exactly as in the interface table, `onUnavailable` included (called on a missing route or lost access, after the cache clear and `refreshMe()` start).
+> - Consumes Task 8's `TeamOverviewScreen` exactly as in the interface table, `onUnavailable` included (called on a missing route or lost access, right after the cache clear and `refreshMe()` start; Task 8 no longer awaits them, review r1 A4).
+> - Review r1 (A12f): `_viewOf` is pure (no assignment in `build`); `didChangeDependencies` clears the fallback when `/me` changed `overview_access`.
 > - My day's `header` sits above the status tile and also shows while loading or after a failed load (A-L12); `showMyDay()` switches without saving, only a tap on the switch saves (A-L4, A-L12).
 > - HomeShell is not pumped in tests (A-L10): its logic is in `HomeRoot` and the top-level `homeTabContext(...)` / `homeModeKey(...)`, which have their own tests (A-L8).
 > - A-L5 fallback holds My day while `overviewAccess` keeps the value it had at the failure; any `/me` that changes it re-evaluates.
@@ -14697,7 +15630,7 @@ EOF
     - `TeamOverview.fromJson`;
     - `ApiException` (existing).
   - T4: `PillSegments({required List<String> labels, required int value, required ValueChanged<int> onChanged, String? semanticsLabel})`, with per-option keys `ValueKey('pill-<i>')`.
-  - T8: `TeamOverviewScreen({apiBuilder, appBar, Widget? header, onOpenLeave, onOpenExpense, VoidCallback? onUnavailable})` + `TeamOverviewScreenState.refresh()` (interface table: `onUnavailable` is called on `isMissingRoute` / `isAccessLost`, after the cache clear and `refreshMe()`; one `fetchOverview` per refresh).
+  - T8: `TeamOverviewScreen({apiBuilder, appBar, Widget? header, onOpenLeave, onOpenExpense, VoidCallback? onUnavailable})` + `TeamOverviewScreenState.refresh()` (interface table: `onUnavailable` is called on `isMissingRoute` / `isAccessLost`, right after *starting* the cache clear and `refreshMe()`; one `fetchOverview` per refresh).
   - Existing:
     - `MyDayScreen` / `MyDayScreenState.refresh()`;
     - `handleNotificationTap`, `NotificationTapTargets` (lib/screens/notifications/notification_tap.dart);
@@ -15590,15 +16523,24 @@ class HomeRootState extends State<HomeRoot> {
   }
 
   /// [SessionService.homeView], unless the overview fell back this run and
-  /// the grant has not changed since.
+  /// the grant has not changed since. Pure: `build` calls it, so it never
+  /// assigns state ([didChangeDependencies] clears the fallback).
   HomeView _viewOf(SessionService session) {
     final at = _unavailableAt;
-    if (at != null) {
-      if (at == session.overviewAccess) return HomeView.myDay;
-      // /me changed overview_access: try the overview again.
+    if (at != null && at == session.overviewAccess) return HomeView.myDay;
+    return session.homeView;
+  }
+
+  /// `build` watches the session, so every session notify lands here
+  /// before the rebuild. A /me that changed overview_access since the
+  /// fallback ends it: the overview is tried again (A-L5).
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final at = _unavailableAt;
+    if (at != null && at != context.read<SessionService>().overviewAccess) {
       _unavailableAt = null;
     }
-    return session.homeView;
   }
 
   void _onUnavailable() {
@@ -15946,7 +16888,7 @@ flutter analyze
 ```
 Expected:
 - every test passes (`my_day_screen_test.dart` builds `MyDayScreen` without `header`, so it is unchanged);
-- `flutter analyze` reports no new issues against the Task 0 baseline (`/Users/willytanuwiharja/Omnisoft HRMS/session-assets/2026-10-22-team-leave-mgmt-day/evidence/app-baseline.txt`).
+- `flutter analyze` reports no new issues against the Task 0 baseline (`/Users/willytanuwiharja/Omnisoft HRMS/session-assets/2026-10-22-team-leave-mgmt-day/evidence/app-baseline.txt`): the compare command in Global Constraints → Commands prints nothing.
 
 - [ ] **Step 8: The whole suite**
 
@@ -15954,7 +16896,7 @@ Run:
 ```bash
 flutter test
 ```
-Expected: all green. The total is the Task 0 baseline plus the tests added by Tasks 1–9.
+Expected: all green. The total is the Task 0 baseline plus the tests added by Tasks 1–9 (a scratch run of this plan on 2026-10-22: `+1288: All tests passed!` = 978 at `588a1cb` + 310 new).
 
 - [ ] **Step 9: Commit**
 
@@ -16007,6 +16949,24 @@ build, no `fastlane`, no push in this task.
 
 - [ ] **Step 1: Version** — `pubspec.yaml`: `version: 1.33.0+108` → `version: 1.34.0+109`.
 
+- [ ] **Step 2a: Amend the old My day sentence (A12e)** — in `CLAUDE.md`, section "## My day (1.26.0)", find:
+
+```markdown
+- The Home tab is `MyDayScreen` for everyone since 1.29.0 (`home_tab_root.dart` and the
+  classic `home_screen.dart` are gone).
+```
+
+Replace with:
+
+```markdown
+- The Home tab is `MyDayScreen` for everyone since 1.29.0 (`home_tab_root.dart` and the
+  classic `home_screen.dart` are gone), except for employees HR grants the Team overview (1.34.0):
+  `HomeRoot` then shows `TeamOverviewScreen` or the Team overview | My day switch (see "Team leave +
+  Team overview" below).
+```
+
+(The rest of that bullet, from "`SessionService.attendanceKioskOnly` only has to agree with …", stays as it is.)
+
 - [ ] **Step 2: CLAUDE.md section** (append at the end):
 
 ```markdown
@@ -16014,9 +16974,11 @@ build, no `fastlane`, no push in this task.
 Design: `session-assets/2026-10-22-team-leave-mgmt-day/proposal.md` (r3); plans: this repo
 `docs/superpowers/plans/2026-10-22-team-leave-overview-app-1.34.0.md`, connector
 `docs/superpowers/plans/2026-10-22-team-leave-overview-connector-2.65.0.md` (API contract).
-- `/login` + `/me` employee keys → `SessionService.attendanceTracked` / `overviewAccess` / `teamLeaveSource`
-  (prefs `attendance_tracked`, `overview_access`, `team_leave_source`; missing = false / none / off).
-  `homeView` (myDay | overview | dual) and `teamLeaveEnabled` are derived; both also need the SaaS features.
+- `/login` + `/me` employee keys → `SessionService.attendanceTracked` / `overviewAccess` / `teamLeaveSource` /
+  `teamScopeSig` (prefs `attendance_tracked`, `overview_access`, `team_leave_source`, `team_scope_sig`; missing =
+  false / none / off / ''). `homeView` (myDay | overview | dual) and `teamLeaveEnabled` are derived; both also
+  need the SaaS features. With an overview grant but both Attendance and Time Off off, Home stays My day (locked
+  attendance pane + For you), not "For you only" (plan A-L16).
 - LEAVE tab: `TeamLeaveTile` after the approvals row (one `leave/team_outlook` call, `summary`); screen
   `lib/screens/team/team_leave_screen.dart` (heat map `heat_map.dart`, text `team_format.dart`, colours
   `team_colors.dart` — the only hex values, dark mode goes there). Apply sheet: `AlsoOffLine` (informational,
@@ -16028,9 +16990,12 @@ Design: `session-assets/2026-10-22-team-leave-mgmt-day/proposal.md` (r3); plans:
   `refreshMe()`. A Who's out row opens the person sheet only with `names` and `WhoOutToday.tracked`.
 - Errors on these screens: `friendlyError(e, context: ErrorContext.team)` (own branch: `not_allowed` / `not_found`
   wording, usual transport words otherwise); `names_hidden` / `invalid_department` have words in every context.
-- Cache: `TeamCache` (`team_v1|<db>|<employee>|…`, signature = overview_access/team_leave_source), keys only via
-  `TeamCache.outlookKey` / `overviewKey` (the LEAVE row and the outlook share the 30-day entry); cleared on
-  sign-out, logout and any access-lost answer; writes are dropped while signed out; the person sheet is never cached.
+- Cache: `TeamCache` (`team_v1|<db>|<employee>|…`, signature = `team_scope_sig`, else
+  overview_access/team_leave_source/department/company), keys only via `TeamCache.outlookKey` / `overviewKey`
+  (the LEAVE row and the outlook share the 30-day entry); cleared on sign-out, logout and any access-lost answer.
+  A caller reads the key, `teamCacheSignature` and `TeamCache.generation` **before** its request and passes them
+  to `write`; a write is dropped on any mismatch (every clear bumps the generation), while signed out or during
+  a sign-out; writes and clears are serialised. The person sheet is never cached.
 - Tests: `test/screens/team/`, `test/screens/home/overview/`, `test/screens/home/home_root_test.dart`,
   `test/services/session_team_flags_test.dart`, `test/services/team_api_test.dart`, `test/services/team_cache_test.dart`,
   `test/models/team_*_test.dart`, `test/widgets/pill_segments_test.dart`.
@@ -16051,7 +17016,7 @@ cd "/Users/willytanuwiharja/Omnisoft HRMS/omnisoft-hrms-mobile/.claude/worktrees
 flutter analyze
 flutter test
 ```
-Expected: `flutter analyze` reports no issue that is not in T0's `evidence/app-baseline.txt`; `flutter test` ends
+Expected: `flutter analyze` reports no issue that is not in T0's `evidence/app-baseline.txt` (the compare command in Global Constraints → Commands prints nothing); `flutter test` ends
 with `All tests passed!` and the count = baseline + the new tests.
 
 - [ ] **Step 5: Evidence** — `evidence/app-release-gate.txt`: commit SHA, the analyze summary line, the test total.
