@@ -12,7 +12,7 @@ Old connectors and missing keys fall back to today's behaviour.
 **Architecture:**
 - **Session flags.** `SessionService` stores four new `/login` / `/me` employee keys (the three flags and `team_scope_sig`) and derives `homeView`, `teamLeaveEnabled` and `teamCacheSignature`.
 - **API layer.** `OmniMobileApi` gets five new calls, parsed into tolerant models in `lib/models/team_outlook.dart` and `lib/models/team_overview.dart`.
-- **Cache.** `TeamCache` (SharedPreferences, keyed per db + employee + scope + range, stamped with the scope signature) holds the last good answer for offline display. It is cleared on sign-out and on `not_allowed`; an answer is stored only under the signature and generation taken before its request (A-L15).
+- **Cache.** `TeamCache` (SharedPreferences, keyed per db + employee + scope + range, stamped with the scope signature) holds the last good answer for offline display. It is cleared on sign-out and on `not_allowed`. An answer is shown and stored only while the binding taken before its request (employee, signature, generation, `SessionService.requestEpoch`) is still current (A-L15, A-L21).
 - **Screens.**
   - `lib/screens/team/` holds the outlook (heat map) and its formatting helpers.
   - `lib/screens/home/overview/` holds the overview, the drill-down and the person sheet.
@@ -97,7 +97,7 @@ flutter analyze > /tmp/omni-analyze-now.log 2>&1; \
 - **A-L2 — Range memory.** The 30 / 60 / 90 choice is stored per employee in prefs (`team_leave_range|<db>|<employeeId>`); the default is 30. The overview's "See 30 / 60 / 90 days" opens the screen at the stored range with `context: 'overview'` and the overview's current `department_id`.
 - **A-L3 — Cache key and validity (TLMD-07).**
   - The key is `team_v1|<db>|<employeeId>|<kind>|<context>|<view>|<departmentId or ->|<days or day>`.
-  - The stored value is `{saved_at, signature, body}`. `signature` = `SessionService.teamCacheSignature` as taken before the request (A-L14, A-L15). A read whose signature differs from the current session's is discarded.
+  - The stored value is `{saved_at, signature, body}`. `signature` = `SessionService.teamCacheSignature` as taken before the request (A-L14, A-L15, part of the `TeamCacheBinding`, A-L21). A read whose signature differs from the current session's is discarded.
   - Cleared:
     - all `team_v1|` keys on `clearSession()` / `logout()`;
     - all of this employee's keys on any `not_allowed` / `names_hidden` / `feature_unavailable` answer from these routes;
@@ -135,13 +135,20 @@ flutter analyze > /tmp/omni-analyze-now.log 2>&1; \
 
 Added by review r1 (`session-assets/2026-10-22-team-leave-mgmt-day/reviews/tlmd-plan-r1-consolidated.md`):
 
-- **A-L14 — Cache signature = `team_scope_sig` (K1, A1).** `/login` and `/me` send `employee.team_scope_sig` (16 hex characters; the facts that decide what the viewer may see). `SessionService.teamScopeSig` stores it (prefs `team_scope_sig`; malformed or missing = `''`), and `teamCacheSignature` is that signature. Without it (an older connector) the fallback is `'$overviewAccess/$teamLeaveSource/$employeeDepartment/$employeeCompanyName'`. The contract's fallback names `$departmentId/$companyId`, but the `employee` block carries no ids (only `department_name` / `company_name`), so the app uses the names the session has (logged for the lead). A department transfer or an approver change through `/me` therefore drops the old cached answers. Known limit (K1): in the "same approver" leave view, colleagues whose approver changes elsewhere do not change the viewer's signature; the next online fetch corrects it.
-- **A-L15 — Cache binding and generation (A2).** Every caller (Tasks 5, 6, 8) reads the key, `session.teamCacheSignature` and `TeamCache.generation` together **before** its request and passes them to `TeamCache.write(s, key, body, signature:, generation:)`. `clearEmployee` / `clearAll` bump the generation at once. A write is dropped on any mismatch, checked at the call and again inside the queue, right before it stores. Writes and clears run one at a time on a private queue (the session `_persisting` pattern). So a success that lands after an access-lost clear, a sign-out, the same employee signing in again, or a narrowed grant never repopulates the cache.
+- **A-L14 — Cache signature = `team_scope_sig` (K1, A1).** `/login` and `/me` send `employee.team_scope_sig` (16 hex characters; the facts that decide what the viewer may see). `SessionService.teamScopeSig` stores it (prefs `team_scope_sig`; malformed or missing = `''`), and `teamCacheSignature` is that signature. Without it (an older connector) the fallback uses names, `'$overviewAccess/$teamLeaveSource/$departmentName/$companyName'`, as the contract does. The `employee` block carries `department_name` / `company_name` and no ids. In the session those names are `employeeDepartment` / `employeeCompanyName`, so the code reads `'$overviewAccess/$teamLeaveSource/$employeeDepartment/$employeeCompanyName'`. A department transfer or an approver change through `/me` therefore drops the old cached answers. Known limit (K1): in the "same approver" leave view, colleagues whose approver changes elsewhere do not change the viewer's signature; the next online fetch corrects it.
+- **A-L15 — Cache binding and generation (A2).** Every caller (Tasks 5, 6, 8) reads the key and the binding (`session.teamCacheSignature` and `TeamCache.generation`, since r2 one `TeamCacheBinding` that also holds the employee and `requestEpoch`, A-L21) together **before** its request and passes it to `TeamCache.write(s, key, body, binding:)`. `clearEmployee` / `clearAll` bump the generation at once. A write is dropped on any mismatch, checked at the call and again inside the queue, right before it stores. Writes and clears run one at a time on a private queue (the session `_persisting` pattern). So a success that lands after an access-lost clear, a sign-out, the same employee signing in again, or a narrowed grant never repopulates the cache.
 - **A-L16 — With neither feature, Home = My day (A11; deviation from the proposal, open question for Willy).** Proposal §2 says "with neither, Home shows For you only". Both plans keep My day instead: `homeView` needs `featureAttendance || featureTimeOff`, the connector answers `feature_unavailable` when both are off, and My day with Attendance off already shows `FeatureLockedPane` + the week strip + For you. Willy to confirm (consolidated review, open question 2).
 - **A-L17 — Bounded answers say so (K2, A9).** When the outlook answers `truncated: true` the screen shows one line under the heat map, "Some rows are not shown." (`teamRowsNotShown`, `team_format.dart`); Who's out shows the same line when `who_out.truncated` is true (`WhoOut.truncated`). The counts (`days[].off`, overlap `more`) are exact server counts and are shown as sent.
 - **A-L18 — `TeamOutlook.view` is `String?` (A8).** It is `null` in the overview context (the server sends `view: null` there); in the team context a missing value reads `'team'`.
 - **A-L19 — On-tile colours (A6).** Text, icons and lines on the overview tiles come from `TeamColors.onTile` / `onTileSoft` / `onTileFaint` / `tileLine` / `tileTrack` / `tileBadge`; the LEAVE tile's face initials use `TeamColors.onC3`. No new widget writes `Colors.white` (`Colors.transparent` stays: it is not a theme colour).
 - **A-L20 — Commit trailer (A14).** Every commit message ends with the `Co-Authored-By:` line that your harness's attribution reminder gives. The plan's `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` is the default when there is no such reminder.
+- **A-L21 — A stale answer is neither shown nor stored (review r2, TLP2-F02 / TLP2-F03).**
+  - **The binding.** Before a request, a caller takes `TeamCache.bind(session)`, a `TeamCacheBinding` of four values: `employeeId`, `teamCacheSignature`, `TeamCache.generation` and `SessionService.requestEpoch`.
+  - **Where it is checked.** Tasks 5 (`TeamLeaveScreen._load` / `_showCached`), 6 (the Team leave tile's `_refreshTeamLeave` and the apply sheet's `_fetchOverlap`) and 8 (`TeamOverviewScreen._load`) check `binding.isCurrent(session)` before **every** `setState` that an answer drives: success, every error branch and every cached read. `TeamCache.write` checks the same binding.
+  - **When it fails.** The answer is dropped and what the screen shows goes too, because it belongs to the old binding. The screen then asks the current choice again under the new binding: `_rebind` / `_rebindTeamLeave`, or the overlap loop. It asks nothing while signed out or while a sign-out runs. `isCurrent` is false during a sign-out.
+  - **`requestEpoch`** is a new request-validity counter on `SessionService` (Task 3). It is not `_authEpoch`, which keeps deciding the wipe. It advances synchronously when `clearSession()` / `signOut()` or `logout()` begins and on every new access token, whether or not the sign-out then wipes the fields. A sign-out whose wipe is skipped therefore still invalidates an older answer. The usual case is the same employee signing in again while the sign-out waits in its hook: nothing is cleared and the signature is the same. Tests: Task 3 `request epoch` group, Task 5 overlapping-hook test.
+  - **Reversed r1 tests.** The r1 tests said an answer that lands after a clear is "shown but not stored". Tasks 5 and 8 now expect it to be neither shown nor stored, with a reload. Task 6 adds the same test for the tile and the overlap line.
+  - **The server side** of authorization changes (`team_scope_sig` inputs, TLP2-F01) needs no app change: the app compares the signature and never parses it.
 
 ---
 ## API contract (verbatim copy from the connector plan; the connector plan wins on any difference)
@@ -166,6 +173,7 @@ All routes have the following properties:
 | 403 | `names_hidden` | list / person under *Counts only* (L2) |
 | 404 | `not_found` | person not in scope, archived or in another company (no oracle) |
 | 404 | `no_employee_linked` | existing `_get_employee` answer |
+| 500 | `database_error` | existing `_open_env` answer (the database cannot be opened). Also `home/overview` `day:'yesterday'` when the commit of the scored rows failed and the rollback or the stored-rows rebuild failed too (the connection is unusable, L22): no count is sent |
 
 ### `/login`, `/me` → `employee` gains (Task 9)
 
@@ -181,7 +189,8 @@ All routes have the following properties:
   - the viewer's effective leave approver and effective attendance approver (the `ROLE_FIELDS` effective ids);
   - `omni_team_leave_show_type`, `omni_team_leave_show_pending`, `omni_overview_names`, `omni_overview_show_source`, `omni_overview_show_location`;
   - the viewer's officer flags (leave officer, attendance officer);
-  - for access `approvees`, the sorted ids of the people the viewer approves (attendance role).
+  - the SaaS feature flags `attendance` and `time_off`, each on its own (toggling Attendance alone changes the value), and the session's `company_mismatch`;
+  - the sorted ids of the people the viewer approves for leave and for attendance (effective approvers), whatever the overview access: the leave approvees decide which pending requests and leave types the viewer sees (L1), so losing the last one changes the value.
 
   These ids are hash inputs only: the `employee` block gains no `department_id` / `company_id` keys (it keeps sending `department_name` / `company_name`). The app uses it as the cache signature of every team answer when present. Without it (old connector) the app falls back to `'$overviewAccess/$teamLeaveSource/$departmentName/$companyName'`. Known limit, documented: in the "same approver" leave view, colleagues whose approver changes elsewhere don't change the viewer's signature; the next online fetch corrects it. The value is opaque: the app compares it and never parses it.
 - Old apps ignore the keys. A new app treats a missing key as `false` / `none` / `off`, and a missing `team_scope_sig` as "use the fallback signature".
@@ -267,11 +276,11 @@ Body: `{"day": "today"|"yesterday", "department_id": int|null}`. Gates: grant �
 Field rules:
 - `counts` is `null` when `attendance` is off, and `who_out` is `null` when `time_off` is off.
 - `expected` = tracked − on_leave − off_today; `checked_in` = on_time + late.
-- `who_out.today[].part` is `morning` | `afternoon` | `hours` | `null`. `hours` only for a genuine "Specific hours" request; a whole-day or multi-day request on an hour-unit type is `null` (a full day), the same rule as the outlook `unit` (L24). The list row `leave.part` follows the same rule. `tracked` (`kiosk_enabled`) tells the app whether the row may open the person sheet (L2: only tracked people, only with `names`). `back_at` is the local `HH:MM` the person is due back today, or `null`.
+- `who_out.today[].part` is `morning` | `afternoon` | `hours` | `null`. `hours` only for a genuine "Specific hours" request; a whole-day or multi-day request on an hour-unit type is `null` (a full day), the same rule as the outlook `unit` (L24). The list row `leave.part` follows the same rule. `tracked` (`kiosk_enabled`) tells the app whether the row may open the person sheet (L2: only tracked people, only with `names`). `back_at` is the local `HH:MM` the person is due back today, or `null`; the server works it out from that person's shift blocks as of this request, never from cached facts, so a part-day leave approved a moment ago already moves it (L26).
 - `scope.empty_reason` is `null` | `no_department` | `no_people`.
 - `who_out.next_7` covers the 7 calendar days after today, rest days included (no workday filter): a day appears only when someone in scope has visible leave on it.
 - `who_out.truncated` is true when the visible leaves of [today, today + 7] passed the outlook row bound (3000, L19), so `today` and `next_7` may miss people. It is never dropped silently. The app shows one line, "Some rows are not shown.".
-- `for_you` reuses `hr.employee._omni_my_day_for_you(...)` (the same list and features as My day).
+- `for_you` reuses `hr.employee._omni_my_day_for_you(...)` (the same list and features as My day), except that it never contains `yesterday_incomplete`: that card scores the viewer's day, and the overview never scores through For you (L25).
 
 Yesterday (`day: "yesterday"`) replaces `counts` with:
 ```json
@@ -293,7 +302,7 @@ A row whose state is `dismissed` counts as `on_time`. "Work was due" uses the Da
 - `not_reviewed` when work was due (or they punched) but no row exists after scoring. The causes are a busy lock, the cap, an error, a concurrent nightly row, the engine declining the day, a night shift still on duty, or a failed commit (L22). Any `not_reviewed` also makes `provisional` true; such people are never `off`.
 - With nothing due and no punch: `off` on a rest day (no scheduled work at all) or a public holiday; else `on_leave` (time off removed the scheduled work).
 
-`not_reviewed` is part of `expected` (expected = tracked − on_leave − off). When the commit of the scored rows fails, the route answers from the stored rows only, with `provisional: true` (L22).
+`not_reviewed` is part of `expected` (expected = tracked − on_leave − off). When the commit of the scored rows fails, the route answers from the stored rows only, with `provisional: true` (L22). When that recovery fails too (the connection is unusable), the answer is 500 `database_error` with no counts.
 - `worked` = on_time + late + left_early.
 - `expected` = tracked − on_leave − off; `expected` = worked + absent + not_reviewed.
 
@@ -341,7 +350,7 @@ Field rules:
 - `shift` is `null` on a day with no blocks.
 - The person route needs `attendance` (feature_unavailable otherwise).
 
-Connector lead decisions the app depends on: L1 (who sees type/pending — server-side), L2 (counts only: list/person 403 `names_hidden`, Who's out names still sent but not tappable), L3 (`source` mobile|kiosk|other, `kiosk_name`, `location`), L4 (missing yesterday rows scored on the fly on the first request; `provisional` when some could not be), L8 (`summary` always present), L10 (`overview_access` is the effective value), L12 (yesterday rows are committed by the server), L13 (the overview follows shift blocks: a night worker's 22:00 block reads Not in yet / Later today, flexible schedules never No check-in), L14 (`back_at` is null after an afternoon leave). L18 (`team_scope_sig`: 16 lower-case hex, opaque; the app's cache signature), L19 (visibility filtered before any row bound; exact overlap `more`; `who_out.truncated`), L20 (`invalid_department` for any bad `department_id`), L21 (Yesterday uses the Daily Review's calendar day; due + no row = `not_reviewed`, never `off`), L22 (a failed commit answers from stored rows with `provisional: true`), L23 (heat-map dates follow each calendar's week type; holiday `everyone` per calendar), L24 (`part: hours` only for genuine Specific hours).
+Connector lead decisions the app depends on: L1 (who sees type/pending — server-side), L2 (counts only: list/person 403 `names_hidden`, Who's out names still sent but not tappable), L3 (`source` mobile|kiosk|other, `kiosk_name`, `location`), L4 (missing yesterday rows scored on the fly on the first request; `provisional` when some could not be), L8 (`summary` always present), L10 (`overview_access` is the effective value), L12 (yesterday rows are committed by the server), L13 (the overview follows shift blocks: a night worker's 22:00 block reads Not in yet / Later today, flexible schedules never No check-in), L14 (`back_at` is null after an afternoon leave). L18 (`team_scope_sig`: 16 lower-case hex, opaque; the app's cache signature; covers leave and attendance approvees, feature flags and `company_mismatch`), L19 (visibility filtered before any row bound; exact overlap `more`; `who_out.truncated`), L20 (`invalid_department` for any bad `department_id`), L21 (Yesterday uses the Daily Review's calendar day; due + no row = `not_reviewed`, never `off`), L22 (a failed commit answers from stored rows with `provisional: true`), L23 (heat-map dates follow each calendar's week type; holiday `everyone` per calendar), L24 (`part: hours` only for genuine Specific hours). L25 (the overview's For you never carries `yesterday_incomplete` and never scores). L26 (`back_at` comes from fresh shift blocks of the part-day people).
 
 ---
 
@@ -388,7 +397,9 @@ Connector lead decisions the app depends on: L1 (who sees type/pending — serve
 | `OmniMobileApi.fetchOverviewPerson(int employeeId)` | `Future<OverviewPerson>` | T2 |
 | `bool isMissingRoute(Object e)` | `lib/services/omni_mobile_api.dart` (top level) | T2 |
 | `bool isAccessLost(Object e)` (`not_allowed`, `names_hidden`, `feature_unavailable`) | same file | T2 |
-| `TeamCache`: `static String key({required SessionService session, required String kind, String context = '-', String view = '-', int? departmentId, required String span})`; `static String outlookKey(SessionService s, {required int days, String context = 'team', String view = 'team', int? departmentId})`; `static String overviewKey(SessionService s, {String day = 'today', int? departmentId})`; `static Future<(Map<String, dynamic> body, DateTime savedAt)?> read(SessionService s, String key)`; `static int get generation`; `static Future<void> write(SessionService s, String key, Map<String, dynamic> body, {required String signature, required int generation})` (A-L15); `clearEmployee(s)` / `clearAll()` (both bump `generation`) | `lib/services/team_cache.dart` | T3 |
+| `TeamCache`: `static String key({required SessionService session, required String kind, String context = '-', String view = '-', int? departmentId, required String span})`; `static String outlookKey(SessionService s, {required int days, String context = 'team', String view = 'team', int? departmentId})`; `static String overviewKey(SessionService s, {String day = 'today', int? departmentId})`; `static Future<(Map<String, dynamic> body, DateTime savedAt)?> read(SessionService s, String key)`; `static int get generation`; `static TeamCacheBinding bind(SessionService s)` (A-L21); `static Future<void> write(SessionService s, String key, Map<String, dynamic> body, {required TeamCacheBinding binding})` (A-L15, A-L21); `clearEmployee(s)` / `clearAll()` (both bump `generation`) | `lib/services/team_cache.dart` | T3 |
+| `TeamCacheBinding`: `const TeamCacheBinding({required int employeeId, required String signature, required int generation, required int requestEpoch})`; `bool isCurrent(SessionService s)` (same employee, signature, `TeamCache.generation`, `requestEpoch`, and `!s.isClearing`). Tasks 5, 6, 8 check it before every response-driven `setState` (A-L21) | `lib/services/team_cache.dart` | T3 |
+| `SessionService.requestEpoch`: `int` getter; advances synchronously when `clearSession()` / `signOut()` / `logout()` begins and on every new access token (`_saveAccessToken`), whether or not the sign-out wipes (A-L21) | `lib/services/session_service.dart` | T3 |
 | `PillSegments({required List<String> labels, required int value, required ValueChanged<int> onChanged, String? semanticsLabel})` | `lib/widgets/pill_segments.dart` | T4 |
 | `TeamColors` (`cell0`, `cellOff`, `c1`, `c2`, `c3`, `onC3`, `hol`, `holCell`, `holDot`, `leave`, `leaveTint`, `leaveOn`, `accent`, `accentTint`, `onAccentTint`, `muted`, `skeleton`, `chipBorder`, `static Color shade(int off)`, `static Color avatar(int id)`, bucket tones `onTime`, `late`, `notInYet`, `noCheckIn`, `onLeave`, `offToday` (`MyDayTone`), `overviewTile`, `overviewTileYesterday`, the on-tile tokens `onTile`, `onTileSoft`, `onTileFaint`, `tileLine`, `tileTrack`, `tileBadge` (A-L19), `static MyDayTone bucket(String key)`) | `lib/screens/team/team_colors.dart` | T5 |
 | `leaveWhenLabel(TeamLeaveRow r)`, `monthLabel(DateTime m)`, `dayTitle(DateTime d)`, `Color initialsHue(int id)`, `List<TeamLeaveRow> leavesOnByName(TeamOutlook o, DateTime day)`, `DateTime outlookToday(TeamOutlook o)`, `const teamRowsNotShown` ("Some rows are not shown.", A-L17) | `lib/screens/team/team_format.dart` | T5 |
@@ -4212,11 +4223,16 @@ EOF
 > - `read` is async and returns `(Map<String, dynamic> body, DateTime savedAt)?`; `write` is dropped while signed out, while a sign-out runs, or for another employee's key. Tests that cache therefore need `employeeId > 0`.
 > - `logout()` needs no own edit: `_logout()` reaches `_clearSessionFields`, which calls `TeamCache.clearAll()`.
 > - Review r1 (A2): `write` takes the `signature` and `generation` the caller read with the key before its request (A-L15); every clear bumps `TeamCache.generation`; writes and clears are serialised. Tasks 5, 6 and 8 take the snapshot before their fetch. The A1 tests (department transfer, approver change through `/me`) live here too.
+> - Review r2 (TLP2-F03, A-L21): the snapshot is one value, `TeamCacheBinding` (`employeeId`, `signature`, `generation`, `requestEpoch`), taken with `TeamCache.bind(s)` and checked with `binding.isCurrent(s)`; `write` takes `binding:` in place of `signature:` / `generation:`. `SessionService.requestEpoch` is a new request-validity counter. It advances synchronously when a sign-out (`clearSession` / `signOut`) or `logout()` begins and when a new access token is saved (a sign-in). It advances whether or not the sign-out then wipes the fields. So an answer that was on the wire across a sign-out whose wipe was skipped (the same employee signed in again during the hook) is still stale. Tasks 5, 6 and 8 check the same binding before every response-driven `setState` (TLP2-F02).
 
 **Files:**
 - Create: `lib/services/team_cache.dart`
 - Modify: `lib/services/session_service.dart`. The edits sit near these anchors:
   - `import 'saas_service.dart';`
+  - `  int _signOutsStarted = 0;` (the new `_requestEpoch` field and its getter go right after it)
+  - `_saveAccessToken`: `  Future<void> _saveAccessToken(String accessToken, DateTime? expiresAt) async {` followed by `    _authEpoch++;`
+  - `_clear`: `  Future<void> _clear() async {` followed by `    _clearings++;`
+  - `logout`: `  Future<void> logout() async {` followed by `    if (!_inOwnClearingHook) {`
   - in `_clearSessionFields`: `    await prefs.remove(_keyEmployeeExpenseApprover);` followed by `    if (notify) notifyListeners();`
 - Test (create): `test/services/team_cache_test.dart`
 
@@ -4224,6 +4240,10 @@ EOF
 - Consumes (Task 1):
   - `SessionService.teamCacheSignature` (`teamScopeSig`, else `'$overviewAccess/$teamLeaveSource/$employeeDepartment/$employeeCompanyName'`, A-L14);
   - `SessionService.employeeId`, `clientDb` and `isClearing` (existing).
+- Produces (`lib/services/session_service.dart`): `int get requestEpoch` (A-L21). It advances synchronously when `clearSession()` (so `signOut()` too) or `logout()` begins, and in `_saveAccessToken` (every new access token: `saveSession` / `saveLoginResponse`, the Face ID `refreshAccessToken`). It is independent of `_authEpoch`, which keeps deciding whether a sign-out wipes.
+- Produces (`lib/services/team_cache.dart`), `class TeamCacheBinding` (A-L21):
+  - `const TeamCacheBinding({required int employeeId, required String signature, required int generation, required int requestEpoch})`, all four as final fields;
+  - `bool isCurrent(SessionService s)`: the same `employeeId`, `teamCacheSignature`, `TeamCache.generation` and `requestEpoch`, and no sign-out running (`!s.isClearing`).
 - Produces (`lib/services/team_cache.dart`), as `class TeamCache` with static members only:
   - `static const prefix = 'team_v1|'`;
   - `static const maxPerEmployee = 24`;
@@ -4237,7 +4257,8 @@ EOF
   - Reads and writes:
     - `static Future<(Map<String, dynamic> body, DateTime savedAt)?> read(SessionService s, String key)`. It returns null when the key is absent, the JSON is corrupt, the signature differs from `s.teamCacheSignature`, or the key is not this employee's.
     - `static int get generation`: bumped by every `clearEmployee` / `clearAll` (A-L15).
-    - `static Future<void> write(SessionService s, String key, Map<String, dynamic> body, {required String signature, required int generation})`. The caller reads `signature` (= `s.teamCacheSignature`) and `generation` (= `TeamCache.generation`) together with the key, **before** its request. The write is dropped on any mismatch with the session's signature or the current generation, checked at the call and again inside the queue right before storing. It stores `{"saved_at": <UTC ISO-8601>, "signature": …, "body": …}`, then trims to the 24 newest for this employee.
+    - `static TeamCacheBinding bind(SessionService s)`: the session's employee, `teamCacheSignature`, `requestEpoch` and the current `generation` (A-L21).
+    - `static Future<void> write(SessionService s, String key, Map<String, dynamic> body, {required TeamCacheBinding binding})`. The caller takes `binding` (= `TeamCache.bind(s)`) together with the key, **before** its request. The write is dropped unless `binding.isCurrent(s)`, checked at the call and again inside the queue right before storing. It stores `{"saved_at": <UTC ISO-8601>, "signature": binding.signature, "body": …}`, then trims to the 24 newest for this employee.
   - Clearing:
     - `static Future<void> clearEmployee(SessionService s)` bumps the generation at once, then removes every key under `employeePrefix(s)`.
     - `static Future<void> clearAll()` bumps the generation at once, then removes every `team_v1|` key.
@@ -4251,6 +4272,8 @@ EOF
   - Never make a `TeamCache` method call a `SessionService` method that goes through `_persisting`. That would deadlock the sign-out.
 - `team_cache.dart` imports `session_service.dart`, and `session_service.dart` imports `team_cache.dart`. Dart allows this import cycle. Do not move `TeamCache` into `session_service.dart` to avoid it.
 - `clearSession()` wipes only when no new access token arrived while its hook ran (`if (_authEpoch == epoch) await _clearSessionFields(...)`). A sign-in that completed meanwhile keeps its cache. This is intended; don't "fix" it.
+  - That skipped wipe is why `requestEpoch` exists (A-L21): it advances when the sign-out *begins*, not in the wipe, so every binding taken before the sign-out is stale even when no clear ran.
+  - Do not bump `_authEpoch` for this. `_authEpoch` decides whether a sign-out wipes and whether a sign-in's second body stores; moving it at sign-out start would change both.
 - The person sheet is never cached (A-L3). Nothing in this task writes it.
 - SharedPreferences `getKeys()` returns the keys without the platform prefix. The mock (`SharedPreferences.setMockInitialValues`) behaves the same.
 - Use a fixed `TeamCache.clock` in tests and reset it in `tearDown`. The cap test advances the clock per write, so "oldest" is unambiguous: `List.sort` is not stable.
@@ -4338,8 +4361,7 @@ Map<String, dynamic> _me({
 
 /// A write whose binding is taken right now (no fetch in between).
 Future<void> _write(SessionService s, String key, Map<String, dynamic> body) =>
-    TeamCache.write(s, key, body,
-        signature: s.teamCacheSignature, generation: TeamCache.generation);
+    TeamCache.write(s, key, body, binding: TeamCache.bind(s));
 
 Map<String, dynamic> _body(int n) => {
       'success': true,
@@ -4552,15 +4574,14 @@ void main() {
       final s = await _session();
       final key = TeamCache.overviewKey(s);
       // The request starts under company access…
-      final signature = s.teamCacheSignature;
-      final generation = TeamCache.generation;
+      final binding = TeamCache.bind(s);
       // …another screen gets not_allowed: clear + /me (department now).
       await TeamCache.clearEmployee(s);
       await s.refreshMeWith(
           _FakeApi(() async => _me(access: 'department', source: 'department')));
       // The old company-wide answer lands last.
-      await TeamCache.write(s, key, _body(9),
-          signature: signature, generation: generation);
+      expect(binding.isCurrent(s), isFalse);
+      await TeamCache.write(s, key, _body(9), binding: binding);
       expect(await _teamKeys(), isEmpty);
       expect(await TeamCache.read(s, key), isNull);
     });
@@ -4569,12 +4590,11 @@ void main() {
         'did not change', () async {
       final s = await _session();
       final key = TeamCache.outlookKey(s, days: 30);
-      final signature = s.teamCacheSignature;
-      final generation = TeamCache.generation;
+      final binding = TeamCache.bind(s);
       await TeamCache.clearEmployee(s); // feature_unavailable, say
-      expect(s.teamCacheSignature, signature);
-      await TeamCache.write(s, key, _body(9),
-          signature: signature, generation: generation);
+      expect(s.teamCacheSignature, binding.signature);
+      expect(binding.isCurrent(s), isFalse);
+      await TeamCache.write(s, key, _body(9), binding: binding);
       expect(await _teamKeys(), isEmpty);
     });
 
@@ -4582,12 +4602,11 @@ void main() {
         'narrowed the grant (no clear in between)', () async {
       final s = await _session(access: 'company');
       final key = TeamCache.overviewKey(s);
-      final signature = s.teamCacheSignature;
-      final generation = TeamCache.generation;
+      final binding = TeamCache.bind(s);
       await s.refreshMeWith(
           _FakeApi(() async => _me(access: 'department', source: 'department')));
-      await TeamCache.write(s, key, _body(9),
-          signature: signature, generation: generation);
+      expect(binding.isCurrent(s), isFalse);
+      await TeamCache.write(s, key, _body(9), binding: binding);
       expect(await _teamKeys(), isEmpty);
     });
 
@@ -4595,17 +4614,16 @@ void main() {
         'dropped', () async {
       final s = await _session(employeeId: 6);
       final key = TeamCache.overviewKey(s);
-      final signature = s.teamCacheSignature;
-      final generation = TeamCache.generation;
+      final binding = TeamCache.bind(s);
       await s.clearSession();
       await s.saveLoginResponse(
           _loginBody(6, 'company', 'department', null));
-      // Same employee, same key, same signature: only the generation tells
-      // the old request apart.
+      // Same employee, same key, same signature: the generation (the wipe
+      // cleared the cache) and the request epoch tell the old request apart.
       expect(TeamCache.overviewKey(s), key);
-      expect(s.teamCacheSignature, signature);
-      await TeamCache.write(s, key, _body(9),
-          signature: signature, generation: generation);
+      expect(s.teamCacheSignature, binding.signature);
+      expect(binding.isCurrent(s), isFalse);
+      await TeamCache.write(s, key, _body(9), binding: binding);
       expect(await _teamKeys(), isEmpty);
 
       // A request started in the new sign-in is stored.
@@ -4626,6 +4644,75 @@ void main() {
       await TeamCache.clearEmployee(s);
       await _write(s, key, _body(2));
       expect(await _teamKeys(), [key]);
+    });
+  });
+
+  group('request epoch: the session lifecycle (A-L21)', () {
+    test('advances at once when a sign-out or a logout begins, and when a '
+        'new sign-in is saved', () async {
+      final s = await _session();
+      final e0 = s.requestEpoch;
+      final hook = Completer<void>();
+      s.onSessionClearing = () => hook.future;
+      final out = s.clearSession(); // waits in its hook
+      expect(s.requestEpoch, e0 + 1); // before the hook ends, before any wipe
+      hook.complete();
+      await out;
+      expect(s.requestEpoch, e0 + 1);
+
+      await s.saveLoginResponse(_loginBody(6, 'company', 'department', null));
+      expect(s.requestEpoch, e0 + 2);
+
+      s.onSessionClearing = null;
+      final gone = s.logout();
+      expect(s.requestEpoch, e0 + 3);
+      await gone;
+    });
+
+    test('a binding taken before a sign-out is stale at once', () async {
+      final s = await _session();
+      final binding = TeamCache.bind(s);
+      expect(binding.isCurrent(s), isTrue);
+      final hook = Completer<void>();
+      s.onSessionClearing = () => hook.future;
+      final out = s.clearSession();
+      expect(binding.isCurrent(s), isFalse);
+      hook.complete();
+      await out;
+      expect(binding.isCurrent(s), isFalse);
+    });
+
+    test('overlapping hook, the same employee signs in again: the old answer, '
+        'released after the clearing finished, is neither current nor '
+        'stored', () async {
+      const sig = 'a1b2c3d4e5f60718';
+      final s = await _session(employeeId: 6, sig: sig);
+      final key = TeamCache.overviewKey(s);
+      // 1. A request starts: employee 6, signature S, generation G.
+      final before = TeamCache.bind(s);
+      // 2. A sign-out starts and waits in its hook.
+      final hook = Completer<void>();
+      s.onSessionClearing = () => hook.future;
+      final out = s.clearSession();
+      // 3. Employee 6 signs in again, with the same signature.
+      await s.saveLoginResponse(_loginBody(6, 'company', 'department', sig));
+      // 4. The sign-out skips its wipe (the sign-in is newer) and finishes.
+      hook.complete();
+      await out;
+      expect(s.isLoggedIn, isTrue);
+      expect(s.employeeId, 6);
+      expect(TeamCache.overviewKey(s), key);
+      expect(s.teamCacheSignature, before.signature);
+      expect(TeamCache.generation, before.generation); // no clear ran
+      // 5. The old answer arrives now.
+      expect(before.isCurrent(s), isFalse);
+      await TeamCache.write(s, key, _body(9), binding: before);
+      expect(await _teamKeys(), isEmpty);
+      expect(await TeamCache.read(s, key), isNull);
+
+      // A request started in the new sign-in is stored.
+      await _write(s, key, _body(1));
+      expect((await TeamCache.read(s, key))!.$1, _body(1));
     });
   });
 
@@ -4794,13 +4881,15 @@ import 'session_service.dart';
 ///   [clearAll] from its session wipe);
 /// - this employee's keys on an access-lost answer ([clearEmployee]).
 ///
-/// Binding (A-L15): a caller takes the key, [SessionService.teamCacheSignature]
-/// and [generation] **before** it sends the request and passes them to
-/// [write]. Every clear bumps [generation], so an answer that was on the
-/// wire across a clear (an access-lost answer elsewhere, a sign-out, the
-/// same employee signing in again) or across a signature change is
-/// dropped. Writes and clears run one at a time on their own queue (the
-/// SessionService `_persisting` pattern).
+/// Binding (A-L15, A-L21): a caller takes the key and a [TeamCacheBinding]
+/// ([bind]) **before** it sends the request, checks it before the answer
+/// is shown, and passes it to [write]. Every clear bumps [generation] and
+/// every sign-out / sign-in moves [SessionService.requestEpoch], so an
+/// answer that was on the wire across a clear (an access-lost answer
+/// elsewhere), a sign-out (even one whose wipe was skipped), a new sign-in
+/// or a signature change is neither shown nor stored. Writes and clears
+/// run one at a time on their own queue (the SessionService `_persisting`
+/// pattern).
 ///
 /// At most [maxPerEmployee] entries per employee; the oldest go first.
 /// The person sheet is never cached.
@@ -4821,9 +4910,19 @@ class TeamCache {
 
   static int _generation = 0;
 
-  /// Bumped by [clearEmployee] and [clearAll]. Read it with the key, before
-  /// the request, and hand it to [write].
+  /// Bumped by [clearEmployee] and [clearAll]. Part of every
+  /// [TeamCacheBinding].
   static int get generation => _generation;
+
+  /// What a team request is asked under (A-L21): take it with the key,
+  /// before the request; check it before showing the answer
+  /// ([TeamCacheBinding.isCurrent]) and hand it to [write].
+  static TeamCacheBinding bind(SessionService s) => TeamCacheBinding(
+    employeeId: s.employeeId,
+    signature: s.teamCacheSignature,
+    generation: _generation,
+    requestEpoch: s.requestEpoch,
+  );
 
   /// `team_v1|<db>|<employeeId>|`.
   static String employeePrefix(SessionService s) =>
@@ -4900,30 +4999,26 @@ class TeamCache {
   }
 
   /// Stores [body] under [key] for the signed-in employee, then keeps the
-  /// [maxPerEmployee] newest entries. [signature] and [generation] are the
-  /// values the caller took before its request (A-L15). Dropped when no
-  /// employee is signed in, a sign-out is running, [key] is not this
-  /// employee's, the session's signature is no longer [signature], or a
-  /// clear ran since [generation] was read: a fetch that lands after a
+  /// [maxPerEmployee] newest entries. [binding] is what the caller took
+  /// before its request (A-L15, A-L21). Dropped when no employee is signed
+  /// in, a sign-out is running, [key] is not this employee's, or [binding]
+  /// is no longer current (another employee, another signature, a clear
+  /// since, a sign-out or a new sign-in since): a fetch that lands after a
   /// sign-out, an access-lost clear or a narrowed grant never writes the
   /// old team back. Checked again inside the queue, right before storing.
   static Future<void> write(
     SessionService s,
     String key,
     Map<String, dynamic> body, {
-    required String signature,
-    required int generation,
+    required TeamCacheBinding binding,
   }) {
-    bool current() =>
-        _mayStore(s, key) &&
-        s.teamCacheSignature == signature &&
-        _generation == generation;
+    bool current() => _mayStore(s, key) && binding.isCurrent(s);
     if (!current()) return Future<void>.value();
     final String value;
     try {
       value = jsonEncode({
         'saved_at': clock().toUtc().toIso8601String(),
-        'signature': signature,
+        'signature': binding.signature,
         'body': body,
       });
     } on JsonUnsupportedObjectError {
@@ -5011,9 +5106,46 @@ class TeamCache {
     }
   }
 }
+
+/// What a team answer was asked under (A-L15, A-L21), taken with
+/// [TeamCache.bind] before the request. The screens of Tasks 5, 6 and 8
+/// check [isCurrent] before every `setState` an answer (or a cached read)
+/// drives, and [TeamCache.write] checks it before storing.
+@immutable
+class TeamCacheBinding {
+  const TeamCacheBinding({
+    required this.employeeId,
+    required this.signature,
+    required this.generation,
+    required this.requestEpoch,
+  });
+
+  /// [SessionService.employeeId] at the time.
+  final int employeeId;
+
+  /// [SessionService.teamCacheSignature] at the time.
+  final String signature;
+
+  /// [TeamCache.generation] at the time.
+  final int generation;
+
+  /// [SessionService.requestEpoch] at the time.
+  final int requestEpoch;
+
+  /// True while nothing that decides what the viewer may see has moved:
+  /// the same employee and scope signature, no cache clear, no sign-out
+  /// or new sign-in since (even one whose wipe was skipped), and no
+  /// sign-out running now.
+  bool isCurrent(SessionService s) =>
+      s.employeeId == employeeId &&
+      s.teamCacheSignature == signature &&
+      TeamCache.generation == generation &&
+      s.requestEpoch == requestEpoch &&
+      !s.isClearing;
+}
 ```
 
-- [ ] **Step 4: Hook `clearAll()` into the session wipe**
+- [ ] **Step 4: Add `requestEpoch` and hook `clearAll()` into the session wipe**
 
 In `lib/services/session_service.dart`:
 
@@ -5025,6 +5157,62 @@ Replace with:
 ```dart
 import 'saas_service.dart';
 import 'team_cache.dart';
+```
+
+**4a-2.** The request-validity counter (A-L21). Find:
+```dart
+  int _signOutsStarted = 0;
+```
+Replace with:
+```dart
+  int _signOutsStarted = 0;
+
+  /// Request validity (A-L21): advances synchronously when a sign-out
+  /// ([clearSession], [signOut]) or [logout] begins and whenever a new
+  /// access token is saved, whether or not the sign-out then wipes the
+  /// fields. A team answer asked before it moved is neither shown nor
+  /// cached ([TeamCacheBinding]). Unlike [_authEpoch] it decides nothing
+  /// about the wipe.
+  int _requestEpoch = 0;
+  int get requestEpoch => _requestEpoch;
+```
+
+**4a-3.** A new access token (every sign-in, the Face ID refresh). Find:
+```dart
+  Future<void> _saveAccessToken(String accessToken, DateTime? expiresAt) async {
+    _authEpoch++;
+```
+Replace with:
+```dart
+  Future<void> _saveAccessToken(String accessToken, DateTime? expiresAt) async {
+    _authEpoch++;
+    _requestEpoch++;
+```
+
+**4a-4.** A sign-out begins. Find:
+```dart
+  Future<void> _clear() async {
+    _clearings++;
+```
+Replace with:
+```dart
+  Future<void> _clear() async {
+    // Before the hook and before the wipe check: a sign-in during the hook
+    // keeps the fields, but nothing asked before this sign-out is current.
+    _requestEpoch++;
+    _clearings++;
+```
+
+**4a-5.** A logout begins (before it waits for a running sign-out). Find:
+```dart
+  Future<void> logout() async {
+    if (!_inOwnClearingHook) {
+```
+Replace with:
+```dart
+  Future<void> logout() async {
+    _requestEpoch++;
+    if (!_inOwnClearingHook) {
 ```
 
 **4b.** In `_clearSessionFields`, find:
@@ -5041,7 +5229,7 @@ Replace with:
     if (notify) notifyListeners();
 ```
 
-`logout()` needs no edit: `_logout()` reaches the same line through `_clearSessionFields(notify: false)` inside its own `_persisting` body.
+`logout()` needs no other edit: `_logout()` reaches the same line through `_clearSessionFields(notify: false)` inside its own `_persisting` body.
 
 - [ ] **Step 5: Run the tests to see them pass**
 
@@ -5074,12 +5262,15 @@ SharedPreferences entries team_v1|<db>|<employee>|<kind>|<context>|
 <view>|<department>|<span> holding {saved_at, signature, body}. A read
 under another scope signature (team_scope_sig, else grant / setting /
 department / company), a corrupt entry or another employee's key is
-ignored. A write carries the signature and generation taken before its
-request and is dropped on any mismatch (a clear, a sign-out, the same
-employee signing in again, a narrowed grant), or during a sign-out;
-writes and clears are serialised; at most 24 entries per employee
-(oldest out). clearEmployee for access-lost answers; clearAll runs from
-the session wipe, so clearSession / signOut / logout all clear it.
+ignored. A write carries the TeamCacheBinding taken before its request
+(employee, signature, generation, SessionService.requestEpoch) and is
+dropped once it is stale (a clear, a sign-out, the same employee signing
+in again even while a sign-out's wipe is skipped, a narrowed grant), or
+during a sign-out; requestEpoch advances when a sign-out or logout
+begins and on every new access token; writes and clears are serialised;
+at most 24 entries per employee (oldest out). clearEmployee for
+access-lost answers; clearAll runs from the session wipe, so
+clearSession / signOut / logout all clear it.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 EOF
@@ -5413,6 +5604,7 @@ EOF
 > - Copy invented here (approver / approvees sub-labels, "1 person", one "No team to show yet" title) stays unless Willy changes it.
 > - Review r1:
 >   - A2: `_load` takes the cache binding (`teamCacheSignature`, `TeamCache.generation`) with the key before the fetch and passes it to `write` (A-L15).
+>   - Review r2 (TLP2-F02, A-L21): the binding is one `TeamCacheBinding` (`TeamCache.bind`). `_load` checks `binding.isCurrent(session)` before every `setState` its answer drives: success, error and access-lost alike. `_showCached` checks it too, before showing a cached read. A stale answer is neither shown nor stored: `_rebind` clears what is on screen and asks the current choice again. It asks nothing while signed out or while a sign-out runs.
 >   - A6: `TeamColors` gains the on-tile tokens Task 8's tiles use (A-L19).
 >   - A7: mockup strings win — the day-card title is "Mon 9 Nov · Deepavali (observed) · 0 off"; a department chip's sub-label is that department's name and size ("Fabric · 15 people"); the view chip is "People you approve"; the overview context's empty body has no "on your team".
 >   - A9: one line "Some rows are not shown." under the heat map when `truncated` (A-L17).
@@ -5427,7 +5619,7 @@ EOF
 - Consumes:
   - T1: `SessionService.overviewAccess` (`String`), `SessionService.teamLeaveSource` (`String`), `SessionService.teamCacheSignature` (`String`: `teamScopeSig`, else the A-L14 fallback); existing `clientDb`, `employeeId`, `clientUrl`, `token`, `refreshMe()`.
   - T2: `TeamOutlook.fromJson` (fields `raw`, `context`, `view`, `views`, `today` (`DateTime?`), `team` (`TeamScope?`: `kind`, `label`, `size`), `emptyReason`, `disclosure`, `departments`, `people`, `leaves`, `days`, `isEmpty`) and its helpers `leavesOn(day)` / `person(id)`; `TeamLeaveRow`, `TeamDay`, `TeamHoliday`, `TeamPerson`; `OmniMobileApi.fetchTeamOutlook({int days = 30, String context = 'team', String view = 'team', int? departmentId})` → `Future<TeamOutlook>`; `bool isAccessLost(Object e)` (top level in `omni_mobile_api.dart`); `ErrorContext.team` (in `error_messages.dart`).
-  - T3: `TeamCache.outlookKey(s, {required int days, String context = 'team', String view = 'team', int? departmentId})`, `TeamCache.read(s, key)` → `Future<(Map<String, dynamic>, DateTime)?>`, `TeamCache.generation`, `TeamCache.write(s, key, body, {required String signature, required int generation})` (A-L15), `TeamCache.clearEmployee(s)`.
+  - T3: `TeamCache.outlookKey(s, {required int days, String context = 'team', String view = 'team', int? departmentId})`, `TeamCache.read(s, key)` → `Future<(Map<String, dynamic>, DateTime)?>`, `TeamCache.bind(s)` → `TeamCacheBinding` (`isCurrent(s)`), `TeamCache.write(s, key, body, {required TeamCacheBinding binding})` (A-L15, A-L21), `TeamCache.clearEmployee(s)`; `SessionService.requestEpoch`, `isClearing`, `clearSession()`, `saveSession(...)`, `onSessionClearing` (the overlapping-hook test).
   - T4: `PillSegments({required List<String> labels, required int value, required ValueChanged<int> onChanged, String? semanticsLabel})`.
 - Produces:
   - `lib/screens/team/team_colors.dart`: `class TeamColors` with `cell0`, `cellOff`, `c1`, `c2`, `c3`, `onC3`, `hol`, `holCell`, `holDot`, `leave`, `leaveTint`, `leaveOn`, `accent`, `accentTint`, `onAccentTint`, `muted`, `skeleton`, `chipBorder`, `static Color shade(int off)`, `static Color avatar(int id)` (= `initialsHue(id)`), bucket tones `onTime`, `late`, `notInYet`, `noCheckIn`, `onLeave`, `offToday` (`MyDayTone`), `overviewTile`, `overviewTileYesterday`, the on-tile tokens `onTile` (white), `onTileSoft` (white 0.9), `onTileFaint` (white 0.85), `tileLine` (white 0.22), `tileTrack` (white 0.14), `tileBadge` (white 0.18) used by Task 8's tiles (A-L19), `static MyDayTone bucket(String key)`.
@@ -6945,6 +7137,7 @@ Create `test/screens/team/team_leave_screen_test.dart`:
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -7343,8 +7536,7 @@ void main() {
       session,
       _key(session),
       outlookJson(),
-      signature: session.teamCacheSignature,
-      generation: TeamCache.generation,
+      binding: TeamCache.bind(session),
     );
     final api = _FakeApi([ApiException('network_error')]);
     await tester.pumpWidget(_host(api, session: session));
@@ -7366,8 +7558,7 @@ void main() {
       other,
       _key(session),
       outlookJson(),
-      signature: other.teamCacheSignature,
-      generation: TeamCache.generation,
+      binding: TeamCache.bind(other),
     );
     await tester.pumpWidget(
       _host(_FakeApi([ApiException('network_error')]), session: session),
@@ -7415,8 +7606,7 @@ void main() {
       session,
       key,
       outlookJson(),
-      signature: session.teamCacheSignature,
-      generation: TeamCache.generation,
+      binding: TeamCache.bind(session),
     );
     await tester.pumpWidget(
       _host(_FakeApi([ApiException('not_allowed')]), session: session),
@@ -7437,10 +7627,14 @@ void main() {
     expect(await TeamCache.read(session, _key(session)), isNotNull);
   });
 
-  testWidgets('an answer that lands after a cache clear is shown but not '
-      'stored (A-L15)', (tester) async {
+  testWidgets('an answer that lands after a cache clear is neither shown nor '
+      'stored; the outlook asks again (A-L21)', (tester) async {
+    _tall(tester);
     final session = _Session();
-    final api = _FakeApi([outlook()])..gate = Completer<void>();
+    final api = _FakeApi([
+      outlook(team: const {'kind': 'department', 'label': 'Old', 'size': 1}),
+      outlook(team: const {'kind': 'department', 'label': 'New', 'size': 1}),
+    ])..gate = Completer<void>();
     await tester.pumpWidget(_host(api, session: session));
     await tester.pump();
     await tester.pump();
@@ -7449,7 +7643,55 @@ void main() {
     await tester.runAsync(() => TeamCache.clearEmployee(session));
     api.gate!.complete();
     await tester.pumpAndSettle();
-    expect(find.text('Marketing'), findsOneWidget);
+    expect(api.calls.length, 2);
+    expect(find.text('Old'), findsNothing);
+    expect(find.text('New'), findsOneWidget);
+    final cached = await tester.runAsync(
+      () => TeamCache.read(session, _key(session)),
+    );
+    expect(TeamOutlook.fromJson(cached!.$1).team?.label, 'New');
+  });
+
+  testWidgets('the same employee signs in again while a sign-out waits in '
+      'its hook: the old answer, released after the clearing finished, is '
+      'neither shown nor stored (A-L21)', (tester) async {
+    FlutterSecureStorage.setMockInitialValues({});
+    final session = _Session();
+    final api = _FakeApi([
+      outlook(team: const {'kind': 'department', 'label': 'Old', 'size': 1}),
+      ApiException('network_error'),
+    ])..gate = Completer<void>();
+    await tester.pumpWidget(_host(api, session: session));
+    await tester.pump();
+    await tester.pump();
+    expect(api.calls.length, 1);
+    final signature = session.teamCacheSignature;
+    final generation = TeamCache.generation;
+    // The hook's completer is made inside runAsync: a future of the
+    // fake-async zone never completes in the real one.
+    await tester.runAsync(() async {
+      final hook = Completer<void>();
+      session.onSessionClearing = () => hook.future;
+      final out = session.clearSession(); // waits in its hook
+      await session.saveSession(
+        accessToken: 'tok-7-again',
+        userId: 107,
+        userLogin: 'u7',
+        userName: 'U',
+        employeeId: 7,
+        employeeName: 'Employee 7',
+      );
+      hook.complete();
+      await out; // the wipe is skipped: the sign-in is newer
+    });
+    // Same employee, same signature, no clear: only the request epoch moved.
+    expect(session.teamCacheSignature, signature);
+    expect(TeamCache.generation, generation);
+    api.gate!.complete(); // the old answer lands now
+    await tester.pumpAndSettle();
+    expect(api.calls.length, 2); // asked again under the new sign-in
+    expect(find.text('Old'), findsNothing);
+    expect(find.byType(ErrorStateView), findsOneWidget);
     expect(
       await tester.runAsync(() => TeamCache.read(session, _key(session))),
       isNull,
@@ -7711,8 +7953,12 @@ class TeamLeaveScreenState extends State<TeamLeaveScreen> {
   /// fetch answers (A-L1).
   Future<void> _showCached(int seq) async {
     final session = context.read<SessionService>();
+    final binding = TeamCache.bind(session);
     final hit = await TeamCache.read(session, _cacheKey(session));
     if (!mounted || seq != _seq || hit == null || _outlook != null) return;
+    // A clear, a sign-out or a new sign-in while the read ran (A-L21): not
+    // shown. The fetch that follows asks under the new binding.
+    if (!binding.isCurrent(session)) return;
     final (body, savedAt) = hit;
     final outlook = TeamOutlook.fromJson(body);
     setState(() {
@@ -7738,11 +7984,12 @@ class TeamLeaveScreenState extends State<TeamLeaveScreen> {
 
   Future<void> _load(int seq) async {
     final session = context.read<SessionService>();
-    // The cache binding is taken with the key, before the request (A-L15):
-    // an answer that lands after a clear or a scope change is not stored.
+    // The cache binding is taken with the key, before the request (A-L15),
+    // and checked before anything the answer drives (A-L21): an answer that
+    // lands after a clear, a sign-out, a new sign-in or a scope change is
+    // neither shown nor stored.
     final key = _cacheKey(session);
-    final signature = session.teamCacheSignature;
-    final generation = TeamCache.generation;
+    final binding = TeamCache.bind(session);
     try {
       final outlook = await _api.fetchTeamOutlook(
         days: _days,
@@ -7751,6 +7998,7 @@ class TeamLeaveScreenState extends State<TeamLeaveScreen> {
         departmentId: _departmentId,
       );
       if (!mounted || seq != _seq) return;
+      if (!binding.isCurrent(session)) return _rebind(seq, session);
       setState(() {
         _outlook = outlook;
         _shownAt = DateTime.now();
@@ -7759,15 +8007,10 @@ class TeamLeaveScreenState extends State<TeamLeaveScreen> {
         _lostError = null;
         _selected = _keepOrDefault(outlook);
       });
-      await TeamCache.write(
-        session,
-        key,
-        outlook.raw,
-        signature: signature,
-        generation: generation,
-      );
+      await TeamCache.write(session, key, outlook.raw, binding: binding);
     } catch (e) {
       if (!mounted || seq != _seq) return;
+      if (!binding.isCurrent(session)) return _rebind(seq, session);
       if (isAccessLost(e)) {
         await TeamCache.clearEmployee(session);
         unawaited(session.refreshMe());
@@ -7789,6 +8032,26 @@ class TeamLeaveScreenState extends State<TeamLeaveScreen> {
         }
       });
     }
+  }
+
+  /// The answer in hand was asked under a binding that has moved since (a
+  /// cache clear, a sign-out, a new sign-in or a scope change; A-L21): it
+  /// is neither shown nor stored. What is on screen belongs to the old
+  /// binding too, so it goes, and the current choice is asked again inside
+  /// the same in-flight refresh. Nothing is asked while signed out or
+  /// while a sign-out runs.
+  Future<void> _rebind(int seq, SessionService session) {
+    setState(() {
+      _outlook = null;
+      _shownAt = null;
+      _stripError = null;
+      _fatalError = null;
+      _lostError = null;
+    });
+    if (session.employeeId <= 0 || session.isClearing) {
+      return Future<void>.value();
+    }
+    return _load(seq);
   }
 
   /// The selected day survives a reload while it is still in range.
@@ -8317,7 +8580,7 @@ class _Skeleton extends StatelessWidget {
 - [ ] **Step 12: Run the team tests and the whole suite**
 
 Run: `flutter test test/screens/team/`
-Expected: PASS (22 format + 11 heat map + 28 screen = 61 tests).
+Expected: PASS (22 format + 11 heat map + 29 screen = 62 tests).
 
 Run: `flutter test`
 Expected: all green (the Task 0 total plus the tests added since).
@@ -8340,7 +8603,8 @@ selected-day card with You and dashed Pending chips, "Some rows are not
 shown." on a truncated answer, empty / no-team / loading states. Cached
 answer shows at once (A-L1); a failed refresh keeps it under the red
 strip; not_allowed clears the cache and re-pulls /me (A-L3); an answer
-is stored only under the binding taken before its fetch (A-L15).
+(or cached read) whose binding moved since its fetch is neither shown
+nor stored, and the screen asks again (A-L15, A-L21).
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 EOF
@@ -8358,6 +8622,7 @@ EOF
 > - No user-facing error text here: every error hides the tile's live data or the line, so no `friendlyError` call is added.
 > - Review r1:
 >   - A2: `_refreshTeamLeave` takes the cache binding with the key before the fetch (A-L15).
+>   - Review r2 (TLP2-F02, A-L21): `_refreshTeamLeave` checks `binding.isCurrent(session)` before every `setState` its answer drives, the cached fallback read included. A stale answer is neither shown nor stored: `_rebindTeamLeave` empties the tile and asks again (not while signed out or while a sign-out runs). The apply sheet's overlap fetch (`_fetchOverlap`) asks under a binding too. A stale overlap answer is never shown, and the same dates are asked again under the new binding.
 >   - A5: after an access-lost answer the tile is hidden (`_teamLeaveLostAt`) while the session's `teamCacheSignature` is still the one that lost it — the A-L5 rule. A `/me` that changes the scope (seen in `didChangeDependencies`) or a later successful call brings it back. A plain "until the next notify" would not hold: the `/me` this screen itself starts notifies at once.
 >   - A6: `_Faces` initials use `TeamColors.onC3`, not `Colors.white`.
 >   - A10: `TeamOverlapLookup` forgets the asked dates after an error, so the same dates are asked again.
@@ -8372,7 +8637,7 @@ EOF
 - Consumes:
   - T1: `SessionService.teamLeaveEnabled` (`bool`), `SessionService.teamCacheSignature` (used inside `TeamCache`), existing `clientDb`, `employeeId`, `refreshMe()`.
   - T2: `OmniMobileApi.fetchTeamOutlook({int days = 30, String context = 'team', String view = 'team', int? departmentId})` → `Future<TeamOutlook>`; `OmniMobileApi.fetchTeamOverlap(DateTime from, DateTime to)` → `Future<TeamOverlap>`; `bool isMissingRoute(Object e)`; `bool isAccessLost(Object e)`; the model fields `TeamOutlook.fromJson`, `.raw`, `.summary`, `.emptyReason`, `TeamSummary.thisWeekOff` / `.label` / `.faces` (`TeamFace.id` / `.initials`), `TeamOverlap.fromJson` / `.people` (`List<TeamLeaveRow>`) / `.more`, `TeamLeaveRow.name` / `.state`.
-  - T3: `TeamCache.outlookKey(SessionService s, {required int days, …})`, `TeamCache.read(s, key)` → `Future<(Map<String, dynamic> body, DateTime savedAt)?>`, `TeamCache.generation`, `TeamCache.write(s, key, Map<String, dynamic> body, {required String signature, required int generation})` (A-L15), `TeamCache.clearEmployee(s)`; nothing is stored or read while `employeeId <= 0`.
+  - T3: `TeamCache.outlookKey(SessionService s, {required int days, …})`, `TeamCache.read(s, key)` → `Future<(Map<String, dynamic> body, DateTime savedAt)?>`, `TeamCache.bind(s)` → `TeamCacheBinding` (`isCurrent(s)`), `TeamCache.write(s, key, Map<String, dynamic> body, {required TeamCacheBinding binding})` (A-L15, A-L21), `TeamCache.clearEmployee(s)`; nothing is stored or read while `employeeId <= 0`.
   - T5: `TeamLeaveScreen({String context = 'team', int? departmentId, int? initialDays, OmniMobileApi Function(SessionService session)? apiBuilder, PreferredSizeWidget? appBar})`, `String leaveWhenLabel(TeamLeaveRow r)`, `TeamColors.avatar(int id)` → `Color`, `TeamColors.leaveTint`, `.leaveOn`, `.accentTint`, `.onAccentTint` (`static const Color`).
   - Existing: `AppTheme`, `PrimaryButton`.
 - Produces:
@@ -9412,6 +9677,8 @@ Expected: PASS (9 tile + 16 also-off = 25 tests).
 Create `test/screens/leave_screen_team_test.dart`:
 
 ```dart
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -9502,6 +9769,11 @@ class _Api extends OmniMobileApi {
   Map<String, dynamic> overlap = _overlapJson();
   final outlookArgs = <String>[];
 
+  /// One-shot: the next outlook / overlap call waits for it, answering
+  /// with the body it read when it started; later calls answer at once.
+  Completer<void>? outlookGate;
+  Completer<void>? overlapGate;
+
   @override
   Future<List<ApprovalItem>> getPendingApprovals() async => const [];
 
@@ -9525,16 +9797,28 @@ class _Api extends OmniMobileApi {
     outlookCalls++;
     outlookArgs.add('$days/$context/$view/${departmentId ?? '-'}');
     final error = outlookError;
+    final body = outlook;
+    final gate = outlookGate;
+    if (gate != null) {
+      outlookGate = null;
+      await gate.future;
+    }
     if (error != null) throw error;
-    return TeamOutlook.fromJson(outlook);
+    return TeamOutlook.fromJson(body);
   }
 
   @override
   Future<TeamOverlap> fetchTeamOverlap(DateTime from, DateTime to) async {
     overlapCalls++;
     final error = overlapError;
+    final body = overlap;
+    final gate = overlapGate;
+    if (gate != null) {
+      overlapGate = null;
+      await gate.future;
+    }
     if (error != null) throw error;
-    return TeamOverlap.fromJson(overlap);
+    return TeamOverlap.fromJson(body);
   }
 
   @override
@@ -9595,13 +9879,7 @@ class _TeamSession extends SessionService {
 
 /// A test-side write with the binding taken right now.
 Future<void> _write(SessionService s, Map<String, dynamic> body) =>
-    TeamCache.write(
-      s,
-      _key(s),
-      body,
-      signature: s.teamCacheSignature,
-      generation: TeamCache.generation,
-    );
+    TeamCache.write(s, _key(s), body, binding: TeamCache.bind(s));
 
 Widget _host(_Api api, SessionService session, {Key? key}) => MultiProvider(
   providers: [
@@ -9782,6 +10060,30 @@ void main() {
       await tester.pumpAndSettle();
       expect(api.outlookCalls, 2);
     });
+
+    testWidgets('an answer that lands after a cache clear is neither shown '
+        'nor stored; the tile asks again (A-L21)', (tester) async {
+      final session = _TeamSession();
+      final gate = Completer<void>();
+      final api = _Api()..outlookGate = gate;
+      await tester.pumpWidget(_host(api, session));
+      for (var i = 0; i < 10 && api.outlookCalls == 0; i++) {
+        await tester.pump();
+      }
+      expect(api.outlookCalls, 1); // answers off: 2 once released
+      // Another screen got not_allowed while this request was on the wire.
+      await tester.runAsync(() => TeamCache.clearEmployee(session));
+      api.outlook = _outlookJson(off: 4);
+      gate.complete();
+      await tester.pumpAndSettle();
+      expect(api.outlookCalls, 2);
+      expect(find.text('2 out this week · Marketing'), findsNothing);
+      expect(find.text('4 out this week · Marketing'), findsOneWidget);
+      final cached = await tester.runAsync(
+        () => TeamCache.read(session, _key(session)),
+      );
+      expect(TeamOutlook.fromJson(cached!.$1).summary.thisWeekOff, 4);
+    });
   });
 
   group('the apply sheet\'s "Also off" line', () {
@@ -9883,6 +10185,35 @@ void main() {
       expect(find.text('SUBMIT LEAVE'), findsNothing);
       expect(find.text('OUTLOOK'), findsOneWidget);
       expect(api.applies, 0);
+    });
+
+    testWidgets('an overlap answer that lands after a cache clear is never '
+        'shown; the same dates are asked again (A-L21)', (tester) async {
+      final session = _TeamSession();
+      final api = _Api();
+      await tester.pumpWidget(_host(api, session));
+      await tester.pumpAndSettle();
+      final gate = Completer<void>();
+      api.overlapGate = gate;
+      await openSheet(tester);
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(api.overlapCalls, 1); // answers Rachel / Jason once released
+      await tester.runAsync(() => TeamCache.clearEmployee(session));
+      final first =
+          (_overlapJson()['people'] as List).first as Map<String, dynamic>;
+      api.overlap = {
+        ..._overlapJson(),
+        'people': [
+          {...first, 'name': 'Mei Lin Ong'},
+        ],
+        'more': 0,
+      };
+      gate.complete();
+      await tester.pumpAndSettle();
+      expect(api.overlapCalls, 2);
+      expect(find.text('Rachel Wong · Thu 12 Nov'), findsNothing);
+      expect(find.text('+2 more'), findsNothing);
+      expect(find.text('Mei Lin Ong · Thu 12 Nov'), findsOneWidget);
     });
   });
 }
@@ -10021,27 +10352,23 @@ Replace with:
     if (!session.teamLeaveEnabled) return;
     final seq = ++_teamSeq;
     // The same key the outlook screen opens with (A-L1, Task 3), and the
-    // cache binding taken before the request (A-L15).
+    // cache binding taken before the request (A-L15), checked again before
+    // anything the answer drives (A-L21).
     final key = TeamCache.outlookKey(session, days: 30);
-    final signature = session.teamCacheSignature;
-    final generation = TeamCache.generation;
+    final binding = TeamCache.bind(session);
     try {
       final outlook = await _api(session).fetchTeamOutlook();
       if (!mounted || seq != _teamSeq) return;
+      if (!binding.isCurrent(session)) return _rebindTeamLeave(session);
       setState(() {
         _teamOutlook = outlook;
         _teamLeaveMissing = false;
         _teamLeaveLostAt = null;
       });
-      await TeamCache.write(
-        session,
-        key,
-        outlook.raw,
-        signature: signature,
-        generation: generation,
-      );
+      await TeamCache.write(session, key, outlook.raw, binding: binding);
     } catch (e) {
       if (!mounted || seq != _teamSeq) return;
+      if (!binding.isCurrent(session)) return _rebindTeamLeave(session);
       if (isMissingRoute(e)) {
         setState(() => _teamLeaveMissing = true);
         return;
@@ -10059,8 +10386,22 @@ Replace with:
       if (_teamOutlook != null) return; // keep what is on screen
       final cached = await TeamCache.read(session, key);
       if (!mounted || seq != _teamSeq || cached == null) return;
+      if (!binding.isCurrent(session)) return _rebindTeamLeave(session);
       setState(() => _teamOutlook = TeamOutlook.fromJson(cached.$1));
     }
+  }
+
+  /// The tile's answer (or cached read) was asked under a binding that has
+  /// moved since (a cache clear, a sign-out, a new sign-in or a scope
+  /// change; A-L21): it is neither shown nor stored. The tile empties and
+  /// asks again under the new binding; nothing is asked while signed out
+  /// or while a sign-out runs.
+  Future<void> _rebindTeamLeave(SessionService session) {
+    setState(() => _teamOutlook = null);
+    if (session.employeeId <= 0 || session.isClearing) {
+      return Future<void>.value();
+    }
+    return _refreshTeamLeave();
   }
 
   /// The list watches the session (`_buildList`), so every session notify
@@ -10194,13 +10535,29 @@ Replace with:
   // Informational only — it never touches _periodValid, _submitting or
   // the SUBMIT button. Created on first use (only with team leave on).
   late final TeamOverlapLookup _overlap = TeamOverlapLookup(
-    fetch: (from, to) => widget
-        .apiFor(context.read<SessionService>())
-        .fetchTeamOverlap(from, to),
+    fetch: _fetchOverlap,
     onChanged: () {
       if (mounted) setState(() {});
     },
   );
+
+  /// The overlap for [from]..[to], asked under the team binding of the
+  /// moment (A-L21). An answer that lands after a cache clear, a sign-out,
+  /// a new sign-in or a scope change is never shown: the same dates are
+  /// asked again under the new binding. Signed out (or while a sign-out
+  /// runs) it fails instead, and the lookup hides the line.
+  Future<TeamOverlap> _fetchOverlap(DateTime from, DateTime to) async {
+    final session = context.read<SessionService>();
+    final api = widget.apiFor(session);
+    while (true) {
+      final binding = TeamCache.bind(session);
+      final answer = await api.fetchTeamOverlap(from, to);
+      if (binding.isCurrent(session)) return answer;
+      if (!mounted || session.employeeId <= 0 || session.isClearing) {
+        throw StateError('team binding changed');
+      }
+    }
+  }
 
   @override
   void initState() {
@@ -10331,7 +10688,7 @@ Note: `_overlap.visible` in `build` creates the idle lookup on first build when 
 - [ ] **Step 8: Run the tests to verify they pass**
 
 Run: `flutter test test/screens/leave_screen_team_test.dart test/screens/leave_screen_test.dart test/screens/team_leave_tile_test.dart test/screens/also_off_line_test.dart test/screens/leave_approvals_row_test.dart`
-Expected: PASS (all; `leave_screen_team_test.dart` has 17 tests — 11 tile + 6 sheet; the existing `leave_screen_test.dart` and `leave_approvals_row_test.dart` unchanged and green).
+Expected: PASS (all; `leave_screen_team_test.dart` has 19 tests — 12 tile + 7 sheet; the existing `leave_screen_test.dart` and `leave_approvals_row_test.dart` unchanged and green).
 
 Then the whole suite: `flutter test`
 Expected: PASS, total = Task 5 total + the new tests.
@@ -10350,8 +10707,9 @@ Team leave tile on the LEAVE tab + "Also off on these dates" in the apply sheet
 
 - TeamLeaveTile under the approvals row: N out this week, two faces,
   NEW until the first open (per employee); one 30-day outlook call per
-  refresh (A-L1), cached under the binding taken before the call
-  (A-L15), cached fallback offline, hidden after an HTML 404; lost
+  refresh (A-L1), shown and cached only while the binding taken before
+  the call is current, else asked again (A-L15, A-L21), cached fallback
+  offline, hidden after an HTML 404; lost
   access clears the cache, re-pulls /me and hides the tile until the
   scope changes.
 - Apply sheet: debounced (400 ms) team overlap, newest dates win,
@@ -12766,6 +13124,7 @@ EOF
 > - Invented Who's out wording ("afternoon only", "part of the day", empty-list lines) stays unless Willy changes it.
 > - Review r1:
 >   - A2: `_load` takes the cache binding (`teamCacheSignature`, `TeamCache.generation`) with the key before `fetchOverview` and passes it to `write` (A-L15).
+>   - Review r2 (TLP2-F02, A-L21): the binding is one `TeamCacheBinding` (`TeamCache.bind`). `_load` checks `binding.isCurrent(session)` before every `setState` its answer drives (success, every error branch, the cached fallback read). A stale answer is neither shown nor stored: `_rebind` clears the overview, the chips' `_last` and the strips, then calls `_load()` again inside the same in-flight refresh. It asks nothing while signed out or while a sign-out runs.
 >   - A4: on lost access the cache clear and `refreshMe()` are started with `unawaited`, then `setState` + `onUnavailable` run at once, as Task 7 does; Home no longer waits for a `/me` on a slow link.
 >   - A6: the two tiles take every white from the `TeamColors` on-tile tokens (A-L19); no `Colors.white`.
 >   - A7: the counts-only sentence is the mockup's "Counts only — your company doesn't show names here." (`OverviewCopy.countsOnly`, the same text Task 2 gives `names_hidden`).
@@ -12783,7 +13142,7 @@ EOF
 - Consumes:
   - T1: `SessionService.teamCacheSignature` (inside `TeamCache`); existing `leaveApprovalsEnabled`, `leaveApprovalsPendingCount`, `refreshMe()`, `employeeName`, `userName`, `userLogin`.
   - T2: `OmniMobileApi.fetchOverview({String day = 'today', int? departmentId})` → `Future<TeamOverview>`; `isMissingRoute(Object)`, `isAccessLost(Object)`; `friendlyError(e, context: ErrorContext.team)` for every error text here ("You no longer have access to this view.", "That department isn't available any more.", the usual transport words). Model fields: `TeamOverview.raw`, `.date` (`DateTime?`), `.asOf`, `.live`, `.scope` (`label`, `emptyReason`), `.departments` (`List<TeamDepartment>`, from `team_outlook.dart`), `.sections.attendance` / `.leave`, `.names`, `.counts` (`OverviewCounts?`: `countOf`, `totalCheckedIn`, `totalExpected`, `totalTracked`; the late field is `lateCount`), `.reviewed` (`ReviewedDay?`: `date`, `provisional`, `countOf`, `buckets`, `totalWorked`, `totalExpected`; `notReviewed` is part of expected and gets no tile), `.whoOut` (`today` / `next7`; `WhoOutToday.tracked`), `.forYou`.
-  - T3: `TeamCache.overviewKey(s, {String day = 'today', int? departmentId})`, `read` (async, `(body, savedAt)?`), `generation`, `write(s, key, body, {required String signature, required int generation})` (A-L15), `clearEmployee`.
+  - T3: `TeamCache.overviewKey(s, {String day = 'today', int? departmentId})`, `read` (async, `(body, savedAt)?`), `bind(s)` → `TeamCacheBinding` (`isCurrent(s)`), `write(s, key, body, {required TeamCacheBinding binding})` (A-L15, A-L21), `clearEmployee`; `SessionService.isClearing`.
   - T4: `PillSegments({required List<String> labels, required int value, required ValueChanged<int> onChanged, String? semanticsLabel})`.
   - T5: `TeamLeaveScreen`, `dayTitle`, `teamRowsNotShown`, `TeamAvatar`, `TeamColors.bucket` / `.overviewTile` / `.overviewTileYesterday` / `.onTile` / `.onTileSoft` / `.onTileFaint` / `.tileLine` / `.tileTrack` / `.tileBadge` / `.muted` / `.leaveTint` / `.leaveOn` / `.accentTint` / `.onAccentTint` / `.chipBorder`.
   - T2 (review r1): `WhoOut.truncated` (`who_out.truncated`, K2).
@@ -12802,7 +13161,7 @@ EOF
 - After the move `my_day_screen.dart` no longer uses `ApprovalsScreen`, `ExpenseDetailScreen` or `PayslipsScreen`; remove those three imports or `flutter analyze` reports `unused_import`. `ExpenseRecord` stays imported (the `destinationBuilder` field type).
 - Refresh contract = My day's: `refresh()` shares one in-flight request (`_inFlight ??=`); first build, pull-down, `AppLifecycleListener.onResume`, return from a pushed screen, and `HomeRoot` (T9) call it. No polling.
 - A day or department switch must not be swallowed by the shared in-flight request: `_select` changes the selection, waits for the running request (whose answer `_load` then drops as stale — it compares the `day` / `departmentId` it started with), then calls `refresh()`.
-- Cache (A-L3): only a successful **today** answer is written, under the binding taken before the fetch (A-L15); on a failure with nothing on screen, today's cached answer for the same department is shown with the red strip and "Showing what you saw at HH:MM". Yesterday is never cached. Lost access (`isAccessLost`) starts the cache clear and the /me re-pull (both `unawaited`) and calls `onUnavailable` straight away; a missing route only calls `onUnavailable` (HomeRoot shows My day for the run, A-L5).
+- Cache (A-L3): only a successful **today** answer is written, under the binding taken before the fetch (A-L15); an answer or cached read whose binding moved since is neither shown nor stored, and the overview asks again (A-L21); on a failure with nothing on screen, today's cached answer for the same department is shown with the red strip and "Showing what you saw at HH:MM". Yesterday is never cached. Lost access (`isAccessLost`) starts the cache clear and the /me re-pull (both `unawaited`) and calls `onUnavailable` straight away; a missing route only calls `onUnavailable` (HomeRoot shows My day for the run, A-L5).
 - `invalid_department` (a department removed since the chips loaded): show the friendly text in a snackbar, go back to "All" and load again inside the same request.
 - Counts only (`names: false`, L2): count tiles and Who's out rows are not tappable; Who's out names are still shown; the lock line shows. Who's out rows need `names`, `sections.attendance` (the person route needs Attendance) and `WhoOutToday.tracked` (contract; an untracked person would 404).
 - `yesterday_incomplete` For-you items are dropped here (A-L13): their "Tell HR" flow lives on My day.
@@ -14795,11 +15154,12 @@ void main() {
       expect(log.unavailable, 1);
     });
 
-    testWidgets('an answer that lands after a cache clear is shown but not '
-        'stored (A-L15)', (tester) async {
+    testWidgets('an answer that lands after a cache clear is neither shown '
+        'nor stored; the overview asks again (A-L21)', (tester) async {
       _tall(tester);
       final session = _Session();
-      final api = _Api([_json()])..gate = Completer<void>();
+      final api = _Api([_json(label: 'Old team'), _json(label: 'New team')])
+        ..gate = Completer<void>();
       await tester.pumpWidget(_host(api, session: session));
       await tester.pump();
       expect(api.calls, ['today/-']);
@@ -14807,13 +15167,13 @@ void main() {
       await tester.runAsync(() => TeamCache.clearEmployee(session));
       api.gate!.complete();
       await tester.pumpAndSettle();
-      expect(find.text('42 checked in'), findsOneWidget);
-      expect(
-        await tester.runAsync(
-          () => TeamCache.read(session, TeamCache.overviewKey(session)),
-        ),
-        isNull,
+      expect(api.calls, ['today/-', 'today/-']);
+      expect(find.text('of 49 expected · Old team today'), findsNothing);
+      expect(find.text('of 49 expected · New team today'), findsOneWidget);
+      final cached = await tester.runAsync(
+        () => TeamCache.read(session, TeamCache.overviewKey(session)),
       );
+      expect(cached!.$1['scope']['label'], 'New team');
     });
 
     testWidgets('an older connector (HTML 404) falls back, cache kept', (
@@ -15094,16 +15454,17 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
     final session = context.read<SessionService>();
     // Only today is ever written; the key is the same for a yesterday
     // request, which never reads or writes it. The cache binding is taken
-    // with the key, before the request (A-L15).
+    // with the key, before the request (A-L15), and checked before
+    // anything the answer drives (A-L21).
     final cacheKey = TeamCache.overviewKey(session, departmentId: departmentId);
-    final signature = session.teamCacheSignature;
-    final generation = TeamCache.generation;
+    final binding = TeamCache.bind(session);
     try {
       final overview = await _api().fetchOverview(
         day: day,
         departmentId: departmentId,
       );
       if (!mounted || day != _day || departmentId != _departmentId) return;
+      if (!binding.isCurrent(session)) return _rebind(session);
       setState(() {
         _overview = overview;
         _last = overview;
@@ -15113,18 +15474,13 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
       });
       if (day == 'today') {
         unawaited(
-          TeamCache.write(
-            session,
-            cacheKey,
-            overview.raw,
-            signature: signature,
-            generation: generation,
-          ),
+          TeamCache.write(session, cacheKey, overview.raw, binding: binding),
         );
       }
       _syncApprovals(session, overview);
     } catch (e) {
       if (!mounted || day != _day || departmentId != _departmentId) return;
+      if (!binding.isCurrent(session)) return _rebind(session);
       if (isMissingRoute(e) || isAccessLost(e)) {
         if (isAccessLost(e)) {
           // Started, not awaited (as Task 7 does): Home falls back to My
@@ -15159,6 +15515,7 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
       if (day == 'today') {
         final cached = await TeamCache.read(session, cacheKey);
         if (!mounted || day != _day || departmentId != _departmentId) return;
+        if (!binding.isCurrent(session)) return _rebind(session);
         if (cached != null) {
           final overview = TeamOverview.fromJson(cached.$1);
           setState(() {
@@ -15174,6 +15531,27 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
         () => _firstLoadError = friendlyError(e, context: ErrorContext.team),
       );
     }
+  }
+
+  /// The answer (or cached read) in hand was asked under a binding that
+  /// has moved since (a cache clear, a sign-out, a new sign-in or a scope
+  /// change; A-L21): it is neither shown nor stored. What is on screen
+  /// belongs to the old binding too (the department chips in [_last]
+  /// included), so it goes, and the current selection is asked again
+  /// inside the same in-flight refresh. Nothing is asked while signed out
+  /// or while a sign-out runs.
+  Future<void> _rebind(SessionService session) {
+    setState(() {
+      _overview = null;
+      _last = null;
+      _cachedAt = null;
+      _firstLoadError = null;
+      _refreshFailed = false;
+    });
+    if (session.employeeId <= 0 || session.isClearing) {
+      return Future<void>.value();
+    }
+    return _load();
   }
 
   /// The For-you approvals card and the LEAVE badge must show one number
@@ -15592,7 +15970,8 @@ Team overview screen
 - overview_copy.dart gains OverviewCopy below the Task 7 bucket table.
 - My day's refresh contract; last answer kept under the red strip;
   today's answer cached for offline under the binding taken before the
-  fetch (A-L3, A-L15); missing route / lost access report onUnavailable
+  fetch (A-L3, A-L15); an answer whose binding moved since is neither
+  shown nor stored and the overview asks again (A-L21); missing route / lost access report onUnavailable
   at once (A-L5); lost access starts the cache clear + /me.
 - Tile whites come from the TeamColors on-tile tokens (A-L19).
 
@@ -16896,7 +17275,7 @@ Run:
 ```bash
 flutter test
 ```
-Expected: all green. The total is the Task 0 baseline plus the tests added by Tasks 1–9 (a scratch run of this plan on 2026-10-22: `+1288: All tests passed!` = 978 at `588a1cb` + 310 new).
+Expected: all green. The total is the Task 0 baseline plus the tests added by Tasks 1–9 (a scratch run of this plan on 2026-10-22, after review r2: `+1294: All tests passed!` = 978 at `588a1cb` + 316 new).
 
 - [ ] **Step 9: Commit**
 
@@ -16993,9 +17372,13 @@ Design: `session-assets/2026-10-22-team-leave-mgmt-day/proposal.md` (r3); plans:
 - Cache: `TeamCache` (`team_v1|<db>|<employee>|…`, signature = `team_scope_sig`, else
   overview_access/team_leave_source/department/company), keys only via `TeamCache.outlookKey` / `overviewKey`
   (the LEAVE row and the outlook share the 30-day entry); cleared on sign-out, logout and any access-lost answer.
-  A caller reads the key, `teamCacheSignature` and `TeamCache.generation` **before** its request and passes them
-  to `write`; a write is dropped on any mismatch (every clear bumps the generation), while signed out or during
-  a sign-out; writes and clears are serialised. The person sheet is never cached.
+  A caller takes the key and `TeamCache.bind(s)` (employee, `teamCacheSignature`, `TeamCache.generation`,
+  `SessionService.requestEpoch`) **before** its request; the outlook, the LEAVE tile, the overlap line and the
+  overview check `binding.isCurrent(s)` before every setState an answer or cached read drives, and `write` checks
+  it too: a stale answer is neither shown nor stored, the screen clears and asks again (not while signed out).
+  Every clear bumps the generation; `requestEpoch` advances when a sign-out / logout begins and on every new
+  access token, even when a sign-in during the hook skips the wipe. Writes and clears are serialised. The person
+  sheet is never cached.
 - Tests: `test/screens/team/`, `test/screens/home/overview/`, `test/screens/home/home_root_test.dart`,
   `test/services/session_team_flags_test.dart`, `test/services/team_api_test.dart`, `test/services/team_cache_test.dart`,
   `test/models/team_*_test.dart`, `test/widgets/pill_segments_test.dart`.
