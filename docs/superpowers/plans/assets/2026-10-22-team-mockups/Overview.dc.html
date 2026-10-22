@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Team overview for managers</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="position:relative;width:390px;height:844px;overflow:hidden;border-radius:40px;font-family:Inter,system-ui,-apple-system,sans-serif;font-size:14px;line-height:1.4;background:{{c.bg}};color:{{c.text}}">
+
+<sc-if value="{{isOutlook}}" hint-placeholder-val="{{false}}">
+  <dc-import name="TeamLeave" tab="home" scope="{{outlookScope}}" dark="{{dark}}" on-back="{{goHome}}" hint-size="390px,844px"></dc-import>
+</sc-if>
+
+<sc-if value="{{notOutlook}}" hint-placeholder-val="{{true}}">
+<div style="position:absolute;inset:0;display:flex;flex-direction:column">
+  <div style="display:flex;align-items:center;gap:8px;padding:50px 16px 10px 12px;background:{{c.card}};border-bottom:1px solid {{c.line}}">
+    <sc-if value="{{isHome}}" hint-placeholder-val="{{true}}">
+      <div aria-hidden="true" style="width:36px;height:36px;border-radius:12px;background:{{c.card}};box-shadow:0 2px 8px rgba(80,117,175,0.15);display:grid;place-items:center;flex:none;margin-left:4px"><div style="width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,#2BB8C4,#395F97)"></div></div>
+    </sc-if>
+    <sc-if value="{{isDrill}}" hint-placeholder-val="{{false}}">
+      <button type="button" onClick="{{goHome}}" aria-label="Back" style="width:40px;height:40px;border:0;background:transparent;color:{{c.sub}};display:grid;place-items:center;cursor:pointer;flex:none">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M11 6l-6 6 6 6"></path></svg>
+      </button>
+    </sc-if>
+    <div style="flex:1;font-size:20px;font-weight:800;letter-spacing:-0.3px;margin-left:4px">{{barTitle}}</div>
+    <button type="button" aria-label="Notifications, 2 unread" style="position:relative;width:40px;height:40px;border:0;background:transparent;color:{{c.accent}};display:grid;place-items:center;cursor:pointer">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 22a2.5 2.5 0 0 0 2.45-2h-4.9A2.5 2.5 0 0 0 12 22zm7-6V11a7 7 0 0 0-5.5-6.84V3.5a1.5 1.5 0 0 0-3 0v.66A7 7 0 0 0 5 11v5l-2 2v1h18v-1z"></path></svg>
+      <span style="position:absolute;top:3px;right:3px;min-width:17px;height:17px;border-radius:9px;background:#BA1A1A;border:1.5px solid #fff;color:#fff;font-size:10px;font-weight:800;display:grid;place-items:center;box-sizing:border-box">2</span>
+    </button>
+    <div aria-hidden="true" style="width:36px;height:36px;border-radius:50%;background:hsl(30,55%,40%);color:#fff;display:grid;place-items:center;font-weight:700;font-size:13px;flex:none">RT</div>
+  </div>
+
+  <sc-if value="{{isHome}}" hint-placeholder-val="{{true}}">
+  <div style="flex:1;min-height:0;overflow:auto;padding:14px 16px 24px;display:flex;flex-direction:column;gap:14px">
+
+    <sc-if value="{{dual}}" hint-placeholder-val="{{false}}">
+      <div role="group" aria-label="Home view" style="display:flex;background:{{c.seg}};border-radius:999px;padding:4px">
+        <sc-for list="{{modeSegs}}" as="s" hint-placeholder-count="2">
+          <button type="button" onClick="{{s.pick}}" aria-pressed="{{s.on}}" style="flex:1;height:38px;border:0;border-radius:999px;background:{{s.bg}};color:{{s.fg}};font-family:inherit;font-size:14px;font-weight:{{s.w}};cursor:pointer;box-shadow:{{s.sh}}">{{s.label}}</button>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{showMyDay}}" hint-placeholder-val="{{false}}">
+      <div style="border-radius:24px;padding:18px;background:{{c.tile}};color:#fff;display:flex;flex-direction:column;gap:16px">
+        <div style="display:flex;align-items:center;gap:14px">
+          <span aria-hidden="true" style="width:56px;height:56px;border-radius:18px;background:rgba(255,255,255,0.18);display:grid;place-items:center;flex:none"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M8 12.5l2.6 2.6L16 9.7"></path></svg></span>
+          <div style="flex:1"><div style="font-size:24px;font-weight:700;line-height:1.15">Checked in</div><div style="font-size:13px;opacity:0.9;margin-top:3px">Since 08:12</div></div>
+        </div>
+        <div style="display:flex;align-items:flex-end;gap:16px;padding-top:14px;border-top:1px solid rgba(255,255,255,0.22)">
+          <div style="flex:1"><div style="font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;opacity:0.8">Worked</div><div style="font-size:30px;font-weight:700;line-height:1.1;margin-top:4px">1h 00m</div></div>
+          <div style="text-align:right"><div style="font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;opacity:0.8">Shift</div><div style="font-size:16px;font-weight:600;margin-top:5px">08:30 – 17:30</div></div>
+        </div>
+        <div style="height:52px;border-radius:999px;background:#fff;color:#006971;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:700">Check out</div>
+      </div>
+      <div style="font-size:13px;color:{{c.muted}};padding:0 4px">Your own My day stays exactly as it is today — timeline, week strip and For you below.</div>
+    </sc-if>
+
+    <sc-if value="{{showOverview}}" hint-placeholder-val="{{true}}">
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <sc-if value="{{hasDepts}}" hint-placeholder-val="{{true}}">
+        <div style="display:flex;gap:8px;overflow-x:auto;margin:0 -16px;padding:0 16px 2px">
+          <sc-for list="{{depts}}" as="d" hint-placeholder-count="6">
+            <button type="button" onClick="{{d.pick}}" aria-pressed="{{d.on}}" style="flex:none;height:34px;padding:0 14px;border-radius:999px;border:1.5px solid {{d.border}};background:{{d.bg}};color:{{d.fg}};font-family:inherit;font-size:13px;font-weight:600;cursor:pointer">{{d.label}}</button>
+          </sc-for>
+        </div>
+      </sc-if>
+
+      <div role="group" aria-label="Which day" style="display:flex;background:{{c.seg}};border-radius:999px;padding:4px">
+        <sc-for list="{{daySegs}}" as="s" hint-placeholder-count="2">
+          <button type="button" onClick="{{s.pick}}" aria-pressed="{{s.on}}" style="flex:1;height:38px;border:0;border-radius:999px;background:{{s.bg}};color:{{s.fg}};font-family:inherit;font-size:14px;font-weight:{{s.w}};cursor:pointer;box-shadow:{{s.sh}}">{{s.label}}</button>
+        </sc-for>
+      </div>
+
+      <sc-if value="{{isYesterday}}" hint-placeholder-val="{{false}}">
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div style="border-radius:24px;padding:18px;background:{{c.tileY}};color:#fff;display:flex;flex-direction:column;gap:10px">
+          <div style="font-size:24px;font-weight:700;line-height:1.15">{{y.present}} worked</div>
+          <div style="font-size:13px;opacity:0.9">of {{y.expected}} expected · Wed 21 Oct · {{scopeShort}}</div>
+          <div style="font-size:12px;opacity:0.85;padding-top:10px;border-top:1px solid rgba(255,255,255,0.22)">Reviewed overnight — the same verdicts HR sees in the Daily Review, including HR's corrections.</div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:8px">
+          <sc-for list="{{yTiles}}" as="t" hint-placeholder-count="6">
+            <div style="border-radius:20px;background:{{c.card}};box-shadow:{{c.shadow}};padding:12px 12px 10px;display:flex;flex-direction:column;gap:2px;min-height:76px;box-sizing:border-box">
+              <span style="display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:{{t.dot}}"></span><span style="font-size:24px;font-weight:700;letter-spacing:-0.02em">{{t.n}}</span></span>
+              <span style="font-size:12px;font-weight:600;color:{{c.sub}}">{{t.label}}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{isToday}}" hint-placeholder-val="{{true}}">
+      <div style="display:flex;flex-direction:column;gap:14px">
+      <div style="border-radius:24px;padding:18px;background:{{c.tile}};color:#fff;display:flex;flex-direction:column;gap:14px;box-shadow:0 8px 30px rgba(80,117,175,0.18)">
+        <div style="display:flex;align-items:center;gap:14px">
+          <span aria-hidden="true" style="width:56px;height:56px;border-radius:18px;background:rgba(255,255,255,0.18);display:grid;place-items:center;flex:none"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="9" cy="8" r="3.2"></circle><path d="M3.5 19c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5"></path><circle cx="17" cy="9" r="2.6"></circle><path d="M16 14.2c2.4.1 4 1.7 4.5 4.3"></path></svg></span>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:24px;font-weight:700;line-height:1.15">{{k.checked}} checked in</div>
+            <div style="font-size:13px;opacity:0.9;margin-top:3px">of {{k.expected}} expected · {{scopeLabel}}</div>
+          </div>
+        </div>
+        <div style="padding-top:14px;border-top:1px solid rgba(255,255,255,0.22);display:flex;flex-direction:column;gap:8px">
+          <div aria-hidden="true" style="display:flex;height:12px;border-radius:999px;overflow:hidden;background:rgba(255,255,255,0.14)">
+            <sc-for list="{{barSegs}}" as="b" hint-placeholder-count="4"><span style="flex:{{b.n}};background:{{b.bg}}"></span></sc-for>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11px;opacity:0.92">
+            <sc-for list="{{barSegs}}" as="b" hint-placeholder-count="4"><span style="display:flex;align-items:center;gap:5px"><span style="width:8px;height:8px;border-radius:50%;background:{{b.bg}}"></span>{{b.label}} {{b.n}}</span></sc-for>
+          </div>
+          <div style="font-size:12px;opacity:0.85">Live · as of 09:12 · not yet reviewed by HR · {{k.tracked}} people tracked</div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:8px">
+        <sc-for list="{{tiles}}" as="t" hint-placeholder-count="6">
+          <button type="button" onClick="{{t.pick}}" aria-label="{{t.aria}}" style="border:0;border-radius:20px;background:{{c.card}};box-shadow:{{c.shadow}};padding:12px 12px 10px;text-align:left;font-family:inherit;color:{{c.text}};cursor:pointer;display:flex;flex-direction:column;gap:2px;min-height:76px">
+            <span style="display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:{{t.dot}}"></span><span style="font-size:24px;font-weight:700;letter-spacing:-0.02em">{{t.n}}</span></span>
+            <span style="font-size:12px;font-weight:600;color:{{c.sub}}">{{t.label}}</span>
+          </button>
+        </sc-for>
+      </div>
+
+      </div>
+      </sc-if>
+
+      <sc-if value="{{countsOnly}}" hint-placeholder-val="{{false}}">
+        <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:{{c.muted}};padding:0 4px;margin-top:-6px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg><span>Counts only — your company doesn't show names here.</span></div>
+      </sc-if>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;align-items:baseline;padding:0 4px"><span style="flex:1;font-size:14px;font-weight:700;color:{{c.sub}}">Who's out</span><span style="font-size:12px;color:{{c.muted}}">everyone in {{scopeShort}}</span></div>
+        <div style="border-radius:24px;background:{{c.card}};box-shadow:{{c.shadow}};overflow:hidden">
+          <div style="padding:12px 16px 4px;font-size:12px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:{{c.muted}}">Today · {{outCount}}</div>
+          <sc-for list="{{outToday}}" as="o" hint-placeholder-count="4">
+            <button type="button" onClick="{{o.pick}}" style="width:100%;display:flex;align-items:center;gap:12px;padding:9px 16px;border:0;background:transparent;text-align:left;font-family:inherit;color:{{c.text}};cursor:pointer">
+              <span aria-hidden="true" style="width:32px;height:32px;border-radius:50%;background:{{o.av}};color:#fff;display:grid;place-items:center;font-weight:700;font-size:12px;flex:none">{{o.ini}}</span>
+              <span style="flex:1;min-width:0"><span style="display:block;font-size:14px;font-weight:700">{{o.name}}</span><span style="display:block;font-size:12px;color:{{c.sub}}">{{o.line}}</span></span>
+              <sc-if value="{{o.partial}}" hint-placeholder-val="{{false}}"><span style="font-size:11px;font-weight:700;color:{{c.leaveOn}};background:{{c.leaveTint}};border-radius:999px;padding:3px 9px">Part day</span></sc-if>
+            </button>
+          </sc-for>
+          <div style="height:1px;background:{{c.line}};margin:6px 16px"></div>
+          <div style="padding:8px 16px 4px;font-size:12px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:{{c.muted}}">Next 7 days</div>
+          <sc-for list="{{next7}}" as="n" hint-placeholder-count="3">
+            <div style="display:flex;gap:12px;padding:6px 16px">
+              <span style="width:64px;flex:none;font-size:13px;font-weight:700;color:{{c.sub}}">{{n.day}}</span>
+              <span style="flex:1;font-size:13px;color:{{c.text}}">{{n.names}}</span>
+            </div>
+          </sc-for>
+          <button type="button" onClick="{{openOutlook}}" style="margin:8px 16px 14px;height:44px;width:calc(100% - 32px);border-radius:999px;border:1.5px solid {{c.accent}};background:transparent;color:{{c.accent}};font-family:inherit;font-size:14px;font-weight:600;cursor:pointer">See 30 / 60 / 90 days</button>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div style="padding:0 4px;font-size:14px;font-weight:700;color:{{c.sub}}">For you</div>
+        <div style="display:flex;align-items:center;gap:14px;border-radius:24px;background:{{c.card}};box-shadow:{{c.shadow}};padding:14px 16px">
+          <span aria-hidden="true" style="width:40px;height:40px;border-radius:13px;background:{{c.accentTint}};color:{{c.accent}};display:grid;place-items:center;flex:none"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M7 9h5M7 13h3M14 14l2 2 3-4"></path></svg></span>
+          <span style="flex:1"><span style="display:block;font-size:15px;font-weight:600">2 leave requests waiting for you</span><span style="display:block;font-size:12px;color:{{c.sub}};margin-top:2px">Oldest has waited 2 days</span></span>
+        </div>
+      </div>
+    </div>
+    </sc-if>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{isDrill}}" hint-placeholder-val="{{false}}">
+  <div style="flex:1;min-height:0;overflow:auto;padding:14px 16px 24px;display:flex;flex-direction:column;gap:12px">
+    <div style="display:flex;gap:8px;overflow-x:auto;margin:0 -16px;padding:0 16px 2px">
+      <sc-for list="{{drillChips}}" as="dc" hint-placeholder-count="6">
+        <button type="button" onClick="{{dc.pick}}" aria-pressed="{{dc.on}}" style="flex:none;height:34px;padding:0 12px;border-radius:999px;border:1.5px solid {{dc.border}};background:{{dc.bg}};color:{{dc.fg}};font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:{{dc.dot}}"></span>{{dc.label}} · {{dc.n}}</button>
+      </sc-for>
+    </div>
+    <div style="font-size:13px;color:{{c.muted}};padding:0 4px">{{drillHint}}</div>
+    <sc-if value="{{drillHas}}" hint-placeholder-val="{{true}}">
+      <div style="border-radius:24px;background:{{c.card}};box-shadow:{{c.shadow}};overflow:hidden">
+        <sc-for list="{{drillRows}}" as="r" hint-placeholder-count="6">
+          <button type="button" onClick="{{r.pick}}" style="width:100%;display:flex;align-items:center;gap:12px;padding:12px 16px;border:0;border-top:{{r.divider}};background:transparent;text-align:left;font-family:inherit;color:{{c.text}};cursor:pointer">
+            <span aria-hidden="true" style="width:36px;height:36px;border-radius:50%;background:{{r.av}};color:#fff;display:grid;place-items:center;font-weight:700;font-size:13px;flex:none">{{r.ini}}</span>
+            <span style="flex:1;min-width:0"><span style="display:block;font-size:14px;font-weight:700">{{r.name}}</span><span style="display:block;font-size:12px;color:{{c.sub}}">{{r.line}}</span><sc-if value="{{r.hasNote}}" hint-placeholder-val="{{false}}"><span style="display:block;font-size:12px;color:{{c.leaveOn}}">{{r.note}}</span></sc-if></span>
+            <span style="text-align:right;flex:none"><span style="display:block;font-size:15px;font-weight:700;font-variant-numeric:tabular-nums">{{r.time}}</span><sc-if value="{{r.hasChip}}" hint-placeholder-val="{{false}}"><span style="display:inline-block;margin-top:3px;font-size:11px;font-weight:700;color:{{r.chipFg}};background:{{r.chipBg}};border-radius:999px;padding:2px 8px">{{r.chip}}</span></sc-if></span>
+          </button>
+        </sc-for>
+      </div>
+    </sc-if>
+    <sc-if value="{{drillNone}}" hint-placeholder-val="{{false}}">
+      <div style="border-radius:24px;background:{{c.card}};padding:24px;text-align:center;color:{{c.sub}}">Nobody here right now.</div>
+    </sc-if>
+  </div>
+  </sc-if>
+
+  <nav aria-label="Main" style="display:flex;height:76px;background:{{c.nav}};box-shadow:0 -2px 10px rgba(0,0,0,0.05);padding-bottom:10px;box-sizing:border-box">
+    <sc-for list="{{tabs}}" as="tb" hint-placeholder-count="4">
+      <span style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:{{tb.fg}}">
+        <span style="width:60px;height:30px;border-radius:999px;background:{{tb.ind}};display:grid;place-items:center"><span style="width:18px;height:18px;border:2px solid currentColor;border-radius:{{tb.r}};box-sizing:border-box"></span></span>
+        <span style="font-size:11px;font-weight:{{tb.w}};letter-spacing:0.6px">{{tb.label}}</span>
+      </span>
+    </sc-for>
+  </nav>
+</div>
+</sc-if>
+
+<sc-if value="{{hasSheet}}" hint-placeholder-val="{{false}}">
+<div style="position:absolute;inset:0;background:rgba(0,0,0,0.38);display:flex;flex-direction:column;justify-content:flex-end">
+  <div role="dialog" aria-label="{{sp.name}}" style="background:{{c.card}};color:{{c.text}};border-radius:24px 24px 0 0;padding:10px 20px 28px;display:flex;flex-direction:column;gap:14px">
+    <div style="width:36px;height:4px;border-radius:2px;background:{{c.line2}};align-self:center"></div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <span aria-hidden="true" style="width:48px;height:48px;border-radius:50%;background:{{sp.av}};color:#fff;display:grid;place-items:center;font-weight:700;font-size:16px;flex:none">{{sp.ini}}</span>
+      <div style="flex:1;min-width:0"><div style="font-size:18px;font-weight:700">{{sp.name}}</div><div style="font-size:13px;color:{{c.sub}}">{{sp.dept}}</div></div>
+      <button type="button" onClick="{{closeSheet}}" aria-label="Close" style="width:40px;height:40px;border:0;background:transparent;color:{{c.sub}};cursor:pointer;display:grid;place-items:center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+    </div>
+    <div style="display:flex;gap:8px">
+      <div style="flex:1;border-radius:16px;background:{{c.soft}};padding:10px 12px"><div style="font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:{{c.muted}}">Today</div><div style="font-size:14px;font-weight:700;margin-top:2px">{{sp.status}}</div></div>
+      <div style="flex:1;border-radius:16px;background:{{c.soft}};padding:10px 12px"><div style="font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:{{c.muted}}">Shift</div><div style="font-size:14px;font-weight:700;margin-top:2px">{{sp.shift}}</div></div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <div style="font-size:13px;font-weight:700;color:{{c.sub}}">Punches today</div>
+      <sc-for list="{{sp.punches}}" as="pu" hint-placeholder-count="1">
+        <div style="display:flex;align-items:center;gap:10px;font-size:14px"><span style="width:10px;height:10px;border-radius:50%;background:{{c.accent}}"></span><span style="font-weight:700;font-variant-numeric:tabular-nums">{{pu.at}}</span><span style="color:{{c.sub}}">{{pu.what}}</span></div>
+      </sc-for>
+      <sc-if value="{{sp.noPunch}}" hint-placeholder-val="{{false}}"><div style="font-size:14px;color:{{c.sub}}">None yet.</div></sc-if>
+    </div>
+    <div style="border-radius:16px;background:{{c.leaveTint}};color:{{c.leaveOn}};padding:10px 14px;font-size:13px"><b>Leave</b> · {{sp.leave}}</div>
+    <div style="font-size:12px;color:{{c.muted}}">Read-only. Fixes and approvals stay in Odoo and in Leave approvals.</div>
+  </div>
+</div>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"dual":{"editor":"boolean","default":false},"scope":{"editor":"enum","options":["company","department"],"default":"company"},"showPlace":{"editor":"boolean","default":true},"showLocation":{"editor":"boolean","default":false},"namedLists":{"editor":"boolean","default":true},"$preview":{"width":390,"height":844}}'>
+var OV_DEPTS = ['Marketing', 'Fabric', 'Accounts', 'Marker Room', 'Shipping', 'Other'];
+var OV_NAMED = [
+  { n:'Jason Lee', d:'Marketing', b:'late', at:'08:58', late:28, src:'Phone', hue:230 },
+  { n:'Marcus Yeo', d:'Fabric', b:'late', at:'08:51', late:21, src:'Phone', hue:120 },
+  { n:'Nurul Huda', d:'Marker Room', b:'late', at:'08:47', late:17, src:'Phone · flexible location', loc:'Jurong East (outside office)', hue:280 },
+  { n:'Kelvin Goh', d:'Marketing', b:'late', at:'08:44', late:14, src:'Phone', hue:100 },
+  { n:'Benjamin Ho', d:'Accounts', b:'late', at:'08:41', late:11, src:'Phone', hue:30 },
+  { n:'Aisha Rahman', d:'Shipping', b:'late', at:'08:39', late:9, src:'Phone', loc:'Warehouse', hue:160 },
+  { n:'Mei Lin Ong', d:'Marketing', b:'notin', at:'13:30', line:'Back 13:30 · leave this morning', note:'Annual Leave (morning) · approved', hue:330, partial:true },
+  { n:'Ravi Kumar', d:'Fabric', b:'notin', at:'09:30', line:'Shift 09:30 – 18:30 · starts in 18 min', hue:15 },
+  { n:'Sophia Lim', d:'Marketing', b:'notin', at:'10:00', line:'Shift 10:00 – 19:00', hue:300 },
+  { n:'Daryl Ng', d:'Shipping', b:'notin', at:'08:45', line:'Shift 08:45 · no check-in for 27 min', hue:210 },
+  { n:'Hui Min Tan', d:'Fabric', b:'nocheck', at:'08:30', line:'Shift 08:30 – 17:30 · 42 min since start', hue:340 },
+  { n:'Gabriel Lee', d:'Marketing', b:'nocheck', at:'08:30', line:'Shift 08:30 – 17:30 · 42 min since start', hue:250 },
+  { n:'Fatimah Ali', d:'Marker Room', b:'nocheck', at:'08:30', line:'Shift 08:30 – 17:30 · 42 min since start', hue:75 },
+  { n:'Lina Koh', d:'Fabric', b:'leave', at:'', line:'Annual Leave · until Fri 23 Oct', hue:60 },
+  { n:'Hafiz Osman', d:'Shipping', b:'leave', at:'', line:'Sick Leave (Outpatient) · today', hue:190 },
+  { n:'Joanne Lim', d:'Accounts', b:'leave', at:'', line:'Annual Leave · today', hue:310 },
+  { n:'Ibrahim Yusof', d:'Marker Room', b:'leave', at:'', line:'Annual Leave · until Wed 28 Oct', hue:110 },
+  { n:'Sarah Chen', d:'Accounts', b:'off', at:'', line:'No shift on Thursdays (part-time)', hue:0 },
+];
+var OV_ONTIME_NAMES = ['Alexa Tan','Daniel Tan','Priya Nair','Ahmad Rizal','Rachel Wong','Grace Teo','Farid Hassan','Wei Jie Chua','Siti Aminah','Eugene Lau','Clara Sim','Zul Hakim','Michelle Ong',
+  'Vincent Pang','Aaron Toh','Nadia Salleh','Ken Ho','Esther Goh','Hong Wei','Irene Chua','Wei Ling Teo','Muthu Raj','Jolene Kwek','Ryan Seah','Cheryl Low','Desmond Lim','Puteri Amir','Felix Ng',
+  'Joyce Tan','Hannah Yeo','Shawn Koh','Yvonne Chia','Leon Phua','Amirah Said','Bryan Teo','Stella Ho'];
+var OV_ONTIME_DEPT_COUNTS = [['Marketing',13],['Fabric',7],['Accounts',4],['Marker Room',3],['Shipping',2],['Other',7]];
+function ovIni(n) { return n.split(' ').map(w => w[0]).slice(0, 2).join(''); }
+function ovPeople() {
+  const out = OV_NAMED.map(x => Object.assign({}, x));
+  let k = 0;
+  OV_ONTIME_DEPT_COUNTS.forEach(([d, cnt]) => {
+    for (let i = 0; i < cnt; i++, k++) {
+      const mm = 34 - ((k * 7) % 39);
+      const h = mm < 0 ? 7 : 8, m = mm < 0 ? 60 + mm : mm;
+      const src = k % 5 === 3 ? 'Kiosk · Front door' : (k % 7 === 5 ? 'Phone · flexible location' : 'Phone');
+      const p = { n: OV_ONTIME_NAMES[k], d, b: 'ontime', at: (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m, src, hue: (k * 47) % 360 };
+      if (p.n === 'Wei Ling Teo') { p.note = 'On leave today · came in anyway'; }
+      out.push(p);
+    }
+  });
+  return out;
+}
+
+class Component extends DCLogic {
+  constructor(p) { super(p); this.state = { screen: 'home', bucket: 'late', dept: 'All', sheet: null, mode: 'overview', day: 'today' }; }
+  renderVals() {
+    const P = this.props;
+    const dark = !!P.dark;
+    const c = dark ? {
+      bg:'#0E1415', card:'#182022', soft:'#222B2C', text:'#E1E3E3', sub:'#BFC8CA', muted:'#8F9A9B', line:'rgba(255,255,255,0.08)', line2:'#3A4647', seg:'#222B2C', segOn:'#33403F',
+      accent:'#58D8E4', accentTint:'#0F3B3F', onAccentTint:'#9EF0F7', tile:'#00525A', tileY:'#1D477E', nav:'#141B1C', shadow:'none', leaveTint:'#1F3557', leaveOn:'#D6E3FF'
+    } : {
+      bg:'#F7F9FB', card:'#FFFFFF', soft:'#F2F4F6', text:'#191C1E', sub:'#3D494A', muted:'#5F6C6E', line:'rgba(108,121,123,0.14)', line2:'#BCC9CA', seg:'#ECEEF0', segOn:'#FFFFFF',
+      accent:'#006971', accentTint:'#DCEFF1', onAccentTint:'#004F55', tile:'#006971', tileY:'#395F97', nav:'#FFFFFF', shadow:'0 4px 20px rgba(80,117,175,0.08)', leaveTint:'#D6E3FF', leaveOn:'#1D477E'
+    };
+    const BUCKETS = {
+      ontime: { label:'On time', dot: dark ? '#58D8E4' : '#006971', bar:'#FFFFFF', chipFg: dark ? '#9EF0F7' : '#004F55', chipBg: dark ? '#0F3B3F' : '#DCEFF1', hint:'Checked in within the grace period.' },
+      late: { label:'Late', dot:'#D99A1C', bar:'#FFD58A', chipFg: dark ? '#FFE4A8' : '#6B4400', chipBg: dark ? '#4A3A12' : '#FFE4A8', hint:'Checked in after the grace period of their attendance rule. Latest first.' },
+      notin: { label:'Not in yet', dot: dark ? '#8F9A9B' : '#6C797B', bar:'rgba(255,255,255,0.45)', chipFg: dark ? '#BFC8CA' : '#55666A', chipBg: dark ? '#2A3334' : '#ECEEF0', hint:'Their shift has not started, or started less than 30 minutes ago. Part-day leave is shown here when work is still due later.' },
+      nocheck: { label:'No check-in', dot:'#BA1A1A', bar:'#FFB4AB', chipFg: dark ? '#FFDAD6' : '#93000A', chipBg: dark ? '#5C1A16' : '#FFDAD6', hint:'No check-in 30 minutes after their shift started — the same rule My day uses. It updates the moment they check in.' },
+      leave: { label:'On leave', dot: dark ? '#A8C8FF' : '#395F97', bar:'#A8C8FF', chipFg: dark ? '#D6E3FF' : '#1D477E', chipBg: dark ? '#1F3557' : '#D6E3FF', hint:'Approved leave covers all of today’s shift. Pending requests are not counted here.' },
+      off: { label:'Off today', dot: dark ? '#55615F' : '#9AA5A6', bar:'rgba(255,255,255,0.2)', chipFg: dark ? '#BFC8CA' : '#3D494A', chipBg: dark ? '#2A3334' : '#E0E3E5', hint:'No shift today (day off, part-time pattern or public holiday).' },
+    };
+    const ORDER = ['ontime','late','notin','nocheck','leave','off'];
+    const scope = P.scope || 'company';
+    const named = P.namedLists ?? true;
+    const dept = scope === 'department' ? 'Marketing' : this.state.dept;
+    const all = ovPeople();
+    const ppl = all.filter(p => dept === 'All' || p.d === dept);
+    const by = {}; ORDER.forEach(b => { by[b] = ppl.filter(p => p.b === b); });
+    by.late.sort((a, b) => b.late - a.late);
+    by.ontime.sort((a, b) => a.at.localeCompare(b.at));
+    const n = b => by[b].length;
+    const k = { checked: n('ontime') + n('late'), expected: ppl.length - n('leave') - n('off'), tracked: ppl.length };
+    const barSegs = ['ontime','late','notin','nocheck'].map(b => ({ n: n(b), bg: BUCKETS[b].bar, label: BUCKETS[b].label })).filter(s => s.n);
+    const openDrill = b => () => this.setState({ screen: 'drill', bucket: b });
+    const tiles = ORDER.map(b => ({ n: n(b), label: BUCKETS[b].label, dot: BUCKETS[b].dot, aria: BUCKETS[b].label + ': ' + n(b) + ' people', pick: named ? openDrill(b) : null }));
+    const depts = ['All'].concat(OV_DEPTS).map(d => ({ label: d, on: d === dept, pick: () => this.setState({ dept: d }),
+      bg: d === dept ? c.accentTint : 'transparent', fg: d === dept ? c.onAccentTint : c.sub, border: d === dept ? c.accentTint : c.line2 }));
+    const av = p => 'hsl(' + p.hue + ',55%,45%)';
+    const showPlace = P.showPlace ?? true;
+    const showLoc = !!P.showLocation;
+    const srcOf = p => (showPlace ? ' · ' + p.src : '') + (showLoc ? ' · ' + (p.loc || (p.src.indexOf('Kiosk') === 0 ? 'Front door' : 'Office')) : '');
+    const openSheet = p => () => this.setState({ sheet: p.n });
+
+    const outToday = by.leave.map(p => ({ name: p.n, ini: ovIni(p.n), av: av(p), line: p.d + ' · ' + p.line, partial: false, pick: openSheet(p) }))
+      .concat(by.notin.filter(p => p.partial).map(p => ({ name: p.n, ini: ovIni(p.n), av: av(p), line: p.d + ' · morning only, back 13:30', partial: true, pick: openSheet(p) })))
+      .concat(dept === 'All' ? [{ name: 'Patricia Wee', ini: 'PW', av: 'hsl(200,55%,40%)', line: 'Management · Annual Leave · today', partial: false, pick: null }] : []);
+    const next7all = [
+      { day: 'Fri 23', names: 'Priya Nair (Marketing), Lina Koh (Fabric), Ibrahim Yusof (Marker Room)', d: ['Marketing','Fabric','Marker Room'] },
+      { day: 'Mon 26', names: 'Daniel Tan (Marketing, pending), Ibrahim Yusof (Marker Room)', d: ['Marketing','Marker Room'] },
+      { day: 'Tue 27', names: 'Daniel Tan (pending), Marcus Yeo (Fabric), Ibrahim Yusof', d: ['Marketing','Fabric','Marker Room'] },
+      { day: 'Wed 28', names: 'Daniel Tan (pending), Marcus Yeo, Ibrahim Yusof', d: ['Marketing','Fabric','Marker Room'] },
+    ];
+    const next7 = next7all.filter(x => dept === 'All' || x.d.indexOf(dept) >= 0);
+
+    const b = this.state.bucket;
+    const drillRows = by[b].map((p, i) => {
+      let line, time = '', chip = '', hasChip = false;
+      if (b === 'ontime') { line = p.d + srcOf(p); time = p.at; }
+      else if (b === 'late') { line = p.d + srcOf(p); time = p.at; chip = p.late + ' min late'; hasChip = true; }
+      else if (b === 'notin') { line = p.d + ' · ' + p.line; time = p.at; }
+      else if (b === 'nocheck') { line = p.d + ' · ' + p.line; time = '—'; chip = 'No check-in'; hasChip = true; }
+      else { line = p.d + ' · ' + p.line; }
+      return { name: p.n, ini: ovIni(p.n), av: av(p), line, time, chip, hasChip, chipFg: BUCKETS[b].chipFg, chipBg: BUCKETS[b].chipBg,
+        note: p.note || '', hasNote: !!p.note, divider: i ? '1px solid ' + c.line : '0', pick: openSheet(p) };
+    });
+    const drillChips = ORDER.map(x => ({ label: BUCKETS[x].label, n: n(x), dot: BUCKETS[x].dot, on: x === b, pick: () => this.setState({ bucket: x }),
+      bg: x === b ? c.accentTint : 'transparent', fg: x === b ? c.onAccentTint : c.sub, border: x === b ? c.accentTint : c.line2 }));
+
+    let sp = null;
+    const sel = all.find(p => p.n === this.state.sheet);
+    if (sel) {
+      const st = { ontime: 'Checked in · on time', late: 'Checked in · ' + sel.late + ' min late', notin: 'Not in yet', nocheck: 'No check-in', leave: 'On leave', off: 'Off today' }[sel.b];
+      const punches = (sel.b === 'ontime' || sel.b === 'late') ? [{ at: sel.at, what: 'Check in' + srcOf(sel) }] : [];
+      sp = { name: sel.n, ini: ovIni(sel.n), av: av(sel), dept: sel.d + (sel.b === 'leave' ? '' : ' · Standard 44 hours/week'), status: st,
+        shift: sel.b === 'off' ? 'No shift' : (sel.b === 'leave' ? '08:30 – 17:30 (on leave)' : (sel.b === 'notin' && !sel.partial ? sel.line.replace('Shift ', '').split(' · ')[0] : '08:30 – 17:30')),
+        punches, noPunch: punches.length === 0,
+        leave: sel.note ? sel.note : (sel.b === 'leave' ? sel.line : (sel.n === 'Marcus Yeo' ? 'Annual Leave Tue 27 – Wed 28 Oct' : 'none in the next 7 days')) };
+    }
+
+    const tabs = ['HOME','LEAVE','HISTORY','EXPENSES'].map((l, i) => ({
+      label: l, fg: i === 0 ? c.accent : (dark ? '#8F9A9B' : '#6C797B'), w: i === 0 ? 700 : 500,
+      ind: i === 0 ? (dark ? 'rgba(88,216,228,0.16)' : 'rgba(43,184,196,0.18)') : 'transparent', r: i === 2 ? '50%' : '4px'
+    }));
+    const dual = !!P.dual;
+    const mode = dual ? this.state.mode : 'overview';
+    const modeSegs = [['overview', 'Team overview'], ['myday', 'My day']].map(([id, label]) => ({ label, on: id === mode,
+      bg: id === mode ? c.segOn : 'transparent', fg: id === mode ? c.accent : c.sub, w: id === mode ? 700 : 600, sh: id === mode ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
+      pick: () => this.setState({ mode: id }) }));
+    const screen = this.state.screen;
+    const day = this.state.day;
+    const daySegs = [['today', 'Today · live'], ['yesterday', 'Yesterday · reviewed']].map(([id, label]) => ({ label, on: id === day,
+      bg: id === day ? c.segOn : 'transparent', fg: id === day ? c.accent : c.sub, w: id === day ? 700 : 600, sh: id === day ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
+      pick: () => this.setState({ day: id }) }));
+    const f = dept === 'All' ? 1 : Math.max(ppl.length / 54, 0.1);
+    const yr = x => Math.round(x * f);
+    const y = { present: yr(47), expected: yr(50) };
+    const yTiles = [['On time', yr(43), BUCKETS.ontime.dot], ['Late', yr(4), BUCKETS.late.dot], ['Left early', yr(2), BUCKETS.late.dot],
+      ['Absent', yr(1), BUCKETS.nocheck.dot], ['On leave', yr(3), BUCKETS.leave.dot], ['Off', yr(1), BUCKETS.off.dot]].map(([label, n, dot]) => ({ label, n, dot }));
+    return {
+      c, dark, dual, tabs, modeSegs, countsOnly: !named, daySegs, isToday: day === 'today', isYesterday: day === 'yesterday', y, yTiles,
+      showMyDay: mode === 'myday', showOverview: mode === 'overview',
+      isHome: screen === 'home', isDrill: screen === 'drill', isOutlook: screen === 'outlook', notOutlook: screen !== 'outlook',
+      barTitle: screen === 'drill' ? 'Today · ' + (dept === 'All' ? 'Novaworks' : dept) : 'Hello, Raymond',
+      hasDepts: scope === 'company', depts, k, barSegs, tiles,
+      scopeLabel: dept === 'All' ? 'Novaworks today' : dept + ' today', scopeShort: dept === 'All' ? 'Novaworks' : dept,
+      outToday, outCount: outToday.length, next7,
+      openOutlook: () => this.setState({ screen: 'outlook' }), outlookScope: scope === 'department' ? 'department' : 'company',
+      goHome: () => this.setState({ screen: 'home' }),
+      drillRows, drillHas: drillRows.length > 0, drillNone: drillRows.length === 0, drillChips, drillHint: BUCKETS[b].hint,
+      hasSheet: !!sp, sp: sp || { name:'', ini:'', av:'', dept:'', status:'', shift:'', punches:[], noPunch:true, leave:'' },
+      closeSheet: () => this.setState({ sheet: null }),
+    };
+  }
+}
+</script>
+</body>
+</html>

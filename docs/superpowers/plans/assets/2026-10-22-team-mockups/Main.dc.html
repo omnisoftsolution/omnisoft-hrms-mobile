@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Leave tab with Team leave</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<style>
+body{margin:0;font-family:Inter,system-ui,-apple-system,sans-serif;color:#191C1E;-webkit-font-smoothing:antialiased}
+a{color:#006971}a:hover{color:#004F55}
+</style>
+</helmet>
+<div style="position:relative;width:390px;height:844px;overflow:hidden;border-radius:40px;font-family:Inter,system-ui,-apple-system,sans-serif;background:{{c.bg}};color:{{c.text}}">
+
+<sc-if value="{{isTeam}}" hint-placeholder-val="{{false}}">
+  <dc-import name="TeamLeave" tab="leave" dark="{{dark}}" on-back="{{back}}" hint-size="390px,844px"></dc-import>
+</sc-if>
+
+<sc-if value="{{isLeave}}" hint-placeholder-val="{{true}}">
+<div style="position:absolute;inset:0;display:flex;flex-direction:column">
+  <div style="display:flex;align-items:center;gap:12px;padding:50px 16px 10px;background:{{c.card}};border-bottom:1px solid {{c.line}}">
+    <div aria-hidden="true" style="width:36px;height:36px;border-radius:12px;background:{{c.card}};box-shadow:0 2px 8px rgba(80,117,175,0.15);display:grid;place-items:center;flex:none"><div style="width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,#2BB8C4,#395F97)"></div></div>
+    <div style="flex:1;font-size:20px;font-weight:800;letter-spacing:-0.3px">Leave</div>
+    <button type="button" aria-label="Notifications, 4 unread" style="position:relative;width:40px;height:40px;border:0;background:transparent;color:{{c.accent}};display:grid;place-items:center;cursor:pointer">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 22a2.5 2.5 0 0 0 2.45-2h-4.9A2.5 2.5 0 0 0 12 22zm7-6V11a7 7 0 0 0-5.5-6.84V3.5a1.5 1.5 0 0 0-3 0v.66A7 7 0 0 0 5 11v5l-2 2v1h18v-1z"></path></svg>
+      <span style="position:absolute;top:3px;right:3px;min-width:17px;height:17px;border-radius:9px;background:#BA1A1A;border:1.5px solid #fff;color:#fff;font-size:10px;font-weight:800;display:grid;place-items:center;box-sizing:border-box">4</span>
+    </button>
+    <div aria-hidden="true" style="position:relative;width:36px;height:36px;border-radius:50%;background:hsl(174,55%,45%);color:#fff;display:grid;place-items:center;font-weight:700;font-size:13px;flex:none">AT<span style="position:absolute;right:-1px;bottom:-1px;width:10px;height:10px;border-radius:50%;background:#22C55E;border:2px solid {{c.card}}"></span></div>
+  </div>
+
+  <div style="flex:1;overflow:auto;padding:16px 16px 24px;display:flex;flex-direction:column;gap:8px">
+    <button type="button" style="display:flex;align-items:center;gap:14px;border:0;border-radius:24px;background:{{c.tile}};color:#fff;padding:18px 18px;text-align:left;font-family:inherit;cursor:pointer">
+      <span aria-hidden="true" style="width:40px;height:40px;border-radius:13px;background:rgba(255,255,255,0.18);display:grid;place-items:center;flex:none"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M7 9h5M7 13h3M14 14l2 2 3-4"></path></svg></span>
+      <span style="flex:1;min-width:0"><span style="display:block;font-size:17px;font-weight:700">1 waiting for you</span><span style="display:block;font-size:14px;opacity:0.9;margin-top:2px">1 Annual Leave</span></span>
+      <span style="min-width:22px;height:22px;border-radius:11px;background:#BA1A1A;font-size:12px;font-weight:700;display:grid;place-items:center">1</span>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+    </button>
+
+    <button type="button" onClick="{{openTeam}}" style="display:flex;align-items:center;gap:14px;border:2px solid {{c.newRing}};border-radius:24px;background:{{c.card}};color:{{c.text}};padding:14px 16px;text-align:left;font-family:inherit;cursor:pointer;box-shadow:{{c.shadow}}">
+      <span aria-hidden="true" style="width:40px;height:40px;border-radius:13px;background:{{c.leaveTint}};color:{{c.leaveOn}};display:grid;place-items:center;flex:none"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"></circle><path d="M3.5 19c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5"></path><circle cx="17" cy="9" r="2.6"></circle><path d="M16 14.2c2.4.1 4 1.7 4.5 4.3"></path></svg></span>
+      <span style="flex:1;min-width:0"><span style="display:flex;align-items:center;gap:8px"><span style="font-size:16px;font-weight:600">Team leave</span><span style="font-size:10px;font-weight:800;letter-spacing:0.06em;color:{{c.onAccentTint}};background:{{c.accentTint}};border-radius:999px;padding:2px 7px">NEW</span></span><span style="display:block;font-size:12px;font-weight:600;color:{{c.sub}};margin-top:3px">2 out this week · Marketing</span></span>
+      <span aria-hidden="true" style="display:flex;flex:none">
+        <span style="width:26px;height:26px;border-radius:50%;background:hsl(330,55%,45%);color:#fff;font-size:10px;font-weight:700;display:grid;place-items:center;border:2px solid {{c.card}}">MO</span>
+        <span style="width:26px;height:26px;border-radius:50%;background:hsl(20,55%,45%);color:#fff;font-size:10px;font-weight:700;display:grid;place-items:center;border:2px solid {{c.card}};margin-left:-8px">PN</span>
+      </span>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="{{c.sub}}" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+    </button>
+
+    <sc-for list="{{types}}" as="t" hint-placeholder-count="5">
+      <button type="button" onClick="{{t.tap}}" style="display:flex;align-items:center;gap:16px;border:0;border-radius:24px;background:{{c.card}};color:{{c.text}};padding:16px;text-align:left;font-family:inherit;cursor:pointer;box-shadow:{{c.shadow}}">
+        <span aria-hidden="true" style="width:40px;height:40px;border-radius:50%;background:{{c.iconBg}};color:{{c.accent}};display:grid;place-items:center;flex:none"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="{{t.path}}"></path></svg></span>
+        <span style="flex:1;min-width:0"><span style="display:block;font-size:16px">{{t.name}}</span><span style="display:block;font-size:12px;font-weight:600;color:{{c.sub}};margin-top:3px">{{t.left}}</span><sc-if value="{{t.doc}}" hint-placeholder-val="{{false}}"><span style="display:block;font-size:12px;color:#BA1A1A;margin-top:2px">Document required</span></sc-if></span>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="{{c.sub}}" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+      </button>
+    </sc-for>
+  </div>
+
+  <nav aria-label="Main" style="display:flex;height:76px;background:{{c.nav}};box-shadow:0 -2px 10px rgba(0,0,0,0.05);padding-bottom:10px;box-sizing:border-box">
+    <sc-for list="{{tabs}}" as="tb" hint-placeholder-count="4">
+      <span style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:{{tb.fg}}">
+        <span style="width:60px;height:30px;border-radius:999px;background:{{tb.ind}};display:grid;place-items:center"><span style="width:18px;height:18px;border:2px solid currentColor;border-radius:{{tb.r}};box-sizing:border-box"></span></span>
+        <span style="font-size:11px;font-weight:{{tb.w}};letter-spacing:0.6px">{{tb.label}}</span>
+      </span>
+    </sc-for>
+  </nav>
+</div>
+</sc-if>
+
+<sc-if value="{{sheet}}" hint-placeholder-val="{{false}}">
+<div style="position:absolute;inset:0;background:rgba(0,0,0,0.38);display:flex;flex-direction:column;justify-content:flex-end">
+  <div role="dialog" aria-label="Apply for Annual Leave" style="background:{{c.card}};color:{{c.text}};border-radius:24px 24px 0 0;padding:10px 20px 28px;display:flex;flex-direction:column;gap:14px">
+    <div style="width:36px;height:4px;border-radius:2px;background:{{c.line2}};align-self:center"></div>
+    <div style="display:flex;align-items:center"><div style="flex:1;font-size:20px;font-weight:700">Annual Leave</div><button type="button" onClick="{{closeSheet}}" aria-label="Close" style="width:40px;height:40px;border:0;background:transparent;color:{{c.sub}};cursor:pointer;display:grid;place-items:center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button></div>
+    <div style="display:flex;border:1.5px solid {{c.line2}};border-radius:999px;overflow:hidden;font-size:14px;font-weight:600"><span style="flex:1;text-align:center;padding:10px;background:{{c.accentTint}};color:{{c.onAccentTint}}">Full day(s)</span><span style="flex:1;text-align:center;padding:10px;color:{{c.sub}}">Specific hours</span></div>
+    <div style="border-radius:12px;background:{{c.input}};padding:12px 16px;display:flex;align-items:center;gap:12px">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="{{c.accent}}" stroke-width="1.9" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M3 10h18M8 3v4M16 3v4"></path></svg>
+      <span style="flex:1"><span style="display:block;font-size:12px;font-weight:600;color:{{c.accent2}}">Leave dates</span><span style="display:block;font-size:16px;margin-top:2px">Thu 12 Nov – Fri 13 Nov</span></span>
+    </div>
+    <div style="border-radius:16px;background:{{c.leaveTint}};color:{{c.leaveOn}};padding:12px 14px;display:flex;flex-direction:column;gap:8px">
+      <div style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"></circle><path d="M3.5 19c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5"></path><circle cx="17" cy="9" r="2.6"></circle></svg>Also off on these dates</div>
+      <div style="font-size:13px;line-height:1.5">Rachel Wong · Thu 12 Nov<br>Jason Lee · Thu 12 Nov (afternoon) · pending<br><span style="opacity:0.8">Just so you know — this never stops you applying.</span></div>
+      <button type="button" onClick="{{sheetToTeam}}" style="align-self:flex-start;border:0;background:transparent;padding:0;font-family:inherit;font-size:13px;font-weight:700;color:{{c.leaveOn}};text-decoration:underline;cursor:pointer">See team leave</button>
+    </div>
+    <div style="border-radius:12px;background:{{c.input}};padding:14px 16px;font-size:14px;color:{{c.sub}}">Reason (optional)</div>
+    <button type="button" onClick="{{closeSheet}}" style="height:54px;border:0;border-radius:999px;background:#2BB8C4;color:#fff;font-family:inherit;font-size:16px;font-weight:700;letter-spacing:0.5px;box-shadow:0 10px 30px rgba(43,184,196,0.30);cursor:pointer">SUBMIT REQUEST</button>
+  </div>
+</div>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(p) { super(p); this.state = { screen: 'leave', sheet: false }; }
+  renderVals() {
+    const dark = !!this.props.dark;
+    const c = dark ? {
+      bg:'#0E1415', card:'#182022', text:'#E1E3E3', sub:'#BFC8CA', line:'rgba(255,255,255,0.08)', line2:'#3A4647',
+      accent:'#58D8E4', accent2:'#58D8E4', accentTint:'#0F3B3F', onAccentTint:'#9EF0F7', tile:'#00525A', nav:'#141B1C',
+      leaveTint:'#1F3557', leaveOn:'#D6E3FF', iconBg:'rgba(88,216,228,0.12)', shadow:'none', input:'#222B2C', newRing:'#2C4A78'
+    } : {
+      bg:'#F7F9FB', card:'#FFFFFF', text:'#191C1E', sub:'#3D494A', line:'rgba(108,121,123,0.12)', line2:'#BCC9CA',
+      accent:'#006971', accent2:'#2BB8C4', accentTint:'#DCEFF1', onAccentTint:'#004F55', tile:'#006971', nav:'#FFFFFF',
+      leaveTint:'#D6E3FF', leaveOn:'#1D477E', iconBg:'rgba(0,105,113,0.10)', shadow:'0 4px 20px rgba(80,117,175,0.08)', input:'#F2F4F6', newRing:'#D6E3FF'
+    };
+    const open = () => this.setState({ sheet: true });
+    const types = [
+      { name:'Annual Leave', left:'24h (3d) left', path:'M12 3a9 9 0 0 1 9 9H3a9 9 0 0 1 9-9zM12 12v7a2 2 0 0 0 4 0', doc:false, tap: open },
+      { name:'Sick Leave (Outpatient)', left:'Unlimited', path:'M12 6v12M6 12h12', doc:true, tap: open },
+      { name:'Childcare Leave', left:'2d left', path:'M8 9a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM16 9a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM5 20v-5l3-3 3 3v5M13 20v-5l3-3 3 3v5', doc:false, tap: open },
+      { name:'Unpaid Leave', left:'Unlimited', path:'M12 4v16M16 8c0-1.7-1.8-3-4-3s-4 1.3-4 3 1.8 2.6 4 3 4 1.3 4 3-1.8 3-4 3-4-1.3-4-3M4 4l16 16', doc:false, tap: open },
+      { name:'Compassionate Leave', left:'3d left', path:'M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z', doc:false, tap: open },
+    ];
+    const tabs = ['HOME','LEAVE','HISTORY','EXPENSES'].map((l, i) => ({
+      label: l, fg: i === 1 ? (dark ? '#58D8E4' : '#006971') : (dark ? '#8A9596' : '#6C797B'), w: i === 1 ? 700 : 500,
+      ind: i === 1 ? (dark ? 'rgba(88,216,228,0.16)' : 'rgba(43,184,196,0.18)') : 'transparent', r: i === 2 ? '50%' : '4px'
+    }));
+    return {
+      c, dark, types, tabs,
+      isTeam: this.state.screen === 'team', isLeave: this.state.screen === 'leave', sheet: this.state.sheet,
+      openTeam: () => this.setState({ screen: 'team' }),
+      back: () => this.setState({ screen: 'leave' }),
+      closeSheet: () => this.setState({ sheet: false }),
+      sheetToTeam: () => this.setState({ sheet: false, screen: 'team' }),
+    };
+  }
+}
+</script>
+</body>
+</html>

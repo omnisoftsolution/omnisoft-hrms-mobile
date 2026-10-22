@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Odoo settings for team leave and team overview</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<style>
+body{margin:0}
+a{color:#017E84}a:hover{color:#01585C}
+</style>
+</helmet>
+<div style="width:1040px;height:844px;box-sizing:border-box;background:#F0F1F3;font-family:Inter,system-ui,-apple-system,sans-serif;color:#1F2937;font-size:13px;display:flex;flex-direction:column">
+  <div style="height:46px;background:#714B67;color:#fff;display:flex;align-items:center;gap:20px;padding:0 18px;font-size:14px;flex:none">
+    <span style="font-weight:700">Employees</span><span style="opacity:0.85">Employees</span><span style="opacity:0.85">Departments</span><span style="opacity:0.85">Configuration</span>
+  </div>
+  <div style="flex:1;display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));gap:20px;padding:20px">
+
+    <div style="background:#fff;border:1px solid #D8DADD;border-radius:6px;padding:20px;display:flex;flex-direction:column;gap:14px">
+      <div style="font-size:12px;color:#6B7280">Employees / Raymond Tay</div>
+      <div style="font-size:24px;font-weight:700">Raymond Tay</div>
+      <div style="color:#4B5563">Operations Director · Management</div>
+      <div style="display:flex;gap:18px;border-bottom:1px solid #D8DADD;font-size:13px">
+        <span style="padding:8px 0;color:#6B7280">Resume</span><span style="padding:8px 0;color:#6B7280">Work Information</span><span style="padding:8px 0;color:#6B7280">Payroll</span><span style="padding:8px 0;border-bottom:2px solid #714B67;font-weight:700">Omnisoft HRMS</span>
+      </div>
+      <div style="font-size:12px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#6B7280">Mobile Settings</div>
+      <div style="display:grid;grid-template-columns:200px 1fr;gap:10px 14px;align-items:center">
+        <span style="font-weight:600">Kiosk Enabled</span><span style="display:flex;align-items:center;gap:8px"><span style="width:16px;height:16px;border:1.5px solid #9CA3AF;border-radius:3px"></span><span style="color:#6B7280">Off → not attendance-tracked, never asked to check in</span></span>
+        <span style="font-weight:600">Break punch not required</span><span style="width:16px;height:16px;border:1.5px solid #9CA3AF;border-radius:3px"></span>
+        <span style="font-weight:600">No overtime</span><span style="width:16px;height:16px;border-radius:3px;background:#017E84"></span>
+      </div>
+      <div style="border:2px solid #017E84;border-radius:8px;padding:14px;display:flex;flex-direction:column;gap:10px;background:#F2FBFB">
+        <div style="font-size:11px;font-weight:800;letter-spacing:0.08em;color:#017E84">NEW</div>
+        <div style="display:grid;grid-template-columns:200px 1fr;gap:10px 14px;align-items:start">
+          <span style="font-weight:600;padding-top:6px">Team overview access</span>
+          <span style="display:flex;flex-direction:column;gap:6px">
+            <span style="border:1px solid #9CA3AF;border-radius:4px;padding:6px 10px;background:#fff;display:flex;justify-content:space-between"><span>Whole company</span><span style="color:#6B7280">▾</span></span>
+            <span style="font-size:12px;color:#4B5563;line-height:1.45">None (default) · People I approve · My department · Whole company. Per employee only — HR officers do not get it automatically. Shows these people's check-in times, lateness, punch source and leave on this person's phone (location only if the company setting allows). Changes are logged in the chatter.</span>
+          </span>
+          <span style="font-weight:600">Home screen in the app</span>
+          <span style="color:#4B5563">Team overview <span style="color:#6B7280">(computed: access is set and Kiosk Enabled is off. With Kiosk Enabled on, the app shows a Team overview | My day switch.)</span></span>
+        </div>
+      </div>
+    </div>
+
+    <div style="background:#fff;border:1px solid #D8DADD;border-radius:6px;padding:20px;display:flex;flex-direction:column;gap:14px">
+      <div style="font-size:12px;color:#6B7280">Settings / Omni HR</div>
+      <div style="font-size:20px;font-weight:700">Team leave (per company)</div>
+      <div style="display:grid;grid-template-columns:220px 1fr;gap:14px;align-items:start">
+        <span style="font-weight:600;padding-top:6px">Team leave shows</span>
+        <span style="display:flex;flex-direction:column;gap:6px">
+          <span style="border:1px solid #9CA3AF;border-radius:4px;padding:6px 10px;display:flex;justify-content:space-between"><span>Department</span><span style="color:#6B7280">▾</span></span>
+          <span style="font-size:12px;color:#4B5563">Department · Same leave approver · Off. No department → the app says so; it never switches to another rule.</span>
+        </span>
+        <span style="font-weight:600">Teammates see the leave type</span>
+        <span style="display:flex;gap:8px;align-items:flex-start"><span style="width:16px;height:16px;border:1.5px solid #9CA3AF;border-radius:3px;flex:none"></span><span style="font-size:12px;color:#4B5563">Off: “On leave” only. Even when on, types not visible in the app and worked-time types are never named.</span></span>
+        <span style="font-weight:600">Teammates see pending requests</span>
+        <span style="display:flex;gap:8px;align-items:flex-start"><span style="width:16px;height:16px;border-radius:3px;background:#017E84;flex:none"></span><span style="font-size:12px;color:#4B5563">On by default: pending shows with a dashed “Pending” chip, here and in the apply sheet's “Also off” line. Off: approved leave only.</span></span>
+      </div>
+      <div style="height:1px;background:#E5E7EB"></div>
+      <div style="font-size:20px;font-weight:700">Team overview (per company)</div>
+      <div style="display:grid;grid-template-columns:220px 1fr;gap:14px;align-items:start">
+        <span style="font-weight:600;padding-top:6px">Managers see</span>
+        <span style="display:flex;flex-direction:column;gap:6px">
+          <span style="border:1px solid #9CA3AF;border-radius:4px;padding:6px 10px;display:flex;justify-content:space-between"><span>Counts and names</span><span style="color:#6B7280">▾</span></span>
+          <span style="font-size:12px;color:#4B5563">Counts and names (tap a count → who) · Counts only.</span>
+        </span>
+        <span style="font-weight:600">Show punch source</span>
+        <span style="display:flex;gap:8px;align-items:flex-start"><span style="width:16px;height:16px;border-radius:3px;background:#017E84;flex:none"></span><span style="font-size:12px;color:#4B5563">“Phone” or the kiosk's name.</span></span>
+        <span style="font-weight:600">Show punch location</span>
+        <span style="display:flex;gap:8px;align-items:flex-start"><span style="width:16px;height:16px;border:1.5px solid #9CA3AF;border-radius:3px;flex:none"></span><span style="font-size:12px;color:#4B5563">Off by default. On: the office / geofence name, or the area for flexible-location punches. Never raw GPS.</span></span>
+      </div>
+      <div style="height:1px;background:#E5E7EB"></div>
+      <div style="font-size:12px;color:#6B7280;line-height:1.5">Plan switches: Team leave needs Time Off; Team overview is part of Attendance (its “Who's out” also needs Time Off). Nothing here changes attendance scoring, leave approval or the Daily Review.</div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1040,"height":844}}'>
+class Component extends DCLogic { renderVals() { return {}; } }
+</script>
+</body>
+</html>

@@ -1,0 +1,484 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Team leave outlook</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="position:relative;width:390px;height:844px;overflow:hidden;border-radius:40px;display:flex;flex-direction:column;font-family:Inter,system-ui,-apple-system,sans-serif;font-size:14px;line-height:1.4;background:{{c.bg}};color:{{c.text}}">
+
+  <div style="display:flex;align-items:center;gap:8px;padding:50px 16px 10px 8px;background:{{c.card}};border-bottom:1px solid {{c.line}}">
+    <button type="button" onClick="{{back}}" aria-label="Back" style="width:40px;height:40px;border:0;background:transparent;color:{{c.sub}};display:grid;place-items:center;cursor:pointer;flex:none">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M11 6l-6 6 6 6"></path></svg>
+    </button>
+    <div style="flex:1;font-size:20px;font-weight:800;letter-spacing:-0.3px">{{title}}</div>
+    <button type="button" aria-label="Notifications, 4 unread" style="position:relative;width:40px;height:40px;border:0;background:transparent;color:{{c.accent}};display:grid;place-items:center;cursor:pointer">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 22a2.5 2.5 0 0 0 2.45-2h-4.9A2.5 2.5 0 0 0 12 22zm7-6V11a7 7 0 0 0-5.5-6.84V3.5a1.5 1.5 0 0 0-3 0v.66A7 7 0 0 0 5 11v5l-2 2v1h18v-1z"></path></svg>
+      <span style="position:absolute;top:3px;right:3px;min-width:17px;height:17px;border-radius:9px;background:#BA1A1A;border:1.5px solid #fff;color:#fff;font-size:10px;font-weight:800;display:grid;place-items:center;box-sizing:border-box">4</span>
+    </button>
+    <div aria-hidden="true" style="width:36px;height:36px;border-radius:50%;background:{{meBg}};color:#fff;display:grid;place-items:center;font-weight:700;font-size:13px;flex:none">{{meIni}}</div>
+  </div>
+
+  <div style="flex:1;min-height:0;overflow:auto;padding:14px 16px 24px;display:flex;flex-direction:column;gap:14px;scroll-behavior:smooth">
+
+    <div style="display:flex;align-items:flex-start;gap:12px">
+      <span aria-hidden="true" style="width:40px;height:40px;border-radius:13px;background:{{c.leaveTint}};color:{{c.leaveOn}};display:grid;place-items:center;flex:none"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="9" cy="8" r="3.2"></circle><path d="M3.5 19c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5"></path><circle cx="17" cy="9" r="2.6"></circle><path d="M16 14.2c2.4.1 4 1.7 4.5 4.3"></path></svg></span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:16px;font-weight:700">{{teamName}}</div>
+        <div style="font-size:12px;color:{{c.muted}};margin-top:1px">{{teamSub}}</div>
+      </div>
+    </div>
+
+    <sc-if value="{{hasDepts}}" hint-placeholder-val="{{false}}">
+      <div style="display:flex;gap:8px;overflow-x:auto;margin:0 -16px;padding:0 16px 2px">
+        <sc-for list="{{depts}}" as="d" hint-placeholder-count="5">
+          <button type="button" onClick="{{d.pick}}" style="flex:none;height:34px;padding:0 14px;border-radius:999px;border:1.5px solid {{d.border}};background:{{d.bg}};color:{{d.fg}};font-family:inherit;font-size:13px;font-weight:600;cursor:pointer">{{d.label}}</button>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <div role="group" aria-label="How far ahead" style="display:flex;background:{{c.seg}};border-radius:999px;padding:4px">
+      <sc-for list="{{segs}}" as="s" hint-placeholder-count="3">
+        <button type="button" onClick="{{s.pick}}" aria-pressed="{{s.on}}" style="flex:1;height:38px;border:0;border-radius:999px;background:{{s.bg}};color:{{s.fg}};font-family:inherit;font-size:14px;font-weight:{{s.w}};cursor:pointer;box-shadow:{{s.sh}}">{{s.label}}</button>
+      </sc-for>
+    </div>
+
+    <sc-if value="{{privacyLine}}" hint-placeholder-val="{{true}}">
+      <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:{{c.muted}};margin-top:-6px">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg>
+        <span>{{privacyText}}</span>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{isLoading}}" hint-placeholder-val="{{false}}">
+      <div aria-label="Loading team leave" style="display:flex;flex-direction:column;gap:12px">
+        <div style="border-radius:24px;background:{{c.card}};padding:16px;display:flex;flex-direction:column;gap:12px">
+          <div style="width:45%;height:12px;border-radius:6px;background:{{c.skel}}"></div>
+          <div style="height:26px;border-radius:6px;background:{{c.skel}}"></div>
+        </div>
+        <div style="width:35%;height:12px;border-radius:6px;background:{{c.skel}};margin-top:6px"></div>
+        <sc-for list="{{skelRows}}" as="k" hint-placeholder-count="4">
+          <div style="border-radius:24px;background:{{c.card}};padding:14px 16px;display:flex;gap:12px;align-items:center">
+            <div style="width:36px;height:36px;border-radius:50%;background:{{c.skel}}"></div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:8px"><div style="width:55%;height:11px;border-radius:6px;background:{{c.skel}}"></div><div style="width:75%;height:10px;border-radius:6px;background:{{c.skel}}"></div></div>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{isEmpty}}" hint-placeholder-val="{{false}}">
+      <div style="border-radius:24px;background:{{c.card}};box-shadow:{{c.shadow}};padding:28px 20px;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center">
+        <span aria-hidden="true" style="width:56px;height:56px;border-radius:18px;background:{{c.accentTint}};color:{{c.accent}};display:grid;place-items:center"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M3 10h18M8 3v4M16 3v4M9 15l2 2 4-4"></path></svg></span>
+        <div style="font-size:16px;font-weight:700">Everyone's in</div>
+        <div style="font-size:14px;color:{{c.sub}}">No one on your team is off in the next {{range}} days.</div>
+        <sc-if value="{{canWiden}}" hint-placeholder-val="{{true}}">
+          <button type="button" onClick="{{widen}}" style="margin-top:6px;height:44px;padding:0 22px;border-radius:999px;border:1.5px solid {{c.accent}};background:transparent;color:{{c.accent}};font-family:inherit;font-size:14px;font-weight:600;cursor:pointer">Look 90 days ahead</button>
+        </sc-if>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{isNoTeam}}" hint-placeholder-val="{{false}}">
+      <div style="border-radius:24px;background:{{c.card}};box-shadow:{{c.shadow}};padding:28px 20px;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center">
+        <span aria-hidden="true" style="width:56px;height:56px;border-radius:18px;background:{{c.seg}};color:{{c.sub}};display:grid;place-items:center"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="8" r="3.5"></circle><path d="M5 20c.8-3.6 3.6-5.5 7-5.5s6.2 1.9 7 5.5"></path></svg></span>
+        <div style="font-size:16px;font-weight:700">No team to show yet</div>
+        <div style="font-size:14px;color:{{c.sub}}">Team leave shows the people in your department. Ask HR to add you to one.</div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{showList}}" hint-placeholder-val="{{true}}">
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div style="border-radius:24px;background:{{c.card}};box-shadow:{{c.shadow}};padding:14px 14px 12px;display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;align-items:baseline;gap:8px"><span style="font-size:13px;font-weight:700;color:{{c.sub}}">Next {{range}} days</span><span style="flex:1;text-align:right;font-size:12px;color:{{c.muted}}">{{busiest}}</span></div>
+          <div style="display:flex;gap:4px">
+            <sc-for list="{{wcells}}" as="x" hint-placeholder-count="5">
+              <a href="#wk-{{x.w}}" aria-label="{{x.aria}}" style="flex:1;min-width:0;height:48px;border-radius:10px;background:{{x.bg}};outline:{{x.outline}};outline-offset:1px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;text-decoration:none;color:{{x.fg}}"><span style="font-size:14px;font-weight:800;line-height:1">{{x.n}}</span><span style="font-size:9px;font-weight:600;line-height:1.1;white-space:nowrap">{{x.d}}</span><span style="width:4px;height:4px;border-radius:50%;background:{{x.dot}}"></span></a>
+            </sc-for>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11px;color:{{c.muted}};align-items:center">
+            <span>People off each week:</span><span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:{{c.c1}}"></span>1</span>
+            <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:{{c.c2}}"></span>2</span>
+            <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:{{c.c3}}"></span>3+</span>
+            <span style="display:flex;align-items:center;gap:4px"><span style="width:6px;height:6px;border-radius:50%;background:{{c.holDot}}"></span>Public holiday</span>
+            <span>Tap a week to jump</span>
+          </div>
+        </div>
+
+        <sc-for list="{{weeks}}" as="wk" hint-placeholder-count="4">
+          <section id="wk-{{wk.w}}" style="display:flex;flex-direction:column;gap:8px;scroll-margin-top:8px">
+            <div style="display:flex;align-items:baseline;gap:8px;padding:0 4px">
+              <span style="font-size:14px;font-weight:700;color:{{c.sub}}">{{wk.title}}</span>
+              <span style="font-size:12px;color:{{c.muted}}">{{wk.span}}</span>
+              <span style="flex:1;text-align:right;font-size:12px;font-weight:600;color:{{wk.countFg}}">{{wk.count}}</span>
+            </div>
+            <sc-if value="{{wk.has}}" hint-placeholder-val="{{true}}">
+              <div style="border-radius:24px;background:{{c.card}};box-shadow:{{c.shadow}};overflow:hidden">
+                <sc-for list="{{wk.rows}}" as="r" hint-placeholder-count="2">
+                  <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-top:{{r.divider}}">
+                    <sc-if value="{{r.isHol}}" hint-placeholder-val="{{false}}">
+                      <span aria-hidden="true" style="width:36px;height:36px;border-radius:50%;background:{{c.seg}};color:{{c.sub}};display:grid;place-items:center;flex:none"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"></path></svg></span>
+                      <div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600">{{r.name}}</div><div style="font-size:13px;color:{{c.sub}}">{{r.when}} · public holiday</div></div>
+                    </sc-if>
+                    <sc-if value="{{r.isLeave}}" hint-placeholder-val="{{true}}">
+                      <span aria-hidden="true" style="width:36px;height:36px;border-radius:50%;background:{{r.av}};color:#fff;display:grid;place-items:center;font-weight:700;font-size:13px;flex:none">{{r.ini}}</span>
+                      <div style="flex:1;min-width:0">
+                        <div style="display:flex;align-items:center;gap:6px"><span style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{r.name}}</span><sc-if value="{{r.you}}" hint-placeholder-val="{{false}}"><span style="font-size:11px;font-weight:700;color:{{c.onAccentTint}};background:{{c.accentTint}};border-radius:999px;padding:1px 7px">You</span></sc-if></div>
+                        <div style="font-size:13px;color:{{c.sub}}">{{r.when}}</div>
+                        <sc-if value="{{r.hasMeta}}" hint-placeholder-val="{{false}}"><div style="font-size:12px;color:{{c.muted}}">{{r.meta}}</div></sc-if>
+                      </div>
+                      <sc-if value="{{r.today}}" hint-placeholder-val="{{false}}"><span style="font-size:11px;font-weight:700;color:{{c.leaveOn}};background:{{c.leaveTint}};border-radius:999px;padding:3px 9px;flex:none">Today</span></sc-if>
+                      <sc-if value="{{r.pending}}" hint-placeholder-val="{{false}}"><span style="font-size:11px;font-weight:700;color:{{c.leave}};border:1.5px dashed {{c.leave}};border-radius:999px;padding:2px 9px;flex:none">Pending</span></sc-if>
+                    </sc-if>
+                  </div>
+                </sc-for>
+              </div>
+            </sc-if>
+            <sc-if value="{{wk.none}}" hint-placeholder-val="{{false}}">
+              <div style="padding:0 4px;font-size:13px;color:{{c.muted}}">No one off.</div>
+            </sc-if>
+          </section>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{showGantt}}" hint-placeholder-val="{{false}}">
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div style="border-radius:24px;background:{{c.card}};box-shadow:{{c.shadow}};padding:10px 0 10px;overflow:hidden">
+          <div style="overflow-x:auto">
+            <div style="width:{{ganttW}}px">
+              <div style="display:flex;height:16px">
+                <div style="position:sticky;left:0;z-index:3;width:104px;flex:none;background:{{c.card}}"></div>
+                <div style="position:relative;width:{{trackW}}px;flex:none">
+                  <sc-for list="{{gMonths}}" as="gm" hint-placeholder-count="2"><span style="position:absolute;left:{{gm.left}}px;top:0;font-size:11px;font-weight:700;color:{{c.sub}};white-space:nowrap">{{gm.label}}</span></sc-for>
+                </div>
+              </div>
+              <div style="display:flex;height:30px;border-bottom:1px solid {{c.line}}">
+                <div style="position:sticky;left:0;z-index:3;width:104px;flex:none;background:{{c.card}};font-size:11px;color:{{c.muted}};padding:8px 0 0 14px;box-sizing:border-box">Next {{range}} days</div>
+                <div style="position:relative;width:{{trackW}}px;flex:none">
+                  <sc-for list="{{gDays}}" as="gd" hint-placeholder-count="30">
+                    <span style="position:absolute;left:{{gd.left}}px;width:{{cellW}}px;top:0;height:30px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:10px;line-height:1.15;color:{{gd.fg}};font-weight:{{gd.w}};background:{{gd.bg}}"><span>{{gd.wd}}</span><span>{{gd.num}}</span></span>
+                  </sc-for>
+                </div>
+              </div>
+              <sc-for list="{{gRows}}" as="gr" hint-placeholder-count="8">
+                <div style="display:flex;height:38px;border-bottom:1px solid {{c.line}}">
+                  <div style="position:sticky;left:0;z-index:3;width:104px;flex:none;background:{{c.card}};display:flex;align-items:center;gap:6px;padding-left:12px;box-sizing:border-box;border-right:1px solid {{c.line}}">
+                    <span aria-hidden="true" style="width:22px;height:22px;border-radius:50%;background:{{gr.av}};color:#fff;display:grid;place-items:center;font-size:9px;font-weight:700;flex:none">{{gr.ini}}</span>
+                    <span style="font-size:12px;font-weight:{{gr.w}};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{gr.short}}</span>
+                  </div>
+                  <div style="position:relative;width:{{trackW}}px;flex:none">
+                    <sc-for list="{{gStripes}}" as="st" hint-placeholder-count="8"><span style="position:absolute;left:{{st.left}}px;width:{{cellW}}px;top:0;bottom:0;background:{{st.bg}}"></span></sc-for>
+                    <span style="position:absolute;left:{{todayLeft}}px;width:2px;top:0;bottom:0;background:{{c.accent}};opacity:0.6"></span>
+                    <sc-for list="{{gr.bars}}" as="b" hint-placeholder-count="1"><span title="{{b.tip}}" style="position:absolute;left:{{b.left}}px;width:{{b.width}}px;top:10px;height:18px;border-radius:5px;background:{{b.bg}};border:{{b.border}};box-sizing:border-box"></span></sc-for>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11px;color:{{c.muted}};align-items:center;padding:0 4px">
+          <span style="display:flex;align-items:center;gap:4px"><span style="width:16px;height:10px;border-radius:3px;background:{{c.leave}}"></span>Approved</span>
+          <span style="display:flex;align-items:center;gap:4px"><span style="width:16px;height:10px;border-radius:3px;background:{{c.leaveTint}};border:1.5px dashed {{c.leave}};box-sizing:border-box"></span>Pending</span>
+          <span style="display:flex;align-items:center;gap:4px"><span style="width:8px;height:10px;border-radius:3px;background:{{c.leave}}"></span>Half day / hours</span>
+          <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:{{c.hol}}"></span>Public holiday</span>
+          <span>Swipe sideways for more days</span>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{showHeat}}" hint-placeholder-val="{{false}}">
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div style="display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11px;color:{{c.muted}};align-items:center;padding:0 4px">
+          <span>People off:</span>
+          <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:3px;background:{{c.c1}}"></span>1</span>
+          <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:3px;background:{{c.c2}}"></span>2</span>
+          <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:3px;background:{{c.c3}}"></span>3+</span>
+          <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:3px;background:{{c.hol}}"></span>PH = public holiday</span>
+          <span>Tap a day to see who</span>
+        </div>
+        <sc-for list="{{months}}" as="mo" hint-placeholder-count="2">
+          <div style="border-radius:24px;background:{{c.card}};box-shadow:{{c.shadow}};padding:14px 12px 10px">
+            <div style="font-size:14px;font-weight:700;padding:0 4px 8px">{{mo.label}}</div>
+            <div style="display:grid;grid-template-columns:repeat(7, minmax(0, 1fr));gap:4px;font-size:11px;color:{{c.muted}};text-align:center;padding-bottom:4px">
+              <span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(7, minmax(0, 1fr));gap:4px">
+              <sc-for list="{{mo.cells}}" as="hc" hint-placeholder-count="35">
+                <button type="button" onClick="{{hc.pick}}" disabled="{{hc.off}}" aria-label="{{hc.aria}}" style="height:40px;border-radius:10px;border:{{hc.border}};background:{{hc.bg}};color:{{hc.fg}};font-family:inherit;font-size:13px;font-weight:{{hc.w}};display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:0;cursor:pointer;opacity:{{hc.op}}"><span>{{hc.label}}</span><span style="font-size:9px;font-weight:700;line-height:1">{{hc.sub}}</span></button>
+              </sc-for>
+            </div>
+          </div>
+        </sc-for>
+        <div style="border-radius:24px;background:{{c.card}};box-shadow:{{c.shadow}};overflow:hidden">
+          <div style="padding:12px 16px 4px;font-size:14px;font-weight:700;color:{{c.sub}}">{{selTitle}}</div>
+          <sc-for list="{{selRows}}" as="sr" hint-placeholder-count="2">
+            <div style="display:flex;align-items:center;gap:12px;padding:10px 16px">
+              <span aria-hidden="true" style="width:32px;height:32px;border-radius:50%;background:{{sr.av}};color:#fff;display:grid;place-items:center;font-weight:700;font-size:12px;flex:none">{{sr.ini}}</span>
+              <div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:700">{{sr.name}}</div><div style="font-size:12px;color:{{c.sub}}">{{sr.when}}</div></div>
+              <sc-if value="{{sr.pending}}" hint-placeholder-val="{{false}}"><span style="font-size:11px;font-weight:700;color:{{c.leave}};border:1.5px dashed {{c.leave}};border-radius:999px;padding:2px 9px">Pending</span></sc-if>
+            </div>
+          </sc-for>
+          <sc-if value="{{selNone}}" hint-placeholder-val="{{false}}"><div style="padding:4px 16px 14px;font-size:13px;color:{{c.muted}}">No one off. Tap a shaded day.</div></sc-if>
+          <div style="height:6px"></div>
+        </div>
+      </div>
+    </sc-if>
+  </div>
+
+  <nav aria-label="Main" style="display:flex;height:76px;background:{{c.nav}};box-shadow:0 -2px 10px rgba(0,0,0,0.05);padding-bottom:10px;box-sizing:border-box">
+    <sc-for list="{{tabs}}" as="tb" hint-placeholder-count="4">
+      <span style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:{{tb.fg}}">
+        <span style="width:60px;height:30px;border-radius:999px;background:{{tb.ind}};display:grid;place-items:center"><span style="width:18px;height:18px;border:2px solid currentColor;border-radius:{{tb.r}};box-sizing:border-box"></span></span>
+        <span style="font-size:11px;font-weight:{{tb.w}};letter-spacing:0.6px">{{tb.label}}</span>
+      </span>
+    </sc-for>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"view":{"editor":"enum","options":["heat","list","gantt"],"default":"heat"},"range":{"editor":"enum","options":["30","60","90"],"default":"30"},"dark":{"editor":"boolean","default":false},"showType":{"editor":"boolean","default":false},"includePending":{"editor":"boolean","default":true},"screenState":{"editor":"enum","options":["ready","loading","empty","noteam"],"default":"ready"},"scope":{"editor":"enum","options":["team","company","department"],"default":"team"},"tab":{"editor":"enum","options":["leave","home"],"default":"leave"},"onBack":{"editor":null},"$preview":{"width":390,"height":844}}'>
+var DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+var MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+var MONL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+function od(o) { return new Date(2026, 9, 22 + o); }
+function fmt(o) { const d = od(o); return DOW[d.getDay()] + ' ' + d.getDate() + ' ' + MON[d.getMonth()]; }
+function wknd(o) { const g = od(o).getDay(); return g === 0 || g === 6; }
+function offOf(d) { return Math.round((d - od(0)) / 86400000); }
+var HOL = { 18: 'Deepavali (observed)', 64: 'Christmas Day', 71: 'New Year’s Day' };
+var PEOPLE = [
+  { id:'you', name:'Alexa Tan', hue:174, dept:'Marketing', you:true },
+  { id:'meilin', name:'Mei Lin Ong', hue:330, dept:'Marketing' },
+  { id:'daniel', name:'Daniel Tan', hue:290, dept:'Marketing' },
+  { id:'priya', name:'Priya Nair', hue:20, dept:'Marketing' },
+  { id:'ahmad', name:'Ahmad Rizal', hue:200, dept:'Marketing' },
+  { id:'kelvin', name:'Kelvin Goh', hue:100, dept:'Marketing' },
+  { id:'rachel', name:'Rachel Wong', hue:350, dept:'Marketing' },
+  { id:'jason', name:'Jason Lee', hue:230, dept:'Marketing' },
+  { id:'grace', name:'Grace Teo', hue:45, dept:'Marketing' },
+  { id:'farid', name:'Farid Hassan', hue:140, dept:'Marketing' },
+  { id:'weijie', name:'Wei Jie Chua', hue:260, dept:'Marketing' },
+  { id:'siti', name:'Siti Aminah', hue:10, dept:'Marketing' },
+  { id:'lina', name:'Lina Koh', hue:60, dept:'Fabric' },
+  { id:'marcus', name:'Marcus Yeo', hue:120, dept:'Fabric' },
+  { id:'hafiz', name:'Hafiz Osman', hue:190, dept:'Shipping' },
+  { id:'joanne', name:'Joanne Lim', hue:310, dept:'Accounts' },
+  { id:'benjamin', name:'Benjamin Ho', hue:30, dept:'Accounts' },
+  { id:'nurul', name:'Nurul Huda', hue:280, dept:'Marker Room' },
+  { id:'ibrahim', name:'Ibrahim Yusof', hue:110, dept:'Marker Room' },
+];
+var LEAVES = [
+  { p:'meilin', f:0, t:0, half:'morning', st:'approved', type:'Annual Leave' },
+  { p:'priya', f:1, t:1, st:'approved', type:'Sick Leave (Outpatient)' },
+  { p:'daniel', f:4, t:6, st:'pending', type:'Annual Leave' },
+  { p:'ahmad', f:11, t:15, st:'approved', type:'Annual Leave' },
+  { p:'kelvin', f:12, t:12, hours:'14:00 – 17:00', st:'approved', type:'Childcare Leave' },
+  { p:'rachel', f:21, t:21, st:'approved', type:'Annual Leave' },
+  { p:'jason', f:21, t:21, half:'afternoon', st:'pending', type:'Annual Leave' },
+  { p:'grace', f:32, t:36, st:'approved', type:'Annual Leave' },
+  { p:'farid', f:42, t:42, st:'approved', type:'Compassionate Leave' },
+  { p:'you', f:46, t:47, st:'approved', type:'Annual Leave' },
+  { p:'weijie', f:60, t:63, st:'approved', type:'Annual Leave' },
+  { p:'meilin', f:61, t:63, st:'approved', type:'Annual Leave' },
+  { p:'siti', f:68, t:70, st:'pending', type:'Annual Leave' },
+  { p:'daniel', f:74, t:74, half:'morning', st:'approved', type:'Annual Leave' },
+  { p:'priya', f:81, t:85, st:'approved', type:'Annual Leave' },
+  { p:'lina', f:0, t:1, st:'approved', type:'Annual Leave' },
+  { p:'hafiz', f:0, t:0, st:'approved', type:'Sick Leave (Outpatient)' },
+  { p:'joanne', f:0, t:0, st:'approved', type:'Annual Leave' },
+  { p:'marcus', f:5, t:6, st:'approved', type:'Annual Leave' },
+  { p:'nurul', f:12, t:13, st:'pending', type:'Annual Leave' },
+  { p:'benjamin', f:21, t:21, st:'approved', type:'Annual Leave' },
+  { p:'lina', f:39, t:43, st:'approved', type:'Annual Leave' },
+  { p:'hafiz', f:60, t:66, st:'approved', type:'Annual Leave' },
+  { p:'ibrahim', f:0, t:6, st:'approved', type:'Annual Leave' },
+];
+function initials(n) { return n.split(' ').map(w => w[0]).slice(0, 2).join(''); }
+function workDays(f, t) { let n = 0; for (let o = f; o <= t; o++) if (!wknd(o) && !HOL[o]) n++; return n; }
+
+class Component extends DCLogic {
+  constructor(p) { super(p); this.state = { range: null, sel: null, dept: 'All' }; }
+  renderVals() {
+    const P = this.props;
+    const dark = !!P.dark;
+    const c = dark ? {
+      bg:'#0E1415', card:'#182022', text:'#E1E3E3', sub:'#BFC8CA', muted:'#8F9A9B', line:'rgba(255,255,255,0.08)', seg:'#222B2C', segOn:'#33403F',
+      accent:'#58D8E4', accentTint:'#0F3B3F', onAccentTint:'#9EF0F7', nav:'#141B1C', shadow:'none',
+      leave:'#A8C8FF', leaveTint:'#1F3557', leaveOn:'#D6E3FF', cell0:'#263031', cellW:'#1B2324', c1:'#2C4A78', c2:'#4F78B8', c3:'#A8C8FF', hol:'#55615F', holDot:'#FFB59A', skel:'#263031', stripe:'rgba(255,255,255,0.035)'
+    } : {
+      bg:'#F7F9FB', card:'#FFFFFF', text:'#191C1E', sub:'#3D494A', muted:'#5F6C6E', line:'rgba(108,121,123,0.14)', seg:'#ECEEF0', segOn:'#FFFFFF',
+      accent:'#006971', accentTint:'#DCEFF1', onAccentTint:'#004F55', nav:'#FFFFFF', shadow:'0 4px 20px rgba(80,117,175,0.08)',
+      leave:'#395F97', leaveTint:'#D6E3FF', leaveOn:'#1D477E', cell0:'#E6E8EA', cellW:'#F2F4F6', c1:'#C9DAF8', c2:'#8FB0E3', c3:'#395F97', hol:'#9AA5A6', holDot:'#B3261E', skel:'#E6E8EA', stripe:'rgba(108,121,123,0.06)'
+    };
+    const N = Number(this.state.range || P.range || 30);
+    const view = P.view || 'heat';
+    const scope = P.scope || 'team';
+    const showType = scope === 'company' ? (P.showType ?? true) : !!P.showType;
+    const incPending = P.includePending ?? true;
+    const st = P.screenState || 'ready';
+    const dept = this.state.dept;
+
+    let people;
+    if (scope === 'team' || scope === 'department') people = PEOPLE.filter(p => p.dept === 'Marketing');
+    else people = PEOPLE.filter(p => dept === 'All' || p.dept === dept);
+    if (scope !== 'team') people = people.filter(p => !p.you);
+    const ids = new Set(people.map(p => p.id));
+    const byId = {}; PEOPLE.forEach(p => { byId[p.id] = p; });
+    const leaves = (st === 'empty' ? [] : LEAVES).filter(l => ids.has(l.p) && (incPending || l.st === 'approved') && l.t >= 0 && l.f <= N - 1);
+    const av = id => 'hsl(' + byId[id].hue + ',55%,45%)';
+
+    const whenOf = l => {
+      if (l.hours) return fmt(l.f) + ', ' + l.hours;
+      if (l.half) return fmt(l.f) + ' (' + l.half + ')';
+      if (l.f === l.t) return fmt(l.f);
+      const d = workDays(l.f, l.t);
+      return fmt(l.f) + ' – ' + fmt(l.t) + ' · ' + d + (d === 1 ? ' day' : ' days');
+    };
+
+    // ribbon
+    const counts = [];
+    for (let o = 0; o < N; o++) counts.push(new Set(leaves.filter(l => l.f <= o && l.t >= o && !wknd(o)).map(l => l.p)).size);
+    let best = -1, bestN = 0;
+    counts.forEach((n, o) => { if (n > bestN) { bestN = n; best = o; } });
+    const shade = n => n === 0 ? c.cell0 : n === 1 ? c.c1 : n === 2 ? c.c2 : c.c3;
+    const wOf = o => Math.floor((o + 3) / 7);
+    const cells = counts.map((n, o) => ({
+      w: wOf(o), bg: HOL[o] ? c.hol : (wknd(o) ? c.cellW : shade(n)),
+      outline: o === 0 ? '2px solid ' + c.accent : 'none',
+      aria: fmt(o) + (HOL[o] ? ', ' + HOL[o] : '') + ', ' + n + ' off',
+    }));
+    const wcells = [];
+    for (let w = 0; w <= wOf(N - 1); w++) {
+      const a = Math.max(7 * w - 3, 0), b = Math.min(7 * w + 3, N - 1);
+      const n = new Set(leaves.filter(l => l.f <= b && l.t >= a).map(l => l.p)).size;
+      let hol = false; for (let o = a; o <= b; o++) if (HOL[o]) hol = true;
+      const ws = od(7 * w - 3);
+      wcells.push({ w, n, d: ws.getDate() + ' ' + MON[ws.getMonth()], bg: shade(n), fg: n >= 3 ? (dark ? '#0E1415' : '#FFFFFF') : c.text,
+        dot: hol ? (n >= 3 ? (dark ? '#0E1415' : '#FFFFFF') : c.holDot) : 'transparent', outline: w === 0 ? '2px solid ' + c.accent : 'none',
+        aria: 'Week of ' + fmt(7 * w - 3) + ': ' + n + ' off' + (hol ? ', has a public holiday' : '') });
+    }
+    const monthSegs = [];
+    for (let o = 0; o < N; o++) {
+      const m = od(o).getMonth();
+      const last = monthSegs[monthSegs.length - 1];
+      if (last && last.m === m) last.flex++; else monthSegs.push({ m, flex: 1, label: MON[m] });
+    }
+    monthSegs.forEach(s => { if (s.flex < 4) s.label = ''; });
+
+    // weeks
+    const weeks = [];
+    for (let w = 0; w <= wOf(N - 1); w++) {
+      const a = Math.max(7 * w - 3, 0), b = Math.min(7 * w + 3, N - 1);
+      const rows = [];
+      leaves.filter(l => l.f <= b && l.t >= a).sort((x, y) => x.f - y.f || byId[x.p].name.localeCompare(byId[y.p].name)).forEach(l => {
+        const p = byId[l.p];
+        rows.push({ isLeave: true, isHol: false, name: p.name, ini: initials(p.name), av: av(l.p), you: !!p.you,
+          when: whenOf(l), hasMeta: showType, meta: l.type, pending: l.st === 'pending', today: l.f <= 0 && l.t >= 0 && l.st === 'approved', sort: l.f });
+      });
+      for (let o = a; o <= b; o++) if (HOL[o]) rows.push({ isLeave: false, isHol: true, name: HOL[o], when: fmt(o), sort: o });
+      rows.sort((x, y) => x.sort - y.sort);
+      rows.forEach((r, i) => { r.divider = i ? '1px solid ' + c.line : '0'; });
+      const people_n = new Set(leaves.filter(l => l.f <= b && l.t >= a).map(l => l.p)).size;
+      const ws = od(7 * w - 3), we = od(7 * w + 3);
+      const span = ws.getMonth() === we.getMonth() ? ws.getDate() + ' – ' + we.getDate() + ' ' + MON[we.getMonth()] : ws.getDate() + ' ' + MON[ws.getMonth()] + ' – ' + we.getDate() + ' ' + MON[we.getMonth()];
+      weeks.push({ w, title: w === 0 ? 'This week' : w === 1 ? 'Next week' : 'Week of ' + fmt(7 * w - 3).slice(4), span: w > 1 ? '' : span,
+        count: people_n ? people_n + ' off' : '', countFg: people_n >= 3 ? c.leave : c.muted, rows, has: rows.length > 0, none: rows.length === 0 });
+    }
+
+    // gantt
+    const cellW = N === 30 ? 24 : N === 60 ? 18 : 14;
+    const trackW = N * cellW;
+    const gDays = [], gStripes = [], gMonths = [];
+    for (let o = 0; o < N; o++) {
+      const d = od(o);
+      gDays.push({ left: o * cellW, wd: (cellW >= 18 || d.getDay() === 1) ? DOW[d.getDay()][0] : '', num: (cellW >= 18 || d.getDay() === 1) ? d.getDate() : '',
+        fg: o === 0 ? c.accent : (wknd(o) ? c.muted : c.sub), w: o === 0 ? 800 : 500, bg: HOL[o] ? c.hol + '55' : 'transparent' });
+      if (HOL[o]) gStripes.push({ left: o * cellW, bg: c.hol + '66' });
+      else if (wknd(o)) gStripes.push({ left: o * cellW, bg: c.stripe });
+      if (o === 0 || d.getDate() === 1) gMonths.push({ left: o * cellW + 4, label: MONL[d.getMonth()] + (d.getMonth() === 0 ? ' ' + d.getFullYear() : '') });
+    }
+    const gRowsPeople = people.slice().sort((x, y) => (y.you ? 1 : 0) - (x.you ? 1 : 0) || x.name.localeCompare(y.name));
+    const gRows = gRowsPeople.map(p => {
+      const bars = leaves.filter(l => l.p === p.id).map(l => {
+        const f = Math.max(l.f, 0), t = Math.min(l.t, N - 1);
+        let left = f * cellW + 2, width = (t - f + 1) * cellW - 4;
+        if (l.half) { width = cellW / 2 - 1; if (l.half === 'afternoon') left = f * cellW + cellW / 2; else left = f * cellW + 1; }
+        if (l.hours) { width = Math.max(cellW * 0.4, 5); left = f * cellW + cellW * 0.55; }
+        const pend = l.st === 'pending';
+        return { left, width, bg: pend ? c.leaveTint : c.leave, border: pend ? '1.5px dashed ' + c.leave : '0', tip: whenOf(l) + (pend ? ' · pending' : '') + (showType ? ' · ' + l.type : '') };
+      });
+      return { ini: initials(p.name), av: av(p.id), short: p.you ? 'You' : p.name.split(' ')[0] + ' ' + p.name.split(' ').slice(-1)[0][0] + '.', w: p.you ? 800 : 600, bars };
+    });
+
+    // heat map
+    const sel = this.state.sel ?? (counts[0] > 0 ? 0 : (best >= 0 ? best : 0));
+    const months = [];
+    let m0 = od(0).getMonth(), y0 = od(0).getFullYear();
+    const lastD = od(N - 1);
+    while (y0 < lastD.getFullYear() || (y0 === lastD.getFullYear() && m0 <= lastD.getMonth())) {
+      const first = new Date(y0, m0, 1);
+      const lead = (first.getDay() + 6) % 7;
+      const dim = new Date(y0, m0 + 1, 0).getDate();
+      const mcells = [];
+      for (let i = 0; i < lead; i++) mcells.push({ label: '', sub: '', off: true, bg: 'transparent', fg: c.muted, border: '0', w: 400, op: 1, aria: '', pick: null });
+      for (let day = 1; day <= dim; day++) {
+        const o = offOf(new Date(y0, m0, day));
+        const inR = o >= 0 && o < N;
+        const n = inR ? counts[o] : 0;
+        const isSel = inR && o === sel;
+        const fillStrong = n >= 3 && !HOL[o];
+        mcells.push({ label: day, sub: HOL[o] && inR ? 'PH' : (n ? n + ' off' : ''), off: !inR,
+          bg: !inR ? 'transparent' : HOL[o] ? c.hol + '88' : (wknd(o) ? c.cellW : shade(n)),
+          fg: fillStrong ? (dark ? '#0E1415' : '#FFFFFF') : c.text,
+          border: isSel ? '2px solid ' + c.accent : (o === 0 ? '1.5px solid ' + c.accent : '0'),
+          w: o === 0 || isSel ? 800 : 500, op: inR ? 1 : 0.35,
+          aria: inR ? fmt(o) + ', ' + n + ' off' : '', pick: inR ? () => this.setState({ sel: o }) : null });
+      }
+      months.push({ label: MONL[m0] + ' ' + y0, cells: mcells });
+      m0++; if (m0 > 11) { m0 = 0; y0++; }
+    }
+    const selRows = leaves.filter(l => l.f <= sel && l.t >= sel).map(l => ({ name: byId[l.p].name, ini: initials(byId[l.p].name), av: av(l.p), when: whenOf(l) + (showType ? ' · ' + l.type : ''), pending: l.st === 'pending' }));
+
+    const segs = [30, 60, 90].map(n => ({ label: n + ' days', on: n === N, bg: n === N ? c.segOn : 'transparent', fg: n === N ? c.accent : c.sub, w: n === N ? 700 : 600,
+      sh: n === N ? '0 1px 4px rgba(0,0,0,0.08)' : 'none', pick: () => this.setState({ range: n }) }));
+    const deptNames = ['All', 'Marketing', 'Fabric', 'Accounts', 'Shipping', 'Marker Room'];
+    const depts = deptNames.map(d => ({ label: d, pick: () => this.setState({ dept: d }),
+      bg: d === dept ? c.accentTint : 'transparent', fg: d === dept ? c.onAccentTint : c.sub, border: d === dept ? c.accentTint : (dark ? '#3A4647' : '#BCC9CA') }));
+
+    const tabActive = (P.tab || 'leave') === 'home' ? 0 : 1;
+    const tabs = ['HOME','LEAVE','HISTORY','EXPENSES'].map((l, i) => ({
+      label: l, fg: i === tabActive ? c.accent : (dark ? '#8F9A9B' : '#6C797B'), w: i === tabActive ? 700 : 500,
+      ind: i === tabActive ? (dark ? 'rgba(88,216,228,0.16)' : 'rgba(43,184,196,0.18)') : 'transparent', r: i === 2 ? '50%' : '4px'
+    }));
+
+    const ready = st === 'ready';
+    const teamName = scope === 'company' ? 'Novaworks · everyone' : 'Marketing';
+    const teamSub = scope === 'company' ? (dept === 'All' ? '60 people · 6 departments' : dept)
+      : scope === 'department' ? 'Your department · 18 people' : 'Your department · 12 people';
+    return {
+      c, range: N, title: scope === 'team' ? 'Team leave' : 'Leave outlook',
+      meIni: scope === 'team' ? 'AT' : 'RT', meBg: scope === 'team' ? 'hsl(174,55%,45%)' : 'hsl(30,55%,40%)',
+      teamName, teamSub, hasDepts: scope === 'company' && st !== 'noteam', depts, segs,
+      privacyLine: scope === 'team' && st !== 'noteam', privacyText: (showType ? 'Leave type shown' : 'Shown as “On leave” — no type or reason') + (incPending ? ' · includes pending requests' : ' · approved leave only'),
+      isLoading: st === 'loading', isEmpty: st === 'empty', isNoTeam: st === 'noteam', canWiden: N !== 90,
+      widen: () => this.setState({ range: 90 }),
+      skelRows: [1, 2, 3, 4],
+      showList: ready && view === 'list', showGantt: ready && view === 'gantt', showHeat: ready && view === 'heat',
+      cells, wcells, ribbonGap: N === 30 ? 2 : 1, monthSegs,
+      busiest: best >= 0 ? 'Busiest: ' + fmt(best) + ' · ' + bestN + ' off' : 'Nobody off',
+      weeks,
+      ganttW: 104 + trackW, trackW, cellW, gDays, gStripes, gMonths, gRows, todayLeft: cellW / 2 - 1,
+      months, selTitle: fmt(sel) + (HOL[sel] ? ' · ' + HOL[sel] : '') + ' · ' + selRows.length + ' off', selRows, selNone: selRows.length === 0,
+      tabs,
+      back: () => { if (P.onBack) P.onBack(); },
+    };
+  }
+}
+</script>
+</body>
+</html>
