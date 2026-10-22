@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../core/theme.dart';
+import '../core/omni_colors.dart';
 
 /// Shared "something went wrong" state — a centered card with a red
 /// alert icon, a friendly message, and an optional Retry button.
@@ -33,7 +33,7 @@ class ErrorStateView extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.error_outline, size: 48, color: AppTheme.error),
+            Icon(Icons.error_outline, size: 48, color: context.omni.error),
             const SizedBox(height: 12),
             Text(message, textAlign: TextAlign.center),
             if (onRetry != null) ...[

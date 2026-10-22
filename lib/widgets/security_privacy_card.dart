@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../core/constants.dart';
-import '../core/theme.dart';
+import '../core/omni_colors.dart';
 import '../services/biometric_auth_service.dart';
 import '../screens/profile/change_password_screen.dart';
 import '../screens/profile/devices_screen.dart';
@@ -132,7 +132,7 @@ class _SecurityPrivacyCardState extends State<SecurityPrivacyCard> {
                   ? 'Too many attempts — please try again in a few minutes.'
                   : "Couldn't verify — check your connection.");
       messenger.showSnackBar(
-          SnackBar(content: Text(message), backgroundColor: AppTheme.error));
+          SnackBar(content: Text(message), backgroundColor: context.omni.errorFill));
       return;
     }
 
@@ -156,7 +156,7 @@ class _SecurityPrivacyCardState extends State<SecurityPrivacyCard> {
         : SnackBar(
             content: Text(
                 "Couldn't enable ${biometricLabel(_bioKind)} — please try again."),
-            backgroundColor: AppTheme.error,
+            backgroundColor: context.omni.errorFill,
           ));
   }
 
@@ -185,18 +185,19 @@ class _SecurityPrivacyCardState extends State<SecurityPrivacyCard> {
 
   Future<void> _openExternalUrl(String url) async {
     final messenger = ScaffoldMessenger.of(context);
+    final errorFill = context.omni.errorFill;
     final uri = Uri.tryParse(url);
     if (uri == null) {
       messenger.showSnackBar(SnackBar(
           content: const Text('Invalid link.'),
-          backgroundColor: AppTheme.error));
+          backgroundColor: errorFill));
       return;
     }
     final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!launched) {
       messenger.showSnackBar(SnackBar(
           content: const Text("Couldn't open the link."),
-          backgroundColor: AppTheme.error));
+          backgroundColor: errorFill));
     }
   }
 
@@ -210,7 +211,7 @@ class _SecurityPrivacyCardState extends State<SecurityPrivacyCard> {
           children: [
             Row(
               children: [
-                Icon(Icons.security, size: 18, color: AppTheme.primary),
+                Icon(Icons.security, size: 18, color: context.omni.accent),
                 const SizedBox(width: 8),
                 const Text('Security & Privacy',
                     style:
@@ -278,19 +279,19 @@ class _SecurityPrivacyCardState extends State<SecurityPrivacyCard> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
-          color: AppTheme.surfaceContainer,
+          color: context.omni.soft,
           borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
           children: [
-            Icon(icon, size: 18, color: AppTheme.onSurfaceVariant),
+            Icon(icon, size: 18, color: context.omni.textSub),
             const SizedBox(width: 12),
             Expanded(
               child: Text(label,
                   style: const TextStyle(
                       fontSize: 14, fontWeight: FontWeight.w600)),
             ),
-            Icon(Icons.open_in_new, size: 16, color: AppTheme.onSurfaceVariant),
+            Icon(Icons.open_in_new, size: 16, color: context.omni.textSub),
           ],
         ),
       ),

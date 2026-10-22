@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import '../core/theme.dart';
+import '../core/omni_colors.dart';
 import '../services/push_service.dart';
 import 'primary_button.dart';
 
@@ -25,6 +25,7 @@ class PushExplainerCard extends StatelessWidget {
   Widget build(BuildContext context) {
     // Bottom CTAs: viewPadding, because an ancestor may consume padding.
     final bottom = MediaQuery.viewPaddingOf(context).bottom;
+    final c = context.omni;
     return Padding(
       key: const ValueKey('push-explainer-body'),
       padding: EdgeInsets.fromLTRB(24, 24, 24, bottom + 24),
@@ -40,13 +41,13 @@ class PushExplainerCard extends StatelessWidget {
                       width: 84,
                       height: 84,
                       decoration: BoxDecoration(
-                        color: AppTheme.primaryContainer.withValues(alpha: 0.15),
+                        color: c.button.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(24),
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.notifications_active_rounded,
                         size: 40,
-                        color: AppTheme.primary,
+                        color: c.accent,
                       ),
                     ),
                     const SizedBox(height: 24),
@@ -56,7 +57,7 @@ class PushExplainerCard extends StatelessWidget {
                       style: GoogleFonts.inter(
                         fontSize: 22,
                         fontWeight: FontWeight.w700,
-                        color: AppTheme.onSurface,
+                        color: c.text,
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -70,7 +71,7 @@ class PushExplainerCard extends StatelessWidget {
                         style: GoogleFonts.inter(
                           fontSize: 15,
                           height: 1.4,
-                          color: AppTheme.onSurfaceVariant,
+                          color: c.textSub,
                         ),
                       ),
                     ),
@@ -98,7 +99,7 @@ class PushExplainerCard extends StatelessWidget {
             textAlign: TextAlign.center,
             style: GoogleFonts.inter(
               fontSize: 12,
-              color: AppTheme.onSurfaceVariant,
+              color: c.textSub,
             ),
           ),
         ],
@@ -142,7 +143,7 @@ class _PushExplainerPageState extends State<_PushExplainerPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppTheme.surface,
+      backgroundColor: context.omni.background,
       body: SafeArea(
         // The card pads the bottom itself (viewPadding).
         bottom: false,

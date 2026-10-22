@@ -109,8 +109,8 @@ class AppTheme {
     );
   }
 
-  /// [sheets]: give bottom sheets and dialogs the `sheet` token. Off for
-  /// light, which keeps Material's defaults as before dark mode.
+  /// [sheets]: give bottom sheets, dialogs and snackbars dark colours.
+  /// Off for light, which keeps Material's defaults as before dark mode.
   static ThemeData _build(
     OmniColors c,
     ColorScheme scheme,
@@ -276,6 +276,16 @@ class AppTheme {
             )
           : null,
       dialogTheme: sheets ? DialogThemeData(backgroundColor: c.sheet) : null,
+      // Dark snackbars are a raised dark grey with light text (not
+      // Material's inverse light bar), so an error snackbar on
+      // `errorFill` keeps readable text too.
+      snackBarTheme: sheets
+          ? SnackBarThemeData(
+              backgroundColor: const Color(0xFF2A3334),
+              contentTextStyle: GoogleFonts.inter(fontSize: 14, color: c.text),
+              actionTextColor: c.accent,
+            )
+          : null,
     );
   }
 }

@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
-import '../core/theme.dart';
+import '../core/omni_colors.dart';
 import '../screens/home/home_shell.dart';
 import '../screens/notifications/notifications_screen.dart';
 import '../screens/profile/profile_screen.dart';
@@ -57,7 +57,7 @@ class OmniAppBar extends StatelessWidget implements PreferredSizeWidget {
         style: GoogleFonts.inter(
           fontSize: 20,
           fontWeight: FontWeight.w800,
-          color: AppTheme.onSurface,
+          color: context.omni.text,
           letterSpacing: -0.3,
         ),
       ),
@@ -140,6 +140,7 @@ class OmniBellButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hasUnread = unreadCount > 0;
+    final c = context.omni;
     return Stack(
       clipBehavior: Clip.none,
       alignment: Alignment.center,
@@ -153,8 +154,8 @@ class OmniBellButton extends StatelessWidget {
                 ? Icons.notifications_rounded
                 : Icons.notifications_outlined,
             color: hasUnread
-                ? AppTheme.primary
-                : AppTheme.outline.withValues(alpha: 0.7),
+                ? c.accent
+                : c.textMuted.withValues(alpha: 0.7),
           ),
           onPressed: onPressed,
         ),
@@ -174,15 +175,15 @@ class OmniBellButton extends StatelessWidget {
                 constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                 decoration: BoxDecoration(
-                  color: AppTheme.error,
+                  color: c.badge,
                   shape: BoxShape.rectangle,
                   borderRadius: BorderRadius.circular(100),
-                  border: Border.all(color: Colors.white, width: 1.5),
+                  border: Border.all(color: c.bar, width: 1.5),
                 ),
                 child: Text(
                   unreadCount > 9 ? '9+' : '$unreadCount',
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: c.onBadge,
                     fontSize: 10,
                     fontWeight: FontWeight.w800,
                   ),

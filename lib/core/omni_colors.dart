@@ -263,6 +263,8 @@ class OmniColors extends ThemeExtension<OmniColors> {
   final Color error;
   final Color errorTint;
   final Color onErrorTint;
+  /// Red fill behind white text (danger button, error snackbar).
+  final Color errorFill;
   final Color success;
   final Color successTint;
   final Color warning;
@@ -309,6 +311,7 @@ class OmniColors extends ThemeExtension<OmniColors> {
     required this.error,
     required this.errorTint,
     required this.onErrorTint,
+    required this.errorFill,
     required this.success,
     required this.successTint,
     required this.warning,
@@ -351,6 +354,7 @@ class OmniColors extends ThemeExtension<OmniColors> {
     error: const Color(0xFFBA1A1A),
     errorTint: const Color(0xFFFFDAD6),
     onErrorTint: const Color(0xFF93000A),
+    errorFill: const Color(0xFFBA1A1A),
     success: const Color(0xFF1B7F3B),
     successTint: const Color(0xFFDCF2E3),
     warning: const Color(0xFFB45309),
@@ -408,6 +412,7 @@ class OmniColors extends ThemeExtension<OmniColors> {
     error: const Color(0xFFFFB4AB),
     errorTint: const Color(0xFF5C1A16),
     onErrorTint: const Color(0xFFFFDAD6),
+    errorFill: const Color(0xFF93000A),
     success: const Color(0xFF7FD89F),
     successTint: const Color(0xFF173D27),
     warning: const Color(0xFFFFD58A),
@@ -450,6 +455,7 @@ class OmniColors extends ThemeExtension<OmniColors> {
     Color? error,
     Color? errorTint,
     Color? onErrorTint,
+    Color? errorFill,
     Color? success,
     Color? successTint,
     Color? warning,
@@ -490,6 +496,7 @@ class OmniColors extends ThemeExtension<OmniColors> {
         error: error ?? this.error,
         errorTint: errorTint ?? this.errorTint,
         onErrorTint: onErrorTint ?? this.onErrorTint,
+        errorFill: errorFill ?? this.errorFill,
         success: success ?? this.success,
         successTint: successTint ?? this.successTint,
         warning: warning ?? this.warning,
@@ -535,6 +542,7 @@ class OmniColors extends ThemeExtension<OmniColors> {
       error: c(error, other.error),
       errorTint: c(errorTint, other.errorTint),
       onErrorTint: c(onErrorTint, other.onErrorTint),
+      errorFill: c(errorFill, other.errorFill),
       success: c(success, other.success),
       successTint: c(successTint, other.successTint),
       warning: c(warning, other.warning),

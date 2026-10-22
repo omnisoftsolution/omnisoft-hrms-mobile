@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../core/theme.dart';
+import '../core/omni_colors.dart';
 
 enum PrimaryButtonVariant {
   /// Default — primaryContainer teal with the design-system glow.
@@ -31,16 +31,13 @@ class PrimaryButton extends StatelessWidget {
     this.fullWidth = true,
   });
 
-  Color get _bgColor => switch (variant) {
-        PrimaryButtonVariant.primary => AppTheme.primaryContainer,
-        PrimaryButtonVariant.danger => AppTheme.error,
-      };
-
-  List<BoxShadow> get _shadow {
-    final color = _bgColor.withValues(alpha: 0.30);
+  /// The glow in the button's own colour; none where the theme has no
+  /// button glow (dark).
+  List<BoxShadow>? _shadow(OmniColors c, Color bg) {
+    if (c.buttonGlow.isEmpty) return null;
     return [
       BoxShadow(
-        color: color,
+        color: bg.withValues(alpha: 0.30),
         blurRadius: 30,
         offset: const Offset(0, 10),
       ),
@@ -49,23 +46,27 @@ class PrimaryButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.omni;
+    final (bg, fg) = switch (variant) {
+      PrimaryButtonVariant.primary => (c.button, c.onButton),
+      PrimaryButtonVariant.danger => (c.errorFill, c.onBrandFill),
+    };
     final disabled = onPressed == null || loading;
     final button = ElevatedButton(
       onPressed: disabled ? null : onPressed,
       style: ElevatedButton.styleFrom(
-        backgroundColor: _bgColor,
-        disabledBackgroundColor: _bgColor.withValues(alpha: 0.6),
-        foregroundColor: Colors.white,
-        disabledForegroundColor: Colors.white.withValues(alpha: 0.85),
+        backgroundColor: bg,
+        disabledBackgroundColor: bg.withValues(alpha: 0.6),
+        foregroundColor: fg,
+        disabledForegroundColor: fg.withValues(alpha: 0.85),
         elevation: 0,
         shadowColor: Colors.transparent,
       ),
       child: loading
-          ? const SizedBox(
+          ? SizedBox(
               height: 20,
               width: 20,
-              child: CircularProgressIndicator(
-                  strokeWidth: 2.4, color: Colors.white),
+              child: CircularProgressIndicator(strokeWidth: 2.4, color: fg),
             )
           : Row(
               mainAxisSize: MainAxisSize.min,
@@ -84,7 +85,7 @@ class PrimaryButton extends StatelessWidget {
         borderRadius: BorderRadius.circular(100),
         // Hide the glow when disabled so a greyed-out button doesn't
         // look like it's actively pulsing.
-        boxShadow: disabled ? null : _shadow,
+        boxShadow: disabled ? null : _shadow(c, bg),
       ),
       child: button,
     );

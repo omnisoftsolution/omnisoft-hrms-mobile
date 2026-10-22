@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../core/theme.dart';
+import '../core/omni_colors.dart';
 
 /// Calendar date picker that auto-pops on selection (no OK button).
 Future<DateTime?> showAutoDatePicker({
@@ -98,18 +98,18 @@ class _AutoDatePickerBodyState extends State<_AutoDatePickerBody> {
               padding: const EdgeInsets.symmetric(
                   horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
-                color: AppTheme.error.withValues(alpha: 0.08),
+                color: context.omni.error.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Row(
                 children: [
-                  Icon(Icons.event_busy, size: 16, color: AppTheme.error),
+                  Icon(Icons.event_busy, size: 16, color: context.omni.error),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
                       'Public holiday: $focusedHoliday',
                       style: TextStyle(
-                          fontSize: 12, color: AppTheme.error),
+                          fontSize: 12, color: context.omni.error),
                     ),
                   ),
                 ],

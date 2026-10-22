@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../core/theme.dart';
+import '../core/omni_colors.dart';
 
 /// Omnisoft "S" logo rendered inside a white squircle with a soft
 /// blue-tinted shadow ("glass shadow"). Used on the login,
@@ -29,9 +29,10 @@ class BrandLogo extends StatelessWidget {
       width: size,
       height: size,
       decoration: BoxDecoration(
+        // The brand chip stays white in dark too (like the app icon).
         color: Colors.white,
         borderRadius: BorderRadius.circular(cornerRadius),
-        boxShadow: AppTheme.glassShadow,
+        boxShadow: context.omni.cardShadow,
       ),
       padding: EdgeInsets.all(padding),
       child: Image.asset(

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
-import '../core/theme.dart';
+import '../core/omni_colors.dart';
 import '../services/saas_service.dart';
 import '../services/session_service.dart';
 import 'primary_button.dart';
@@ -64,7 +64,7 @@ class _FeatureLockedPaneState extends State<FeatureLockedPane> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          backgroundColor: AppTheme.primary,
+          backgroundColor: context.omni.brandFill,
           content: const Text('Subscription refreshed.'),
           behavior: SnackBarBehavior.floating,
           duration: const Duration(seconds: 2),
@@ -80,6 +80,7 @@ class _FeatureLockedPaneState extends State<FeatureLockedPane> {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.omni;
     return Padding(
       padding: const EdgeInsets.all(32),
       child: Column(
@@ -90,16 +91,16 @@ class _FeatureLockedPaneState extends State<FeatureLockedPane> {
             height: 88,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: AppTheme.outline.withValues(alpha: 0.08),
+              color: c.textMuted.withValues(alpha: 0.08),
               border: Border.all(
-                color: AppTheme.outline.withValues(alpha: 0.2),
+                color: c.textMuted.withValues(alpha: 0.2),
                 width: 1.5,
               ),
             ),
             child: Icon(
               Icons.lock_outline_rounded,
               size: 36,
-              color: AppTheme.outline,
+              color: c.textMuted,
             ),
           ),
           const SizedBox(height: 24),
@@ -109,7 +110,7 @@ class _FeatureLockedPaneState extends State<FeatureLockedPane> {
             style: GoogleFonts.inter(
               fontSize: 22,
               fontWeight: FontWeight.w800,
-              color: AppTheme.onSurface,
+              color: c.text,
               letterSpacing: -0.3,
             ),
           ),
@@ -121,7 +122,7 @@ class _FeatureLockedPaneState extends State<FeatureLockedPane> {
             textAlign: TextAlign.center,
             style: GoogleFonts.inter(
               fontSize: 14,
-              color: AppTheme.onSurfaceVariant,
+              color: c.textSub,
               height: 1.45,
             ),
           ),
@@ -130,21 +131,21 @@ class _FeatureLockedPaneState extends State<FeatureLockedPane> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: AppTheme.error.withValues(alpha: 0.1),
+                color: c.error.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                    color: AppTheme.error.withValues(alpha: 0.3)),
+                    color: c.error.withValues(alpha: 0.3)),
               ),
               child: Row(
                 children: [
                   Icon(Icons.error_outline,
-                      color: AppTheme.error, size: 18),
+                      color: c.error, size: 18),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       _error!,
                       style: TextStyle(
-                          color: AppTheme.error, fontSize: 13),
+                          color: c.error, fontSize: 13),
                     ),
                   ),
                 ],

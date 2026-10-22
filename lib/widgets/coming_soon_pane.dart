@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import '../core/theme.dart';
+import '../core/omni_colors.dart';
 
 /// Shown for features the user's subscription enables but we haven't
 /// shipped yet. Sibling to FeatureLockedPane — same chrome, different
@@ -18,6 +18,7 @@ class ComingSoonPane extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.omni;
     return Padding(
       padding: const EdgeInsets.all(32),
       child: Column(
@@ -28,16 +29,16 @@ class ComingSoonPane extends StatelessWidget {
             height: 88,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: AppTheme.primaryContainer.withValues(alpha: 0.12),
+              color: c.button.withValues(alpha: 0.12),
               border: Border.all(
-                color: AppTheme.primaryContainer.withValues(alpha: 0.35),
+                color: c.button.withValues(alpha: 0.35),
                 width: 1.5,
               ),
             ),
             child: Icon(
               Icons.engineering_rounded,
               size: 36,
-              color: AppTheme.primary,
+              color: c.accent,
             ),
           ),
           const SizedBox(height: 24),
@@ -47,7 +48,7 @@ class ComingSoonPane extends StatelessWidget {
             style: GoogleFonts.inter(
               fontSize: 22,
               fontWeight: FontWeight.w800,
-              color: AppTheme.onSurface,
+              color: c.text,
               letterSpacing: -0.3,
             ),
           ),
@@ -60,7 +61,7 @@ class ComingSoonPane extends StatelessWidget {
             textAlign: TextAlign.center,
             style: GoogleFonts.inter(
               fontSize: 14,
-              color: AppTheme.onSurfaceVariant,
+              color: c.textSub,
               height: 1.45,
             ),
           ),

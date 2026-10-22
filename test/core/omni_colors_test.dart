@@ -42,6 +42,7 @@ Map<String, (Color, Color, double)> pairsOf(OmniColors c) {
     'onPendingTint/pendingTint': (c.onPendingTint, c.pendingTint, text),
     'error/card': (c.error, c.card, text),
     'onErrorTint/errorTint': (c.onErrorTint, c.errorTint, text),
+    'white/errorFill': (Colors.white, c.errorFill, text),
     'success/card': (c.success, c.card, text),
     'success/successTint': (c.success, c.successTint, text),
     'warning/warningTint': (c.warning, c.warningTint, text),
@@ -144,6 +145,7 @@ void main() {
           Brightness.dark);
       expect(t.cardTheme.color, Colors.white);
       expect(t.bottomSheetTheme.backgroundColor, isNull);
+      expect(t.snackBarTheme.backgroundColor, isNull);
     });
 
     testWidgets('dark theme carries the dark tokens', (tester) async {
@@ -165,6 +167,11 @@ void main() {
           c.button);
       expect(t.bottomSheetTheme.backgroundColor, c.sheet);
       expect(t.dialogTheme.backgroundColor, c.sheet);
+      // Light text on a dark bar, so error snackbars (errorFill) read too.
+      expect(t.snackBarTheme.contentTextStyle?.color, c.text);
+      expect(contrast(c.text, c.errorFill), greaterThan(4.5));
+      expect(contrast(c.text, t.snackBarTheme.backgroundColor!),
+          greaterThan(4.5));
     });
 
     test('the app stays light until every screen reads the tokens', () {
