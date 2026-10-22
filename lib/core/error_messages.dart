@@ -33,6 +33,11 @@ enum ErrorContext {
   /// Add this phone, posted again after an earlier answer was lost: an
   /// `invalid_code` now probably means the phone was already added.
   addPhoneAfterLostAnswer,
+
+  /// Team leave outlook and Team overview (connector 2.65.0): there
+  /// `not_allowed` means the grant was taken away, and `not_found` means
+  /// the person left the viewer's overview.
+  team,
 }
 
 /// App Identity error codes that [friendlyErrorCode] owns.
@@ -123,7 +128,10 @@ String friendlyError(
   ErrorContext context = ErrorContext.general,
   String? addPhoneCompany,
 }) {
-  if (e is ApiException && context != ErrorContext.general) {
+  if (e is ApiException && context == ErrorContext.team) {
+    final text = _teamMessage(e);
+    if (text != null) return text;
+  } else if (e is ApiException && context != ErrorContext.general) {
     final text = _addPhoneMessage(e, context, addPhoneCompany);
     if (text != null) return text;
   }
@@ -273,6 +281,14 @@ String friendlyError(
     return 'Sign out and sign in again to change notifications.';
   }
 
+  // --- Team leave / Team overview (connector 2.65.0) ---
+  if (raw.contains('names_hidden')) {
+    return "Counts only — your company doesn't show names here.";
+  }
+  if (raw.contains('invalid_department')) {
+    return "That department isn't available any more.";
+  }
+
   // --- Plan gate ---
   if (raw.contains('feature_unavailable')) {
     return "This feature isn't included in your company's plan. Ask HR.";
@@ -371,6 +387,19 @@ const _addPhoneUnavailable =
     "Adding a phone isn't available for your company yet. Ask HR.";
 
 const _askHrIfSignInFails = "If sign-in doesn't work, ask HR for a new code.";
+
+/// Team leave / Team overview words ([ErrorContext.team]): only the codes
+/// whose meaning differs on these routes; null = the usual
+/// [friendlyError] text.
+String? _teamMessage(ApiException e) {
+  switch (e.errorCode) {
+    case 'not_allowed':
+      return 'You no longer have access to this view.';
+    case 'not_found':
+      return 'This person is no longer in your view.';
+  }
+  return null;
+}
 
 /// True when the answer to a request was lost (`timeout`,
 /// `network_error`): after a sent `auth/add_device`, the server may have

@@ -17,6 +17,8 @@ import '../models/ocr_result.dart';
 import '../models/payslip_record.dart';
 import '../models/public_holiday.dart';
 import '../models/push_prefs.dart';
+import '../models/team_outlook.dart';
+import '../models/team_overview.dart';
 import 'identity_bodies.dart';
 
 /// Builds the request body map for attendance check-in/out calls.
@@ -131,6 +133,26 @@ Map<String, dynamic> buildDeclareBody({
     if (trimmed.isNotEmpty) 'note': trimmed,
   };
 }
+
+/// True when [e] says the route does not exist on this connector: an
+/// older connector (or a tenant rolled back) answers with Odoo's HTML
+/// 404, which `_post` reports as `server_error` with `http_status` 404,
+/// or a JSON `unknown_route`. The team screens then hide themselves and
+/// Home falls back to My day. An HTML 500 is a real failure, not this.
+bool isMissingRoute(Object e) =>
+    e is ApiException &&
+    (e.errorCode == 'unknown_route' ||
+        (e.errorCode == 'server_error' && e.data?['http_status'] == 404));
+
+/// True when a team route says this viewer may no longer see it: the
+/// grant was taken away (`not_allowed`), the company switched to counts
+/// only (`names_hidden`), or the plan lost the feature
+/// (`feature_unavailable`). Callers clear TeamCache for the employee and
+/// re-pull /me.
+bool isAccessLost(Object e) =>
+    e is ApiException &&
+    const {'not_allowed', 'names_hidden', 'feature_unavailable'}
+        .contains(e.errorCode);
 
 class OmniMobileApi {
   final String baseUrl;
@@ -348,6 +370,80 @@ class OmniMobileApi {
   Future<MyDay> fetchMyDay() async {
     final data = await _post('/home/my_day');
     return MyDay.fromJson(data);
+  }
+
+  // -- Team leave + Team overview (connector 2.65.0) --
+  //
+  // An older connector has none of these routes and answers with an HTML
+  // 404 (see [isMissingRoute]). The entry points are gated by the /me
+  // flags (SessionService.teamLeaveEnabled / homeView), which such a
+  // connector never sets, so that is a rollback case only.
+
+  /// The team leave outlook for the next [days] (30 | 60 | 90).
+  /// [context] is 'team' (the LEAVE tab) or 'overview' (from Home);
+  /// [view] is used in the team context only; [departmentId] in the
+  /// overview context only, and left out when null.
+  Future<TeamOutlook> fetchTeamOutlook({
+    int days = 30,
+    String context = 'team',
+    String view = 'team',
+    int? departmentId,
+  }) async {
+    final data = await _post('/leave/team_outlook', {
+      'days': days,
+      'context': context,
+      'view': view,
+      'department_id': ?departmentId,
+    });
+    return TeamOutlook.fromJson(data);
+  }
+
+  /// Who else on the team is off between [from] and [to] (calendar days;
+  /// any time of day is ignored). Informational only.
+  Future<TeamOverlap> fetchTeamOverlap(DateTime from, DateTime to) async {
+    final day = DateFormat('yyyy-MM-dd', 'en_US');
+    final data = await _post('/leave/team_overlap', {
+      'date_from': day.format(from),
+      'date_to': day.format(to),
+    });
+    return TeamOverlap.fromJson(data);
+  }
+
+  /// The Team overview for [day] ('today' | 'yesterday').
+  Future<TeamOverview> fetchOverview({
+    String day = 'today',
+    int? departmentId,
+  }) async {
+    final data = await _post('/home/overview', {
+      'day': day,
+      'department_id': ?departmentId,
+    });
+    return TeamOverview.fromJson(data);
+  }
+
+  /// One page of a bucket's people, today only. [limit] is 1 to 100.
+  Future<OverviewPage> fetchOverviewList({
+    required String bucket,
+    int? departmentId,
+    int offset = 0,
+    int limit = 50,
+  }) async {
+    final data = await _post('/home/overview/list', {
+      'bucket': bucket,
+      'department_id': ?departmentId,
+      'offset': offset,
+      'limit': limit,
+    });
+    return OverviewPage.fromJson(data);
+  }
+
+  /// The read-only person sheet. Throws ApiException('not_found') when the
+  /// person is no longer in the viewer's overview.
+  Future<OverviewPerson> fetchOverviewPerson(int employeeId) async {
+    final data = await _post('/home/overview/person', {
+      'employee_id': employeeId,
+    });
+    return OverviewPerson.fromJson(data);
   }
 
   // -- Notifications --
