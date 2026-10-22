@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/error_messages.dart';
-import '../../core/theme.dart';
+import '../../core/omni_colors.dart';
 import '../../services/omni_mobile_api.dart';
 import '../../services/session_service.dart';
 
@@ -115,6 +115,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.omni;
     return Scaffold(
       appBar: AppBar(title: const Text('Change password')),
       body: SafeArea(
@@ -129,10 +130,10 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
             const SizedBox(height: 8),
             Text('At least $_minLength characters.',
                 style:
-                    TextStyle(fontSize: 12, color: AppTheme.onSurfaceVariant)),
+                    TextStyle(fontSize: 12, color: c.textSub)),
             if (_error != null) ...[
               const SizedBox(height: 16),
-              Text(_error!, style: TextStyle(color: AppTheme.error)),
+              Text(_error!, style: TextStyle(color: c.error)),
             ],
             const SizedBox(height: 24),
             FilledButton(

@@ -5,7 +5,7 @@ import 'package:provider/provider.dart';
 import '../../core/app_login.dart';
 import '../../core/constants.dart';
 import '../../core/error_messages.dart';
-import '../../core/theme.dart';
+import '../../core/omni_colors.dart';
 import '../../models/company_info.dart';
 import '../../services/biometric_auth_service.dart';
 import '../../services/device_service.dart';
@@ -348,6 +348,7 @@ class _AddPhoneScreenState extends State<AddPhoneScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final c = context.omni;
     // No backing out while the request runs: the pair would be spent with
     // nothing saved on this phone.
     return PopScope(
@@ -370,12 +371,12 @@ class _AddPhoneScreenState extends State<AddPhoneScreen> {
                 'Use the code or QR from HR and your Omni HR password. '
                 'Your other phones stay signed in.',
                 style: theme.textTheme.bodyMedium
-                    ?.copyWith(color: AppTheme.outline)),
+                    ?.copyWith(color: c.textMuted)),
             const SizedBox(height: 28),
             if (_hasCompany) ...[
               Text('Company',
                   style: theme.textTheme.labelMedium
-                      ?.copyWith(color: AppTheme.outline)),
+                      ?.copyWith(color: c.textMuted)),
               const SizedBox(height: 4),
               Text(widget.companyCode!,
                   style: theme.textTheme.titleMedium
@@ -438,12 +439,12 @@ class _AddPhoneScreenState extends State<AddPhoneScreen> {
               padding: const EdgeInsets.only(left: 4, top: 6),
               child: Text('The password you use on your other phone.',
                   style: theme.textTheme.bodySmall
-                      ?.copyWith(color: AppTheme.outline)),
+                      ?.copyWith(color: c.textMuted)),
             ),
             if (_error != null) ...[
               const SizedBox(height: 16),
               Text(_error!,
-                  style: TextStyle(color: AppTheme.error, fontSize: 13)),
+                  style: TextStyle(color: c.error, fontSize: 13)),
             ],
             const SizedBox(height: 28),
             FilledButton(

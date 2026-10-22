@@ -3,7 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../core/app_login.dart';
 import '../../core/constants.dart';
-import '../../core/theme.dart';
+import '../../core/omni_colors.dart';
 import '../../core/error_messages.dart';
 import '../../services/biometric_auth_service.dart';
 import '../../services/biometric_types.dart';
@@ -382,6 +382,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final session = context.watch<SessionService>();
+    final c = context.omni;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Sign In'),
@@ -484,10 +485,9 @@ class _LoginScreenState extends State<LoginScreen> {
                             label: Text(
                                 'Sign in with ${biometricLabel(_bioKind)}'),
                             style: OutlinedButton.styleFrom(
-                              foregroundColor: AppTheme.primary,
+                              foregroundColor: c.accent,
                               side: BorderSide(
-                                  color:
-                                      AppTheme.primary.withValues(alpha: 0.5)),
+                                  color: c.accent.withValues(alpha: 0.5)),
                               shape: const StadiumBorder(),
                               padding:
                                   const EdgeInsets.symmetric(vertical: 14),
@@ -547,7 +547,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             fontSize: 9,
                             fontWeight: FontWeight.w700,
                             letterSpacing: 2,
-                            color: AppTheme.outline.withValues(alpha: 0.7),
+                            color: c.textMuted.withValues(alpha: 0.7),
                           ),
                         ),
                       ),
@@ -564,21 +564,22 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Widget _errorBanner(String text) {
+    final c = context.omni;
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: AppTheme.error.withValues(alpha: 0.1),
+        color: c.error.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.error.withValues(alpha: 0.3)),
+        border: Border.all(color: c.error.withValues(alpha: 0.3)),
       ),
       child: Row(
         children: [
-          Icon(Icons.error_outline, color: AppTheme.error, size: 18),
+          Icon(Icons.error_outline, color: c.error, size: 18),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               text,
-              style: TextStyle(color: AppTheme.error, fontSize: 13),
+              style: TextStyle(color: c.error, fontSize: 13),
             ),
           ),
         ],
@@ -587,6 +588,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Widget _cleanBranding(SessionService session) {
+    final c = context.omni;
     final hasLogo = session.companyLogoB64.isNotEmpty;
     final name = session.companyName.isNotEmpty
         ? session.companyName
@@ -614,7 +616,7 @@ class _LoginScreenState extends State<LoginScreen> {
           style: GoogleFonts.inter(
             fontSize: 22,
             fontWeight: FontWeight.w800,
-            color: AppTheme.onSurface,
+            color: c.text,
             letterSpacing: -0.3,
           ),
           textAlign: TextAlign.center,
@@ -624,6 +626,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Widget _logoFallback(String name) {
+    final c = context.omni;
     final initials = name.isNotEmpty
         ? name
             .split(' ')
@@ -636,7 +639,7 @@ class _LoginScreenState extends State<LoginScreen> {
       width: 120,
       height: 120,
       decoration: BoxDecoration(
-        color: AppTheme.primaryContainer.withValues(alpha: 0.15),
+        color: c.button.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Center(
@@ -645,7 +648,7 @@ class _LoginScreenState extends State<LoginScreen> {
           style: GoogleFonts.inter(
             fontSize: 48,
             fontWeight: FontWeight.w800,
-            color: AppTheme.primary,
+            color: c.accent,
           ),
         ),
       ),
@@ -653,6 +656,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Widget _debugBranding(SessionService session) {
+    final c = context.omni;
     return Column(
       children: [
         const BrandLogo.large(),
@@ -664,7 +668,7 @@ class _LoginScreenState extends State<LoginScreen> {
           style: Theme.of(context)
               .textTheme
               .displaySmall
-              ?.copyWith(color: AppTheme.onSurface),
+              ?.copyWith(color: c.text),
         ),
         if (session.clientUrl.isNotEmpty) ...[
           const SizedBox(height: 8),
@@ -673,7 +677,7 @@ class _LoginScreenState extends State<LoginScreen> {
             style: GoogleFonts.inter(
               fontSize: 13,
               fontWeight: FontWeight.w600,
-              color: AppTheme.primaryContainer,
+              color: c.button,
             ),
             textAlign: TextAlign.center,
           ),
@@ -685,7 +689,7 @@ class _LoginScreenState extends State<LoginScreen> {
             style: GoogleFonts.firaCode(
               fontSize: 11,
               fontStyle: FontStyle.italic,
-              color: AppTheme.outline,
+              color: c.textMuted,
             ),
           ),
         ],

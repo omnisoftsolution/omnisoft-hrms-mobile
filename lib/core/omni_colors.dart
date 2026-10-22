@@ -594,4 +594,9 @@ extension OmniColorsContext on BuildContext {
   /// The Omni HR colour tokens for the current brightness.
   OmniColors get omni =>
       Theme.of(this).extension<OmniColors>() ?? OmniColors.light;
+
+  /// True in the dark theme. Only for the few legacy colours that have
+  /// no token and must stay exactly as they were in light:
+  /// `context.isDarkTheme ? c.token : const Color(0x…)`.
+  bool get isDarkTheme => Theme.of(this).brightness == Brightness.dark;
 }

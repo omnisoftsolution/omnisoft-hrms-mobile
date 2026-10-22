@@ -4,7 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../core/theme.dart';
+import '../../core/omni_colors.dart';
 import '../../core/datetime_utils.dart';
 import '../../core/money.dart';
 import '../../models/expense_record.dart';
@@ -58,7 +58,7 @@ class ExpenseDetailScreen extends StatelessWidget {
             child: const Text('Cancel'),
           ),
           TextButton(
-            style: TextButton.styleFrom(foregroundColor: AppTheme.error),
+            style: TextButton.styleFrom(foregroundColor: ctx.omni.error),
             onPressed: () => Navigator.of(ctx).pop(true),
             child: const Text('Delete'),
           ),
@@ -117,6 +117,7 @@ class ExpenseDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.omni;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Expense'),
@@ -131,7 +132,7 @@ class ExpenseDetailScreen extends StatelessWidget {
             IconButton(
               tooltip: 'Delete',
               icon: Icon(Icons.delete_outline_rounded,
-                  color: AppTheme.error),
+                  color: c.error),
               onPressed: () => _confirmDelete(context),
             ),
         ],
@@ -144,7 +145,7 @@ class ExpenseDetailScreen extends StatelessWidget {
               padding: const EdgeInsets.symmetric(
                   horizontal: 12, vertical: 4),
               decoration: BoxDecoration(
-                color: _stateColor(record.state).withValues(alpha: 0.1),
+                color: _stateColor(context, record.state).withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
@@ -153,7 +154,7 @@ class ExpenseDetailScreen extends StatelessWidget {
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 0.8,
-                  color: _stateColor(record.state),
+                  color: _stateColor(context, record.state),
                 ),
               ),
             ),
@@ -171,7 +172,7 @@ class ExpenseDetailScreen extends StatelessWidget {
           const SizedBox(height: 24),
           if (record.state == 'refused' &&
               record.refuseReason.isNotEmpty) ...[
-            _refuseBanner(),
+            _refuseBanner(context),
             const SizedBox(height: 16),
           ],
           Card(
@@ -179,13 +180,13 @@ class ExpenseDetailScreen extends StatelessWidget {
               padding: const EdgeInsets.all(20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children: _buildDetailRows(),
+                children: _buildDetailRows(context),
               ),
             ),
           ),
           if (record.attachments.isNotEmpty) ...[
             const SizedBox(height: 24),
-            _receiptHeader(),
+            _receiptHeader(context),
             const SizedBox(height: 8),
             for (final att in record.attachments)
               _AttachmentCard(parent: this, att: att),
@@ -195,20 +196,21 @@ class ExpenseDetailScreen extends StatelessWidget {
     );
   }
 
-  Widget _refuseBanner() {
+  Widget _refuseBanner(BuildContext context) {
+    final c = context.omni;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppTheme.error.withValues(alpha: 0.08),
+        color: c.error.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: AppTheme.error.withValues(alpha: 0.3),
+          color: c.error.withValues(alpha: 0.3),
         ),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.block_rounded, color: AppTheme.error, size: 22),
+          Icon(Icons.block_rounded, color: c.error, size: 22),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -220,7 +222,7 @@ class ExpenseDetailScreen extends StatelessWidget {
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 0.8,
-                    color: AppTheme.error,
+                    color: c.error,
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -240,14 +242,15 @@ class ExpenseDetailScreen extends StatelessWidget {
     );
   }
 
-  Widget _receiptHeader() {
+  Widget _receiptHeader(BuildContext context) {
+    final c = context.omni;
     return Text(
       'RECEIPT',
       style: TextStyle(
         fontSize: 11,
         fontWeight: FontWeight.w700,
         letterSpacing: 0.8,
-        color: AppTheme.onSurfaceVariant,
+        color: c.textSub,
       ),
     );
   }
@@ -267,6 +270,7 @@ class ExpenseDetailScreen extends StatelessWidget {
     }
     if (bytes == null) {
       return _placeholderCard(
+        context,
         child: _fileFallback(context, att, dataB64: dataB64),
       );
     }
@@ -284,7 +288,7 @@ class ExpenseDetailScreen extends StatelessWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(16),
         child: Container(
-          color: AppTheme.surfaceContainer,
+          color: context.omni.soft,
           constraints: const BoxConstraints(maxHeight: 320),
           width: double.infinity,
           child: Image.memory(
@@ -296,10 +300,10 @@ class ExpenseDetailScreen extends StatelessWidget {
     );
   }
 
-  Widget _placeholderCard({required Widget child}) {
+  Widget _placeholderCard(BuildContext context, {required Widget child}) {
     return Container(
       decoration: BoxDecoration(
-        color: AppTheme.surfaceContainer,
+        color: context.omni.soft,
         borderRadius: BorderRadius.circular(16),
       ),
       padding: const EdgeInsets.all(16),
@@ -309,9 +313,10 @@ class ExpenseDetailScreen extends StatelessWidget {
 
   Widget _fileFallback(BuildContext context, ExpenseAttachment att,
       {String? dataB64, String? reason}) {
+    final c = context.omni;
     return Row(
       children: [
-        Icon(Icons.description_outlined, color: AppTheme.primary),
+        Icon(Icons.description_outlined, color: c.accent),
         const SizedBox(width: 12),
         Expanded(
           child: Column(
@@ -333,7 +338,7 @@ class ExpenseDetailScreen extends StatelessWidget {
                         ' · ${att.sizeLabel}',
                 style: TextStyle(
                   fontSize: 12,
-                  color: AppTheme.onSurfaceVariant,
+                  color: c.textSub,
                 ),
               ),
             ],
@@ -361,7 +366,7 @@ class ExpenseDetailScreen extends StatelessWidget {
 
   /// Build the detail rows with a divider between each one. Tax rows
   /// only render when Odoo actually applied a tax (taxAmount > 0).
-  List<Widget> _buildDetailRows() {
+  List<Widget> _buildDetailRows(BuildContext context) {
     final entries = <List<String>>[
       ['Description', record.name.isEmpty ? '—' : record.name],
       [
@@ -392,18 +397,19 @@ class ExpenseDetailScreen extends StatelessWidget {
     final rows = <Widget>[];
     for (var i = 0; i < entries.length; i++) {
       if (i > 0) rows.add(const Divider(height: 24));
-      rows.add(_row(entries[i][0], entries[i][1]));
+      rows.add(_row(context, entries[i][0], entries[i][1]));
     }
     return rows;
   }
 
-  Widget _row(String label, String value) {
+  Widget _row(BuildContext context, String label, String value) {
+    final c = context.omni;
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(label,
             style: TextStyle(
-                color: AppTheme.onSurfaceVariant, fontSize: 13)),
+                color: c.textSub, fontSize: 13)),
         const SizedBox(width: 16),
         Flexible(
           child: Text(
@@ -419,22 +425,23 @@ class ExpenseDetailScreen extends StatelessWidget {
     );
   }
 
-  Color _stateColor(String state) {
+  Color _stateColor(BuildContext context, String state) {
+    final c = context.omni;
     switch (state) {
       case 'draft':
-        return AppTheme.onSurfaceVariant;
+        return c.textSub;
       case 'submitted':
-        return AppTheme.secondary;
+        return c.secondary;
       case 'approved':
       case 'posted':
       case 'in_payment':
-        return AppTheme.primary;
+        return c.accent;
       case 'paid':
-        return const Color(0xFF22C55E);
+        return context.isDarkTheme ? c.success : const Color(0xFF22C55E);
       case 'refused':
-        return AppTheme.error;
+        return c.error;
       default:
-        return AppTheme.onSurfaceVariant;
+        return c.textSub;
     }
   }
 }
@@ -478,6 +485,7 @@ class _AttachmentCardState extends State<_AttachmentCard> {
         builder: (context, snap) {
           if (snap.connectionState != ConnectionState.done) {
             return widget.parent._placeholderCard(
+              context,
               child: const SizedBox(
                 height: 160,
                 child: Center(child: CircularProgressIndicator()),
@@ -486,6 +494,7 @@ class _AttachmentCardState extends State<_AttachmentCard> {
           }
           if (snap.hasError || snap.data == null) {
             return widget.parent._placeholderCard(
+              context,
               child: widget.parent._fileFallback(
                   context, att, dataB64: null,
                   reason: 'Could not load receipt.'),
@@ -496,6 +505,7 @@ class _AttachmentCardState extends State<_AttachmentCard> {
             return widget.parent._imagePreview(context, att, dataB64);
           }
           return widget.parent._placeholderCard(
+            context,
             child: widget.parent._fileFallback(context, att, dataB64: dataB64),
           );
         },

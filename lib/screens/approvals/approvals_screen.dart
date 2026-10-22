@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/error_messages.dart';
-import '../../core/theme.dart';
+import '../../core/omni_colors.dart';
 import '../../models/approval_item.dart';
 import '../../services/omni_mobile_api.dart';
 import '../../services/session_service.dart';
@@ -125,6 +125,7 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.omni;
     final recent = _segment == 1;
     final items = recent ? _recent : _pending;
     final ready = !_loading && _error == null;
@@ -134,7 +135,7 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
     final mine = _pending.where((i) => i.assignedToMe).toList();
     final others = _pending.where((i) => !i.assignedToMe).toList();
     return Scaffold(
-      backgroundColor: AppTheme.surface,
+      backgroundColor: c.background,
       appBar: AppBar(title: const Text('Leave approvals')),
       body: RefreshIndicator(
         onRefresh: _load,
@@ -168,10 +169,10 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
                 padding: const EdgeInsets.symmetric(vertical: 64),
                 child: Column(
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.inbox_outlined,
                       size: 48,
-                      color: AppTheme.outline,
+                      color: c.textMuted,
                     ),
                     const SizedBox(height: 12),
                     Text(
@@ -179,35 +180,35 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
                           ? 'No decisions in the last 30 days'
                           : 'Nothing waiting for you',
                       textAlign: TextAlign.center,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 14,
-                        color: AppTheme.onSurfaceVariant,
+                        color: c.textSub,
                       ),
                     ),
                   ],
                 ),
               )
             else if (recent)
-              _card(items, recent: true)
+              _card(c, items, recent: true)
             else ...[
-              _sectionTitle('Waiting for you'),
+              _sectionTitle(c, 'Waiting for you'),
               if (mine.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(4, 0, 4, 4),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
                   child: Text(
                     'Nothing waiting for you.',
                     style: TextStyle(
                       fontSize: 13,
-                      color: AppTheme.onSurfaceVariant,
+                      color: c.textSub,
                     ),
                   ),
                 )
               else
-                _card(mine, recent: false),
+                _card(c, mine, recent: false),
               if (others.isNotEmpty) ...[
                 const SizedBox(height: 20),
-                _sectionTitle('You can also approve'),
-                _card(others, recent: false),
+                _sectionTitle(c, 'You can also approve'),
+                _card(c, others, recent: false),
               ],
             ],
           ],
@@ -217,11 +218,11 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
   }
 
   /// The white rounded card holding a list of rows.
-  Widget _card(List<ApprovalItem> items, {required bool recent}) => Container(
+  Widget _card(OmniColors c, List<ApprovalItem> items, {required bool recent}) => Container(
     decoration: BoxDecoration(
-      color: AppTheme.surfaceContainerLowest,
+      color: c.card,
       borderRadius: BorderRadius.circular(24),
-      boxShadow: AppTheme.glassShadow,
+      boxShadow: c.cardShadow,
     ),
     clipBehavior: Clip.antiAlias,
     child: Material(
@@ -242,14 +243,14 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
   );
 
   /// Heading above a Pending section.
-  Widget _sectionTitle(String text) => Padding(
+  Widget _sectionTitle(OmniColors c, String text) => Padding(
     padding: const EdgeInsets.fromLTRB(4, 4, 4, 8),
     child: Text(
       text,
-      style: const TextStyle(
+      style: TextStyle(
         fontSize: 13,
         fontWeight: FontWeight.w700,
-        color: AppTheme.onSurfaceVariant,
+        color: c.textSub,
       ),
     ),
   );
@@ -265,19 +266,21 @@ class _NameAndChip extends StatelessWidget {
     required this.name,
     required this.chip,
     required this.color,
+    required this.nameColor,
   });
 
   final String name;
   final String chip;
   final Color color;
+  final Color nameColor;
 
   static const _maxChipShare = 0.45;
   static const _gap = 8.0;
   static const _chipPadding = EdgeInsets.symmetric(horizontal: 10, vertical: 3);
-  static const _nameStyle = TextStyle(
+  TextStyle get _nameStyle => TextStyle(
     fontSize: 14,
     fontWeight: FontWeight.w700,
-    color: AppTheme.onSurface,
+    color: nameColor,
   );
 
   TextStyle get _chipStyle =>
@@ -347,15 +350,15 @@ class _ApprovalRow extends StatelessWidget {
   final bool recent;
   final VoidCallback onTap;
 
-  Color get _chipColor {
-    if (!recent) return item.assignedToMe ? AppTheme.primary : AppTheme.outline;
+  Color _chipColor(OmniColors c) {
+    if (!recent) return item.assignedToMe ? c.accent : c.textMuted;
     switch (item.outcome) {
       case 'approved':
-        return AppTheme.primary;
+        return c.accent;
       case 'refused':
-        return AppTheme.error;
+        return c.error;
       default:
-        return AppTheme.secondary;
+        return c.secondary;
     }
   }
 
@@ -374,6 +377,7 @@ class _ApprovalRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.omni;
     final chip = recent ? item.outcomeLabel : item.stepLabel;
     final meta = [
       item.durationLong,
@@ -396,14 +400,15 @@ class _ApprovalRow extends StatelessWidget {
                   _NameAndChip(
                     name: item.employeeName,
                     chip: chip,
-                    color: _chipColor,
+                    color: _chipColor(c),
+                    nameColor: c.text,
                   ),
                   const SizedBox(height: 3),
                   Text(
                     '${item.leaveTypeName} · ${item.datesLabel}',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 13,
-                      color: AppTheme.onSurface,
+                      color: c.text,
                     ),
                   ),
                   if (meta.isNotEmpty || item.hasAttachment) ...[
@@ -411,19 +416,19 @@ class _ApprovalRow extends StatelessWidget {
                     Row(
                       children: [
                         if (item.hasAttachment) ...[
-                          const Icon(
+                          Icon(
                             Icons.attach_file_rounded,
                             size: 14,
-                            color: AppTheme.outline,
+                            color: c.textMuted,
                           ),
                           const SizedBox(width: 2),
                         ],
                         Expanded(
                           child: Text(
                             meta,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 12,
-                              color: AppTheme.onSurfaceVariant,
+                              color: c.textSub,
                             ),
                           ),
                         ),
@@ -436,9 +441,9 @@ class _ApprovalRow extends StatelessWidget {
                       note,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
-                        color: AppTheme.onSurfaceVariant,
+                        color: c.textSub,
                       ),
                     ),
                   ],

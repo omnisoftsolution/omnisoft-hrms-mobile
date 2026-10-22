@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import '../../core/datetime_utils.dart';
 import '../../core/error_messages.dart';
 import '../../core/push_groups.dart';
-import '../../core/theme.dart';
+import '../../core/omni_colors.dart';
 import '../../models/attendance_ask.dart';
 import '../../models/notification_record.dart';
 import '../../services/notification_service.dart';
@@ -123,6 +123,8 @@ Future<void> _answer(
 ) async {
   final post = answerReview ?? _reviewAnswer(context.read<SessionService>());
   final messenger = ScaffoldMessenger.of(context);
+  // Read before the awaits below: the snackbars outlive this context.
+  final c = context.omni;
   final question = n.payload['question'];
   final answer = await showDeclarationSheet(
     context,
@@ -153,7 +155,7 @@ Future<void> _answer(
     messenger.showSnackBar(
       SnackBar(
         content: Text(friendlyError(e)),
-        backgroundColor: AppTheme.error,
+        backgroundColor: c.errorFill,
       ),
     );
     // A 409 already_answered must not reopen the sheet on the next tap.
@@ -162,9 +164,9 @@ Future<void> _answer(
   }
   await svc.markRead(n.id);
   messenger.showSnackBar(
-    const SnackBar(
-      content: Text('Sent to HR'),
-      backgroundColor: AppTheme.primary,
+    SnackBar(
+      content: const Text('Sent to HR'),
+      backgroundColor: c.brandFill,
     ),
   );
   await svc.refreshList();

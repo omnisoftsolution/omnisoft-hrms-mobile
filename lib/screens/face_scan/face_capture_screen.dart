@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants.dart';
 import '../../core/error_messages.dart';
-import '../../core/theme.dart';
+import '../../core/omni_colors.dart';
 import '../../models/face_capture_result.dart';
 import '../../services/face_recognition_engine.dart' show FaceLivenessResult;
 import '../../services/face_recognition_service.dart';
@@ -249,6 +249,7 @@ class _FaceCaptureScreenState extends State<FaceCaptureScreen> {
   }
 
   Widget _buildError() {
+    final c = context.omni;
     return Stack(
       children: [
         Center(
@@ -257,7 +258,7 @@ class _FaceCaptureScreenState extends State<FaceCaptureScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.error_outline, size: 64, color: AppTheme.error),
+                Icon(Icons.error_outline, size: 64, color: c.error),
                 const SizedBox(height: 16),
                 Text(
                   _error!,
@@ -276,6 +277,7 @@ class _FaceCaptureScreenState extends State<FaceCaptureScreen> {
   }
 
   Widget _buildCamera() {
+    final c = context.omni;
     return FutureBuilder(
       future: _initFuture,
       builder: (context, snapshot) {
@@ -351,7 +353,7 @@ class _FaceCaptureScreenState extends State<FaceCaptureScreen> {
                           vertical: 10,
                         ),
                         decoration: BoxDecoration(
-                          color: AppTheme.error.withValues(alpha: 0.92),
+                          color: c.errorFill.withValues(alpha: 0.92),
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: Text(
@@ -400,13 +402,13 @@ class _FaceCaptureScreenState extends State<FaceCaptureScreen> {
                           ? Padding(
                               padding: const EdgeInsets.all(24),
                               child: CircularProgressIndicator(
-                                color: AppTheme.primary,
+                                color: c.brandFill,
                                 strokeWidth: 3,
                               ),
                             )
                           : Icon(
                               Icons.camera_alt,
-                              color: AppTheme.primary,
+                              color: c.brandFill,
                               size: 40,
                             ),
                     ),

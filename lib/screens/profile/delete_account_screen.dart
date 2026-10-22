@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
-import '../../core/theme.dart';
+import '../../core/omni_colors.dart';
 import '../../services/face_recognition_service.dart';
 import '../../services/omni_mobile_api.dart';
 import '../../services/session_service.dart';
@@ -54,6 +54,7 @@ class _DeleteAccountScreenState extends State<DeleteAccountScreen> {
     final face = context.read<FaceRecognitionService>();
     final messenger = ScaffoldMessenger.of(context);
     final rootNav = Navigator.of(context, rootNavigator: true);
+    final brandFill = context.omni.brandFill;
 
     setState(() {
       _submitting = true;
@@ -77,7 +78,7 @@ class _DeleteAccountScreenState extends State<DeleteAccountScreen> {
       messenger.showSnackBar(
         SnackBar(
           content: const Text('Account deletion requested. Signed out.'),
-          backgroundColor: AppTheme.primary,
+          backgroundColor: brandFill,
         ),
       );
       rootNav.pushAndRemoveUntil(
@@ -95,6 +96,7 @@ class _DeleteAccountScreenState extends State<DeleteAccountScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.omni;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Delete account'),
@@ -103,7 +105,7 @@ class _DeleteAccountScreenState extends State<DeleteAccountScreen> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
           children: [
-            _heroIcon(),
+            _heroIcon(c),
             const SizedBox(height: 16),
             Text(
               'This will delete your account',
@@ -111,7 +113,7 @@ class _DeleteAccountScreenState extends State<DeleteAccountScreen> {
               style: GoogleFonts.inter(
                 fontSize: 20,
                 fontWeight: FontWeight.w800,
-                color: AppTheme.onSurface,
+                color: c.text,
                 letterSpacing: -0.3,
               ),
             ),
@@ -123,23 +125,23 @@ class _DeleteAccountScreenState extends State<DeleteAccountScreen> {
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 14,
-                color: AppTheme.onSurfaceVariant,
+                color: c.textSub,
                 height: 1.45,
               ),
             ),
             const SizedBox(height: 24),
-            _sectionTitle('What will be removed'),
+            _sectionTitle(c, 'What will be removed'),
             const SizedBox(height: 8),
-            _bullet('Your enrolled face data (used for check-in)'),
-            _bullet('Your active mobile sessions on this and other devices'),
-            _bullet('In-app notification history'),
-            _bullet('Cached profile data on this phone'),
+            _bullet(c, 'Your enrolled face data (used for check-in)'),
+            _bullet(c, 'Your active mobile sessions on this and other devices'),
+            _bullet(c, 'In-app notification history'),
+            _bullet(c, 'Cached profile data on this phone'),
             const SizedBox(height: 24),
-            _sectionTitle('What your employer keeps'),
+            _sectionTitle(c, 'What your employer keeps'),
             const SizedBox(height: 8),
-            _bullet('Your employment record at the company'),
-            _bullet('Past attendance, leave and expense entries'),
-            _bullet('Payroll history'),
+            _bullet(c, 'Your employment record at the company'),
+            _bullet(c, 'Past attendance, leave and expense entries'),
+            _bullet(c, 'Payroll history'),
             const SizedBox(height: 6),
             Text(
               "Your employer retains these for legitimate business and "
@@ -148,7 +150,7 @@ class _DeleteAccountScreenState extends State<DeleteAccountScreen> {
               "deletion.",
               style: TextStyle(
                 fontSize: 12,
-                color: AppTheme.onSurfaceVariant,
+                color: c.textSub,
                 height: 1.4,
                 fontStyle: FontStyle.italic,
               ),
@@ -159,7 +161,7 @@ class _DeleteAccountScreenState extends State<DeleteAccountScreen> {
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
-                color: AppTheme.onSurfaceVariant,
+                color: c.textSub,
               ),
             ),
             const SizedBox(height: 8),
@@ -171,7 +173,7 @@ class _DeleteAccountScreenState extends State<DeleteAccountScreen> {
               decoration: InputDecoration(
                 hintText: _confirmWord,
                 hintStyle: TextStyle(
-                  color: AppTheme.onSurfaceVariant.withValues(alpha: 0.5),
+                  color: c.textSub.withValues(alpha: 0.5),
                   fontWeight: FontWeight.w700,
                   letterSpacing: 2,
                 ),
@@ -188,13 +190,13 @@ class _DeleteAccountScreenState extends State<DeleteAccountScreen> {
                 padding: const EdgeInsets.symmetric(
                     horizontal: 12, vertical: 10),
                 decoration: BoxDecoration(
-                  color: AppTheme.error.withValues(alpha: 0.10),
+                  color: c.error.withValues(alpha: 0.10),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
                   _error!,
                   style: TextStyle(
-                    color: AppTheme.error,
+                    color: c.error,
                     fontSize: 13,
                   ),
                 ),
@@ -216,7 +218,7 @@ class _DeleteAccountScreenState extends State<DeleteAccountScreen> {
                 child: Text(
                   'Cancel',
                   style: TextStyle(
-                    color: AppTheme.onSurfaceVariant,
+                    color: c.textSub,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -228,37 +230,37 @@ class _DeleteAccountScreenState extends State<DeleteAccountScreen> {
     );
   }
 
-  Widget _heroIcon() {
+  Widget _heroIcon(OmniColors c) {
     return Center(
       child: Container(
         width: 72,
         height: 72,
         decoration: BoxDecoration(
-          color: AppTheme.error.withValues(alpha: 0.10),
+          color: c.error.withValues(alpha: 0.10),
           shape: BoxShape.circle,
         ),
         child: Icon(
           Icons.delete_forever_rounded,
-          color: AppTheme.error,
+          color: c.error,
           size: 36,
         ),
       ),
     );
   }
 
-  Widget _sectionTitle(String text) {
+  Widget _sectionTitle(OmniColors c, String text) {
     return Text(
       text.toUpperCase(),
       style: GoogleFonts.inter(
         fontSize: 11,
         fontWeight: FontWeight.w700,
-        color: AppTheme.onSurfaceVariant,
+        color: c.textSub,
         letterSpacing: 1.2,
       ),
     );
   }
 
-  Widget _bullet(String text) {
+  Widget _bullet(OmniColors c, String text) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Row(
@@ -270,7 +272,7 @@ class _DeleteAccountScreenState extends State<DeleteAccountScreen> {
               width: 4,
               height: 4,
               decoration: BoxDecoration(
-                color: AppTheme.onSurfaceVariant,
+                color: c.textSub,
                 shape: BoxShape.circle,
               ),
             ),
@@ -281,7 +283,7 @@ class _DeleteAccountScreenState extends State<DeleteAccountScreen> {
               text,
               style: TextStyle(
                 fontSize: 14,
-                color: AppTheme.onSurface,
+                color: c.text,
                 height: 1.4,
               ),
             ),

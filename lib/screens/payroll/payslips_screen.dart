@@ -3,7 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
-import '../../core/theme.dart';
+import '../../core/omni_colors.dart';
 import '../../core/error_messages.dart';
 import '../../core/money.dart';
 import '../../models/payslip_record.dart';
@@ -170,6 +170,7 @@ class PayslipsScreenState extends State<PayslipsScreen> {
   }
 
   Widget _emptyState() {
+    final c = context.omni;
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 80),
       children: [
@@ -179,16 +180,16 @@ class PayslipsScreenState extends State<PayslipsScreen> {
           margin: const EdgeInsets.only(bottom: 24),
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: AppTheme.primaryContainer.withValues(alpha: 0.12),
+            color: c.button.withValues(alpha: 0.12),
             border: Border.all(
-              color: AppTheme.primaryContainer.withValues(alpha: 0.35),
+              color: c.button.withValues(alpha: 0.35),
               width: 1.5,
             ),
           ),
           child: Icon(
             Icons.payments_rounded,
             size: 36,
-            color: AppTheme.primary,
+            color: c.accent,
           ),
         ),
         Text(
@@ -197,7 +198,7 @@ class PayslipsScreenState extends State<PayslipsScreen> {
           style: GoogleFonts.inter(
             fontSize: 22,
             fontWeight: FontWeight.w800,
-            color: AppTheme.onSurface,
+            color: c.text,
             letterSpacing: -0.3,
           ),
         ),
@@ -207,7 +208,7 @@ class PayslipsScreenState extends State<PayslipsScreen> {
           textAlign: TextAlign.center,
           style: GoogleFonts.inter(
             fontSize: 14,
-            color: AppTheme.onSurfaceVariant,
+            color: c.textSub,
             height: 1.45,
           ),
         ),
@@ -216,6 +217,7 @@ class PayslipsScreenState extends State<PayslipsScreen> {
   }
 
   Widget _payslipTile(PayslipRecord r) {
+    final c = context.omni;
     final isOpening = _openingId == r.id;
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -231,7 +233,7 @@ class PayslipsScreenState extends State<PayslipsScreen> {
                 width: 44,
                 height: 44,
                 decoration: BoxDecoration(
-                  color: AppTheme.primaryContainer.withValues(alpha: 0.12),
+                  color: c.button.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: isOpening
@@ -241,7 +243,7 @@ class PayslipsScreenState extends State<PayslipsScreen> {
                       )
                     : Icon(
                         Icons.payments_rounded,
-                        color: AppTheme.primary,
+                        color: c.accent,
                         size: 22,
                       ),
               ),
@@ -266,7 +268,7 @@ class PayslipsScreenState extends State<PayslipsScreen> {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 12,
-                        color: AppTheme.onSurfaceVariant,
+                        color: c.textSub,
                       ),
                     ),
                   ],
@@ -325,32 +327,34 @@ class PayslipsScreenState extends State<PayslipsScreen> {
   }
 
   Color _stateColor(String state) {
+    final c = context.omni;
     switch (state) {
       case 'paid':
-        return const Color(0xFF22C55E);
+        return context.isDarkTheme ? c.success : const Color(0xFF22C55E);
       case 'done':
-        return AppTheme.primary;
+        return c.accent;
       case 'validated':
         // Distinct non-grey color so a validated-but-not-paid payslip
         // reads as live, not stale.
-        return AppTheme.secondary;
+        return c.secondary;
       default:
-        return AppTheme.onSurfaceVariant;
+        return c.textSub;
     }
   }
 
   Widget _errorPane(String msg) {
+    final c = context.omni;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.error_outline, color: AppTheme.error, size: 48),
+            Icon(Icons.error_outline, color: c.error, size: 48),
             const SizedBox(height: 12),
             Text(msg,
                 textAlign: TextAlign.center,
-                style: TextStyle(color: AppTheme.error)),
+                style: TextStyle(color: c.error)),
             const SizedBox(height: 16),
             OutlinedButton(
               onPressed: _refresh,

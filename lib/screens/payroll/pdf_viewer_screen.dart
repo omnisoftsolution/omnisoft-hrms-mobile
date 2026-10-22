@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_pdfview/flutter_pdfview.dart';
 import 'package:path_provider/path_provider.dart';
 
-import '../../core/theme.dart';
+import '../../core/omni_colors.dart';
 import '../../core/error_messages.dart';
 import '../../widgets/file_viewer.dart';
 
@@ -106,6 +106,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.omni;
     return Scaffold(
       // Plain AppBar (NOT OmniAppBar) — the embedded viewer doesn't
       // want the brand chrome / bell / avatar. Back arrow is auto-
@@ -144,7 +145,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
                     'Page ${_currentPage + 1} of $_totalPages',
                     style: TextStyle(
                       fontSize: 12,
-                      color: AppTheme.onSurfaceVariant,
+                      color: c.textSub,
                     ),
                   ),
                 ),
@@ -156,6 +157,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   }
 
   Widget _buildBody() {
+    final c = context.omni;
     if (_error != null) {
       return Center(
         child: Padding(
@@ -163,12 +165,12 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.error_outline, color: AppTheme.error, size: 48),
+              Icon(Icons.error_outline, color: c.error, size: 48),
               const SizedBox(height: 12),
               Text(
                 'Could not load PDF.\n$_error',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: AppTheme.error),
+                style: TextStyle(color: c.error),
               ),
               const SizedBox(height: 16),
               OutlinedButton.icon(

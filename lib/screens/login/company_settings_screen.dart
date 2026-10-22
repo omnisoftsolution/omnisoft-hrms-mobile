@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants.dart';
-import '../../core/theme.dart';
+import '../../core/omni_colors.dart';
 import '../../core/error_messages.dart';
 import '../../services/saas_service.dart';
 import '../../services/session_service.dart';
@@ -140,6 +140,7 @@ class _CompanySettingsScreenState extends State<CompanySettingsScreen> {
     required String newCode,
     required String newSaasUrl,
   }) {
+    final c = context.omni;
     return showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -152,7 +153,7 @@ class _CompanySettingsScreenState extends State<CompanySettingsScreen> {
               'Reconnecting will sign you out — you\'ll need to log in '
               'with the new company\'s credentials.',
               style: TextStyle(
-                color: AppTheme.onSurfaceVariant,
+                color: c.textSub,
                 fontSize: 14,
                 height: 1.4,
               ),
@@ -176,8 +177,7 @@ class _CompanySettingsScreenState extends State<CompanySettingsScreen> {
             child: const Text('Cancel'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(
-                backgroundColor: AppTheme.primary),
+            style: FilledButton.styleFrom(backgroundColor: c.brandFill),
             onPressed: () => Navigator.of(context).pop(true),
             child: const Text('Switch company'),
           ),
@@ -192,12 +192,13 @@ class _CompanySettingsScreenState extends State<CompanySettingsScreen> {
     required String url,
     bool emphasised = false,
   }) {
+    final c = context.omni;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         color: emphasised
-            ? AppTheme.primaryContainer.withValues(alpha: 0.10)
-            : AppTheme.surfaceContainer,
+            ? c.button.withValues(alpha: 0.10)
+            : c.soft,
         borderRadius: BorderRadius.circular(10),
       ),
       child: Column(
@@ -209,9 +210,7 @@ class _CompanySettingsScreenState extends State<CompanySettingsScreen> {
               fontSize: 10,
               fontWeight: FontWeight.w700,
               letterSpacing: 1.2,
-              color: emphasised
-                  ? AppTheme.primary
-                  : AppTheme.onSurfaceVariant,
+              color: emphasised ? c.accent : c.textSub,
             ),
           ),
           const SizedBox(height: 2),
@@ -227,7 +226,7 @@ class _CompanySettingsScreenState extends State<CompanySettingsScreen> {
               url,
               style: TextStyle(
                 fontSize: 12,
-                color: AppTheme.onSurfaceVariant,
+                color: c.textSub,
               ),
             ),
         ],
@@ -243,6 +242,7 @@ class _CompanySettingsScreenState extends State<CompanySettingsScreen> {
   }
 
   Future<void> _clearCompany() async {
+    final c = context.omni;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -257,7 +257,7 @@ class _CompanySettingsScreenState extends State<CompanySettingsScreen> {
             child: const Text('Cancel'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppTheme.error),
+            style: FilledButton.styleFrom(backgroundColor: c.errorFill),
             onPressed: () => Navigator.of(context).pop(true),
             child: const Text('Clear'),
           ),
@@ -278,6 +278,7 @@ class _CompanySettingsScreenState extends State<CompanySettingsScreen> {
     // e.g. invalid_session fires while the screen is open and the
     // button needs to appear without a re-navigation.
     final session = context.watch<SessionService>();
+    final c = context.omni;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Company Settings'),
@@ -291,7 +292,7 @@ class _CompanySettingsScreenState extends State<CompanySettingsScreen> {
               Text(
                 'Where the app talks to',
                 style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      color: AppTheme.onSurfaceVariant,
+                      color: c.textSub,
                     ),
               ),
               const SizedBox(height: 8),
@@ -312,7 +313,7 @@ class _CompanySettingsScreenState extends State<CompanySettingsScreen> {
               Text(
                 'Resolved from SaaS',
                 style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      color: AppTheme.onSurfaceVariant,
+                      color: c.textSub,
                     ),
               ),
               const SizedBox(height: 8),
@@ -336,11 +337,11 @@ class _CompanySettingsScreenState extends State<CompanySettingsScreen> {
               ],
               if (_error != null) ...[
                 const SizedBox(height: 16),
-                _banner(_error!, AppTheme.error, Icons.error_outline),
+                _banner(_error!, c.error, Icons.error_outline),
               ],
               if (_info != null) ...[
                 const SizedBox(height: 16),
-                _banner(_info!, AppTheme.primary, Icons.check_circle_outline),
+                _banner(_info!, c.accent, Icons.check_circle_outline),
               ],
               const SizedBox(height: 24),
               PrimaryButton(
@@ -363,8 +364,8 @@ class _CompanySettingsScreenState extends State<CompanySettingsScreen> {
                     icon: const Icon(Icons.delete_outline),
                     label: const Text('Clear Company'),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: AppTheme.error,
-                      side: BorderSide(color: AppTheme.error),
+                      foregroundColor: c.error,
+                      side: BorderSide(color: c.error),
                     ),
                     onPressed: _resolving ? null : _clearCompany,
                   ),
@@ -377,7 +378,7 @@ class _CompanySettingsScreenState extends State<CompanySettingsScreen> {
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 12,
-                      color: AppTheme.onSurfaceVariant,
+                      color: c.textSub,
                     ),
                   ),
                 ),
@@ -387,7 +388,7 @@ class _CompanySettingsScreenState extends State<CompanySettingsScreen> {
                   'App version ${AppConstants.appVersion}',
                   style: TextStyle(
                     fontSize: 11,
-                    color: AppTheme.onSurfaceVariant,
+                    color: c.textSub,
                     letterSpacing: 0.3,
                   ),
                 ),
@@ -401,23 +402,23 @@ class _CompanySettingsScreenState extends State<CompanySettingsScreen> {
 
   Widget _readOnlyTile(
       {required IconData icon, required String label, required String value}) {
+    final c = context.omni;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: AppTheme.surfaceContainer,
+        color: c.soft,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         children: [
-          Icon(icon, size: 18, color: AppTheme.onSurfaceVariant),
+          Icon(icon, size: 18, color: c.textSub),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(label,
-                    style: TextStyle(
-                        fontSize: 12, color: AppTheme.onSurfaceVariant)),
+                    style: TextStyle(fontSize: 12, color: c.textSub)),
                 const SizedBox(height: 2),
                 Text(value,
                     style: const TextStyle(

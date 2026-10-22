@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/error_messages.dart';
 import '../../core/push_groups.dart';
-import '../../core/theme.dart';
+import '../../core/omni_colors.dart';
 import '../../models/push_prefs.dart';
 import '../../services/push_service.dart';
 import '../../widgets/primary_button.dart';
@@ -132,7 +132,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(friendlyError(e)),
-          backgroundColor: AppTheme.error,
+          backgroundColor: context.omni.errorFill,
         ),
       );
     } finally {
@@ -149,6 +149,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
   }
 
   Widget _body(BuildContext context) {
+    final c = context.omni;
     if (_loading) return const Center(child: CircularProgressIndicator());
     final error = _error;
     if (error != null) {
@@ -163,7 +164,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                 textAlign: TextAlign.center,
                 style: GoogleFonts.inter(
                   fontSize: 14,
-                  color: AppTheme.onSurfaceVariant,
+                  color: c.textSub,
                 ),
               ),
               const SizedBox(height: 12),
@@ -183,7 +184,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
             textAlign: TextAlign.center,
             style: GoogleFonts.inter(
               fontSize: 14,
-              color: AppTheme.onSurfaceVariant,
+              color: c.textSub,
             ),
           ),
         ),
@@ -201,14 +202,14 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
       ),
       children: [
         if (_permission != PushPermission.granted) ...[
-          _offCard(),
+          _offCard(c),
           const SizedBox(height: 16),
         ],
         Card(
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: Column(
-              children: [for (final g in groups) _row(g, prefs)],
+              children: [for (final g in groups) _row(c, g, prefs)],
             ),
           ),
         ),
@@ -216,7 +217,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
     );
   }
 
-  Widget _row(PushGroup g, PushPrefs prefs) {
+  Widget _row(OmniColors c, PushGroup g, PushPrefs prefs) {
     final on = !g.canMute || !prefs.muted.contains(g.key);
     return SwitchListTile(
       key: ValueKey('push-switch-${g.key}'),
@@ -228,16 +229,16 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
         g.description,
         style: GoogleFonts.inter(
           fontSize: 12,
-          color: AppTheme.onSurfaceVariant,
+          color: c.textSub,
         ),
       ),
       value: on,
-      activeTrackColor: AppTheme.primary,
+      activeTrackColor: c.brandFill,
       onChanged: !g.canMute || _saving ? null : (v) => _toggle(g.key, v),
     );
   }
 
-  Widget _offCard() {
+  Widget _offCard(OmniColors c) {
     final denied = _permission == PushPermission.denied;
     return Card(
       child: Padding(
@@ -247,9 +248,9 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
           children: [
             Row(
               children: [
-                const Icon(
+                Icon(
                   Icons.notifications_off_outlined,
-                  color: AppTheme.error,
+                  color: c.error,
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -273,7 +274,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
               style: GoogleFonts.inter(
                 fontSize: 13,
                 height: 1.4,
-                color: AppTheme.onSurfaceVariant,
+                color: c.textSub,
               ),
             ),
             const SizedBox(height: 16),

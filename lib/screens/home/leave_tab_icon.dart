@@ -2,7 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import '../../core/theme.dart';
+import '../../core/omni_colors.dart';
 
 /// The LEAVE destination's icon: a count badge while requests wait for
 /// this user, and one short wiggle when the count goes up (spec
@@ -63,9 +63,11 @@ class LeaveTabIconState extends State<LeaveTabIcon>
 
   @override
   Widget build(BuildContext context) {
+    final c = context.omni;
     return Badge(
       isLabelVisible: widget.count > 0,
-      backgroundColor: AppTheme.error,
+      backgroundColor: c.badge,
+      textColor: c.onBadge,
       label: Text('${widget.count}'),
       child: AnimatedBuilder(
         animation: _degrees,
