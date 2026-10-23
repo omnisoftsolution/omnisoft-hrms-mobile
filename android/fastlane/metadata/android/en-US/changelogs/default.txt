@@ -1,2 +1,3 @@
 Team leave: see who on your team is off in the next 30, 60 or 90 days (Leave tab).
 Team overview for managers: today's check-ins, who's out and yesterday's review, when HR turns it on.
+Both need your company's server to be updated first.

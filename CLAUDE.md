@@ -529,7 +529,7 @@ Design: `session-assets/2026-10-22-team-leave-mgmt-day/proposal.md` (r3); plans:
 - HOME: `HomeRoot` (`lib/screens/home/home_root.dart`) picks My day / `TeamOverviewScreen` / the switch
   (`PillSegments`, remembered per employee `home_mode|<db>|<id>`). Overview: counts, Yesterday (reviewed),
   drill-down `OverviewDrillScreen` (tab navigator), person sheet (root navigator), Who's out, For you (shared
-  `openForYouItem`; `yesterday_incomplete` stays on My day). Missing route / `not_allowed` → My day for the run +
+  `openForYouItem`; `yesterday_incomplete` stays on My day). Missing route / any access-lost answer → My day for the run +
   `refreshMe()`. A Who's out row opens the person sheet only with `names` and `WhoOutToday.tracked`.
 - Errors on these screens: `friendlyError(e, context: ErrorContext.team)` (own branch: `not_allowed` / `not_found`
   wording, usual transport words otherwise); `names_hidden` / `invalid_department` have words in every context.
