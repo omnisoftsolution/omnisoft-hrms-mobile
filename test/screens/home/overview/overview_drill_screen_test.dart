@@ -192,6 +192,20 @@ Future<void> _open(
   await tester.pumpAndSettle();
 }
 
+/// Opens the drill without settling: its first request is gated.
+Future<void> _openPending(
+  WidgetTester tester,
+  _FakeApi api, {
+  String bucket = 'late',
+  SessionService? session,
+}) async {
+  _wide(tester);
+  await tester.pumpWidget(_host(api, bucket: bucket, session: session));
+  await tester.tap(find.text('OPEN'));
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 500));
+}
+
 Finder _listScrollable() => find.descendant(
   of: find.byKey(const ValueKey('drill-list')),
   matching: find.byType(Scrollable),
@@ -723,6 +737,166 @@ void main() {
       expect(api.calls.last['offset'], 0);
       expect(find.text('Jason Lee'), findsNothing);
       expect(find.byType(ErrorStateView), findsOneWidget);
+    });
+
+    testWidgets('a shown empty answer is dropped when its binding moves and '
+        'asked again under the new one (A-L22, T7 review I1)', (tester) async {
+      final session = _ScopeSession();
+      var n = 0;
+      final api = _FakeApi(
+        (bucket, _) => n++ == 0
+            ? _page(bucket, const [])
+            : _page(bucket, [_row(60, 'Alexa Tan', 'off_today')]),
+      );
+      await _open(tester, api, bucket: 'off_today', session: session);
+      expect(find.text('Nobody here right now.'), findsOneWidget);
+      expect(api.calls.length, 1);
+      final gate = Completer<void>();
+      api.gates['off_today'] = gate;
+      session.changeScope('2222222222222222');
+      await tester.pump();
+      // The empty answer belonged to the old scope: gone, asking again.
+      expect(find.text('Nobody here right now.'), findsNothing);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(api.calls.length, 2);
+      expect(api.calls.last['offset'], 0);
+      // The chip totals are not part of the binding: they stay.
+      expect(find.text('Off today · 0'), findsOneWidget);
+      gate.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('Alexa Tan'), findsOneWidget);
+      expect(find.text('Off today · 1'), findsOneWidget);
+    });
+
+    testWidgets('a stale request returning after the rows were dropped does '
+        'not leave the spinner stuck (T7 review I2)', (tester) async {
+      final session = _ScopeSession();
+      final api = _FakeApi(
+        (bucket, _) => bucket == 'late'
+            ? _page('late', [_jason()])
+            : _page(bucket, [
+                _row(
+                  60,
+                  'Alexa Tan',
+                  'on_time',
+                  extra: {'first_in': '08:01', 'source': 'mobile'},
+                ),
+              ]),
+      );
+      final old = Completer<void>();
+      api.gates['late'] = old; // the old request stays pending
+      await _openPending(tester, api, session: session);
+      await tester.tap(find.byKey(const ValueKey('drill-chip-on_time')));
+      await tester.pumpAndSettle();
+      expect(find.text('Alexa Tan'), findsOneWidget); // the new rows landed
+      expect(api.calls.length, 2);
+      // The binding moves while the old request is still on the wire.
+      session.changeScope('2222222222222222');
+      await tester.pumpAndSettle();
+      // The rows reloaded without waiting for the stale answer.
+      expect(api.calls.map((c) => c['bucket']), ['late', 'on_time', 'on_time']);
+      expect(find.text('Alexa Tan'), findsOneWidget);
+      // Now the stale answer returns: dropped, nothing changes.
+      old.complete();
+      await tester.pumpAndSettle();
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.text('Alexa Tan'), findsOneWidget);
+      expect(find.text('Jason Lee'), findsNothing);
+    });
+
+    testWidgets('a stale answer returning after the binding moved lets the '
+        'reload run (T7 review I2, the sequence in the brief)', (tester) async {
+      final session = _ScopeSession();
+      final api = _FakeApi(
+        (bucket, _) => bucket == 'late'
+            ? _page('late', [_jason()])
+            : _page(bucket, [
+                _row(
+                  60,
+                  'Alexa Tan',
+                  'on_time',
+                  extra: {'first_in': '08:01', 'source': 'mobile'},
+                ),
+              ]),
+      );
+      final old = Completer<void>();
+      api.gates['late'] = old;
+      await _openPending(tester, api, session: session);
+      await tester.tap(find.byKey(const ValueKey('drill-chip-on_time')));
+      await tester.pumpAndSettle();
+      expect(find.text('Alexa Tan'), findsOneWidget);
+      // Hold the reload's answer, move the binding, then let the old one go.
+      final held = Completer<void>();
+      api.gates['on_time'] = held;
+      session.changeScope('2222222222222222');
+      await tester.pump();
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      old.complete();
+      await tester.pump();
+      held.complete();
+      await tester.pumpAndSettle();
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.text('Alexa Tan'), findsOneWidget);
+    });
+
+    testWidgets('load-more does nothing while a refresh is in flight; the '
+        'old-offset page is never appended (T7 review M1)', (tester) async {
+      var firstPages = 0;
+      final api = _FakeApi((_, offset) {
+        if (offset == 0) {
+          // The first answer is the old list; the refresh gets a new one.
+          return firstPages++ == 0
+              ? _page(
+                  'on_time',
+                  [
+                    for (var i = 0; i < 50; i++)
+                      _row(100 + i, 'Person $i', 'on_time'),
+                  ],
+                  total: 60,
+                  next: 50,
+                )
+              : _page('on_time', [
+                  for (var i = 0; i < 50; i++)
+                    _row(200 + i, 'Fresh $i', 'on_time'),
+                ]);
+        }
+        return _page('on_time', [
+          for (var i = 50; i < 60; i++) _row(100 + i, 'Person $i', 'on_time'),
+        ], total: 60);
+      });
+      await _open(tester, api, bucket: 'on_time');
+      expect(api.calls.map((c) => c['offset']), [0]);
+      final gate = Completer<void>();
+      api.gates['on_time'] = gate;
+      // Pull to refresh: the first page is asked again and held.
+      unawaited(
+        tester
+            .state<RefreshIndicatorState>(find.byType(RefreshIndicator))
+            .show(),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(api.calls.map((c) => c['offset']), [0, 0]);
+      // The user reaches the footer meanwhile.
+      await tester.drag(_listScrollable(), const Offset(0, -6000));
+      await tester.pump();
+      await tester.pump();
+      expect(api.calls.map((c) => c['offset']), [0, 0]); // no load-more
+      gate.complete();
+      await tester.pumpAndSettle();
+      expect(api.calls.map((c) => c['offset']), [0, 0]);
+      expect(find.text('Person 0'), findsNothing);
+      final list = tester.widget<ListView>(
+        find.byKey(const ValueKey('drill-list')),
+      );
+      expect(list.semanticChildCount, 50); // the fresh page only, no footer
+      await tester.scrollUntilVisible(
+        find.text('Fresh 49'),
+        300,
+        scrollable: _listScrollable(),
+      );
+      expect(find.text('Fresh 49'), findsOneWidget);
+      expect(find.text('Person 50'), findsNothing);
     });
 
     testWidgets('another employee signs in during the sign-out hook: the '

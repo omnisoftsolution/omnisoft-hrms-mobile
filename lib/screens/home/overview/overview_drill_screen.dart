@@ -222,8 +222,15 @@ class _OverviewDrillScreenState extends State<OverviewDrillScreen> {
   /// a later page only lands while it is still current) (A-L22).
   TeamCacheBinding? _rowsBinding;
 
-  /// List requests on the wire; each checks its own binding when it lands.
+  /// List requests of the current first-page load that are on the wire
+  /// (the first page and its "more" pages); each checks its own binding when
+  /// it lands. A first-page load that starts resets it: an older request
+  /// still pending is stale and never counts (T7 review I2).
   int _asking = 0;
+
+  /// A first-page load (the first open, a bucket switch, a pull to refresh,
+  /// a reload) is on the wire. Load-more waits for it (T7 review M1).
+  bool _firstPageAsking = false;
 
   /// The rows went stale while nothing could be asked (signed out, a
   /// sign-out running): the next notify that allows it asks again.
@@ -261,7 +268,12 @@ class _OverviewDrillScreenState extends State<OverviewDrillScreen> {
     if (!mounted || _leaving) return;
     final session = context.read<SessionService>();
     final shown = _rowsBinding;
-    if (_rows.isNotEmpty && (shown == null || !shown.isCurrent(session))) {
+    // What is shown: rows, or an answer that said nobody (an empty bucket)
+    // (A-L22, T7 review I1). The chip totals are not part of the binding:
+    // they stay.
+    final showsAnswer =
+        _rows.isNotEmpty || (!_loading && _error == null && shown != null);
+    if (showsAnswer && (shown == null || !shown.isCurrent(session))) {
       setState(_dropRows);
       if (_asking == 0) _reloadPending = true;
     }
@@ -290,6 +302,11 @@ class _OverviewDrillScreenState extends State<OverviewDrillScreen> {
     final session = context.read<SessionService>();
     if (!more) _reloadPending = false;
     final offset = more ? (_nextOffset ?? 0) : 0;
+    if (!more) {
+      // Older requests are stale now: they no longer count as asking.
+      _asking = 0;
+      _firstPageAsking = true;
+    }
     // The binding and the client of this attempt, in one synchronous step
     // (A-L22, TLP3-F01): the token sent is the one the binding describes.
     final binding = TeamCache.bind(session);
@@ -305,7 +322,10 @@ class _OverviewDrillScreenState extends State<OverviewDrillScreen> {
           limit: _pageSize,
         );
       } finally {
-        _asking--;
+        if (seq == _seq) {
+          _asking--;
+          if (!more) _firstPageAsking = false;
+        }
       }
       if (!mounted || seq != _seq) return;
       if (!binding.isCurrent(session)) return _rebind(session);
@@ -387,7 +407,12 @@ class _OverviewDrillScreenState extends State<OverviewDrillScreen> {
   }
 
   void _loadMore() {
-    if (_loadingMore || _nextOffset == null || _leaving) return;
+    // A "more" page asked for the old list must not land after a refreshed
+    // first page (T7 review M1): wait for the refresh; its answer rebuilds
+    // the footer, which asks again.
+    if (_loadingMore || _nextOffset == null || _leaving || _firstPageAsking) {
+      return;
+    }
     setState(() {
       _loadingMore = true;
       _moreFailed = false;
