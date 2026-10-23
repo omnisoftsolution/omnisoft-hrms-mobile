@@ -5,6 +5,10 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+// The storage under SharedPreferences, to make a write fail. It comes with
+// shared_preferences; the app does not list it itself.
+// ignore: depend_on_referenced_packages
+import 'package:shared_preferences_platform_interface/shared_preferences_platform_interface.dart';
 import 'package:omni_hr/models/approval_item.dart';
 import 'package:omni_hr/models/leave_type.dart';
 import 'package:omni_hr/models/team_outlook.dart';
@@ -200,6 +204,17 @@ class _TeamSession extends SessionService {
   }
 }
 
+/// Storage whose team-cache writes fail (a full disk, a broken prefs file).
+class _NoTeamWriteStore extends InMemorySharedPreferencesStore {
+  _NoTeamWriteStore() : super.empty();
+
+  @override
+  Future<bool> setValue(String valueType, String key, Object value) =>
+      key.startsWith('flutter.${TeamCache.prefix}')
+      ? Future<bool>.error(StateError('disk full'))
+      : super.setValue(valueType, key, value);
+}
+
 /// A test-side write with the binding taken right now.
 Future<void> _write(SessionService s, Map<String, dynamic> body) =>
     TeamCache.write(s, _key(s), body, binding: TeamCache.bind(s));
@@ -267,6 +282,18 @@ void main() {
       );
       expect(cached, isNotNull);
       expect(TeamOutlook.fromJson(cached!.$1).summary.thisWeekOff, 2);
+    });
+
+    testWidgets('a cache write that fails does not touch the tile (M1)', (
+      tester,
+    ) async {
+      SharedPreferencesStorePlatform.instance = _NoTeamWriteStore();
+      final api = _Api();
+      await tester.pumpWidget(_host(api, _TeamSession()));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.text('2 out this week · Marketing'), findsOneWidget);
+      expect(api.outlookCalls, 1);
     });
 
     testWidgets('team leave off: no tile and no outlook call', (

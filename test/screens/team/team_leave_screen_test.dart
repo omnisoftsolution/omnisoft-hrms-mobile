@@ -5,6 +5,10 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+// The storage under SharedPreferences, to make a write fail or wait. It
+// comes with shared_preferences; the app does not list it itself.
+// ignore: depend_on_referenced_packages
+import 'package:shared_preferences_platform_interface/shared_preferences_platform_interface.dart';
 import 'package:omni_hr/models/team_outlook.dart';
 import 'package:omni_hr/screens/team/team_leave_screen.dart';
 import 'package:omni_hr/services/notification_service.dart';
@@ -305,6 +309,218 @@ void main() {
     await tester.pumpWidget(_host(_FakeApi([outlook()])));
     await tester.pumpAndSettle();
     expect(find.text('My team'), findsNothing);
+  });
+
+  testWidgets('a view the app does not know gets no chip and breaks nothing', (
+    tester,
+  ) async {
+    _tall(tester);
+    await tester.pumpWidget(
+      _host(_FakeApi([outlook(views: const ['team', 'company', 'future'])])),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.text('My team'), findsOneWidget);
+    expect(find.text('Everyone'), findsOneWidget);
+    expect(find.byKey(const ValueKey('view-team')), findsOneWidget);
+    expect(find.byKey(const ValueKey('view-company')), findsOneWidget);
+    expect(find.byKey(const ValueKey('view-future')), findsNothing);
+  });
+
+  testWidgets('one known view plus an unknown one: no view chips at all', (
+    tester,
+  ) async {
+    _tall(tester);
+    await tester.pumpWidget(
+      _host(_FakeApi([outlook(views: const ['team', 'future'])])),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.text('Marketing'), findsOneWidget); // the answer is shown
+    expect(find.byKey(const ValueKey('view-team')), findsNothing);
+    expect(find.byKey(const ValueKey('view-future')), findsNothing);
+    expect(find.text('My team'), findsNothing);
+  });
+
+  group('chips stay while a view loads or fails (M3)', () {
+    const threeViews = ['team', 'approvees', 'company'];
+
+    testWidgets('a tap on a view whose fetch fails keeps the header and the '
+        'chips; the first view loads again', (tester) async {
+      _tall(tester);
+      final api = _FakeApi([
+        outlook(views: threeViews),
+        ApiException('network_error'),
+        outlook(views: threeViews),
+      ]);
+      await tester.pumpWidget(_host(api));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('view-team')), findsOneWidget);
+
+      // The new view is loading: the chips and the header stay (no flash).
+      api.gate = Completer<void>();
+      await tester.tap(find.byKey(const ValueKey('view-approvees')));
+      await tester.pump();
+      await tester.pump();
+      expect(find.byKey(const ValueKey('team-skeleton')), findsOneWidget);
+      expect(find.byKey(const ValueKey('view-team')), findsOneWidget);
+      expect(find.byKey(const ValueKey('view-approvees')), findsOneWidget);
+      expect(find.byKey(const ValueKey('view-company')), findsOneWidget);
+      expect(find.text('Marketing'), findsOneWidget);
+
+      // ...and it fails with nothing to show: the chips are still there.
+      api.gate!.complete();
+      api.gate = null;
+      await tester.pumpAndSettle();
+      expect(find.byType(ErrorStateView), findsOneWidget);
+      expect(find.byKey(const ValueKey('view-team')), findsOneWidget);
+      expect(find.byKey(const ValueKey('view-approvees')), findsOneWidget);
+      expect(find.byKey(const ValueKey('view-company')), findsOneWidget);
+      expect(find.text('Marketing'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('view-team')));
+      await tester.pumpAndSettle();
+      expect(api.calls.last['view'], 'team');
+      expect(find.byType(ErrorStateView), findsNothing);
+      expect(find.text('Mei Lin Ong'), findsOneWidget);
+    });
+
+    testWidgets('department chips stay when a department fetch fails', (
+      tester,
+    ) async {
+      _tall(tester);
+      const team = {'kind': 'overview', 'label': 'Novaworks', 'size': 60};
+      const departments = [
+        {'id': 5, 'name': 'Marketing', 'size': 20},
+        {'id': 9, 'name': 'Fabric', 'size': 15},
+      ];
+      final api = _FakeApi([
+        outlook(context: 'overview', team: team, departments: departments),
+        ApiException('network_error'),
+        outlook(context: 'overview', team: team, departments: departments),
+      ]);
+      await tester.pumpWidget(_host(api, context: 'overview'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('dept-9')));
+      await tester.pumpAndSettle();
+      expect(find.byType(ErrorStateView), findsOneWidget);
+      expect(find.byKey(const ValueKey('dept-all')), findsOneWidget);
+      expect(find.byKey(const ValueKey('dept-5')), findsOneWidget);
+      expect(find.byKey(const ValueKey('dept-9')), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('dept-all')));
+      await tester.pumpAndSettle();
+      expect(api.calls.last['department_id'], isNull);
+      expect(find.byType(ErrorStateView), findsNothing);
+    });
+
+    testWidgets('a scope change drops the kept chips (A-L22): no old chips '
+        'under the error view', (tester) async {
+      _tall(tester);
+      final session = _ScopeSession();
+      final api = _FakeApi([
+        outlook(views: threeViews),
+        ApiException('network_error'),
+      ]);
+      await tester.pumpWidget(_host(api, session: session));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('view-approvees')));
+      await tester.pumpAndSettle();
+      expect(find.byType(ErrorStateView), findsOneWidget);
+      expect(find.byKey(const ValueKey('view-company')), findsOneWidget);
+
+      session.changeAccess('team'); // a /me: another signature
+      await tester.pump();
+      expect(find.byKey(const ValueKey('view-company')), findsNothing);
+      expect(find.text('Marketing'), findsNothing);
+      await tester.pumpAndSettle();
+      expect(find.byType(ErrorStateView), findsOneWidget);
+      expect(find.byKey(const ValueKey('view-company')), findsNothing);
+    });
+  });
+
+  group('a cache write that fails (M1)', () {
+    testWidgets('the fresh answer shows with no strip and no error', (
+      tester,
+    ) async {
+      _tall(tester);
+      SharedPreferencesStorePlatform.instance = _NoTeamWriteStore();
+      final api = _FakeApi([outlook()]);
+      await tester.pumpWidget(_host(api));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.text('Mei Lin Ong'), findsOneWidget);
+      expect(find.byKey(const ValueKey('team-strip')), findsNothing);
+      expect(find.byType(ErrorStateView), findsNothing);
+      expect(find.text(_offline), findsNothing);
+    });
+
+    testWidgets('a write stuck on disk does not hold the refresh', (
+      tester,
+    ) async {
+      _tall(tester);
+      final store = _HeldTeamWriteStore();
+      SharedPreferencesStorePlatform.instance = store;
+      addTearDown(() {
+        if (!store.release.isCompleted) store.release.complete();
+      });
+      final key = GlobalKey<TeamLeaveScreenState>();
+      final api = _FakeApi([outlook()]);
+      try {
+        await tester.pumpWidget(_host(api, key: key));
+        await tester.pumpAndSettle();
+        expect(api.calls.length, 1);
+        expect(find.text('Mei Lin Ong'), findsOneWidget);
+        // The first answer's write is still held in storage. A refresh
+        // must start its own request, not share one that waits on the disk.
+        unawaited(key.currentState!.refresh());
+        await tester.pumpAndSettle();
+        expect(api.calls.length, 2);
+      } finally {
+        // Let TeamCache's static write queue go, inside this test's zone.
+        store.release.complete();
+        await tester.pumpAndSettle();
+      }
+    });
+  });
+
+  testWidgets('an access-lost answer that lands after the choice moved on '
+      'does not overwrite the newer one (M4)', (tester) async {
+    _tall(tester);
+    final store = _HeldTeamRemovalStore();
+    SharedPreferencesStorePlatform.instance = store;
+    addTearDown(() {
+      if (!store.release.isCompleted) store.release.complete();
+    });
+    final session = _Session();
+    // Any entry of this employee: the clear has something to remove, and
+    // the removal waits in storage.
+    await tester.runAsync(
+      () => TeamCache.write(
+        session,
+        _key(session, days: 90),
+        outlookJson(days: 90),
+        binding: TeamCache.bind(session),
+      ),
+    );
+    final api = _FakeApi([
+      ApiException('not_allowed'),
+      outlook(
+        days: 60,
+        team: const {'kind': 'department', 'label': 'Newer', 'size': 1},
+      ),
+    ]);
+    await tester.pumpWidget(_host(api, session: session));
+    await tester.pump();
+    await tester.pump();
+    expect(api.calls.length, 1); // not_allowed; its clear waits on storage
+    // The user picks another range meanwhile.
+    await tester.tap(find.byKey(const ValueKey('pill-1')));
+    await tester.pump();
+    await tester.pump();
+    store.release.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('You no longer have access to this view.'), findsNothing);
+    expect(find.text('Newer'), findsOneWidget);
   });
 
   testWidgets('overview context: department chips send department_id', (
@@ -772,6 +988,43 @@ void main() {
       expect(find.text(title), findsOneWidget);
     }
   });
+}
+
+/// Storage whose team-cache writes fail (a full disk, a broken prefs file).
+class _NoTeamWriteStore extends InMemorySharedPreferencesStore {
+  _NoTeamWriteStore() : super.empty();
+
+  @override
+  Future<bool> setValue(String valueType, String key, Object value) =>
+      key.startsWith('flutter.${TeamCache.prefix}')
+      ? Future<bool>.error(StateError('disk full'))
+      : super.setValue(valueType, key, value);
+}
+
+/// Storage whose team-cache writes wait for [release].
+class _HeldTeamWriteStore extends InMemorySharedPreferencesStore {
+  _HeldTeamWriteStore() : super.empty();
+
+  final release = Completer<void>();
+
+  @override
+  Future<bool> setValue(String valueType, String key, Object value) async {
+    if (key.startsWith('flutter.${TeamCache.prefix}')) await release.future;
+    return super.setValue(valueType, key, value);
+  }
+}
+
+/// Storage whose removals wait for [release]: a clear stays on the wire.
+class _HeldTeamRemovalStore extends InMemorySharedPreferencesStore {
+  _HeldTeamRemovalStore() : super.empty();
+
+  final release = Completer<void>();
+
+  @override
+  Future<bool> remove(String key) async {
+    if (key.startsWith('flutter.${TeamCache.prefix}')) await release.future;
+    return super.remove(key);
+  }
 }
 
 /// The same employee under another grant (another cache signature).

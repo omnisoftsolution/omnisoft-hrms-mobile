@@ -103,6 +103,15 @@ class TeamLeaveScreenState extends State<TeamLeaveScreen> {
   /// (A-L22). Set with [_outlook], cleared with it.
   TeamCacheBinding? _shownBinding;
 
+  /// The last good answer, kept while the next choice loads or fails: the
+  /// header and the view / department chips are drawn from it, so a tap
+  /// does not make them flash and a failed first fetch of a new choice
+  /// leaves the way back. Set with [_outlook]; unlike it, a choice change
+  /// keeps it. Dropped, with [_chromeBinding], as soon as that binding is
+  /// no longer current (A-L22): a revoked or changed scope keeps no chips.
+  TeamOutlook? _chrome;
+  TeamCacheBinding? _chromeBinding;
+
   /// What was shown went stale while nothing could be asked (signed out,
   /// or a sign-out running): the next notify that allows it asks again.
   bool _reloadPending = false;
@@ -157,8 +166,7 @@ class TeamLeaveScreenState extends State<TeamLeaveScreen> {
   void _onBindingChanged() {
     if (!mounted) return;
     final session = context.read<SessionService>();
-    final shown = _shownBinding;
-    if (_outlook != null && (shown == null || !shown.isCurrent(session))) {
+    if (_staleShown(session)) {
       setState(_dropShown);
       // A request on the wire checks its own binding when it lands
       // (_rebind), so only an idle screen asks again from here.
@@ -170,11 +178,22 @@ class TeamLeaveScreenState extends State<TeamLeaveScreen> {
     unawaited(refresh());
   }
 
-  /// Forgets the shown answer and everything that describes it.
+  /// True when an answer, or the chips kept from one, belongs to a binding
+  /// that is no longer current (A-L22).
+  bool _staleShown(SessionService session) {
+    bool stale(TeamCacheBinding? b) => b == null || !b.isCurrent(session);
+    return (_outlook != null && stale(_shownBinding)) ||
+        (_chrome != null && stale(_chromeBinding));
+  }
+
+  /// Forgets the shown answer and everything that describes it, the kept
+  /// chips included.
   void _dropShown() {
     _outlook = null;
     _shownAt = null;
     _shownBinding = null;
+    _chrome = null;
+    _chromeBinding = null;
     _stripError = null;
     _fatalError = null;
     _lostError = null;
@@ -223,6 +242,8 @@ class TeamLeaveScreenState extends State<TeamLeaveScreen> {
       _outlook = outlook;
       _shownAt = savedAt;
       _shownBinding = binding;
+      _chrome = outlook;
+      _chromeBinding = binding;
       _selected = _keepOrDefault(outlook);
     });
   }
@@ -266,23 +287,31 @@ class TeamLeaveScreenState extends State<TeamLeaveScreen> {
         _outlook = outlook;
         _shownAt = DateTime.now();
         _shownBinding = binding;
+        _chrome = outlook;
+        _chromeBinding = binding;
         _stripError = null;
         _fatalError = null;
         _lostError = null;
         _selected = _keepOrDefault(outlook);
       });
-      await TeamCache.write(session, key, outlook.raw, binding: binding);
+      // Storing is best effort and runs on its own: a prefs failure is not
+      // a failed refresh, and the refresh does not wait on the disk (M1).
+      unawaited(_store(session, key, outlook.raw, binding));
     } catch (e) {
       if (!mounted || seq != _seq) return;
       if (!binding.isCurrent(session)) return _rebind(seq, session);
       if (isAccessLost(e)) {
         await TeamCache.clearEmployee(session);
         unawaited(session.refreshMe());
-        if (!mounted) return;
+        // The clear took a while: a newer choice may be loading or shown
+        // by now, and its answer must stand (M4).
+        if (!mounted || seq != _seq) return;
         setState(() {
           _lostError = friendlyError(e, context: ErrorContext.team);
           _outlook = null;
           _shownBinding = null;
+          _chrome = null;
+          _chromeBinding = null;
           _stripError = null;
           _fatalError = null;
         });
@@ -291,9 +320,7 @@ class TeamLeaveScreenState extends State<TeamLeaveScreen> {
       final text = friendlyError(e, context: ErrorContext.team);
       // A failed refresh never keeps an answer whose binding has moved
       // (A-L22): it goes, and the error view takes its place.
-      final shown = _shownBinding;
-      final stale =
-          _outlook != null && (shown == null || !shown.isCurrent(session));
+      final stale = _staleShown(session);
       setState(() {
         if (stale) _dropShown();
         if (_outlook == null) {
@@ -303,6 +330,19 @@ class TeamLeaveScreenState extends State<TeamLeaveScreen> {
         }
       });
     }
+  }
+
+  /// Saves the answer for the next open. Never throws: a failing store
+  /// (full disk, broken prefs file) only means no offline copy.
+  Future<void> _store(
+    SessionService session,
+    String key,
+    Map<String, dynamic> body,
+    TeamCacheBinding binding,
+  ) async {
+    try {
+      await TeamCache.write(session, key, body, binding: binding);
+    } catch (_) {}
   }
 
   /// The answer in hand was asked under a binding that has moved since (a
@@ -427,15 +467,18 @@ class TeamLeaveScreenState extends State<TeamLeaveScreen> {
       out.add(w);
     }
 
-    if (o != null) add(_header(o));
-    if (o != null &&
+    // The header and the chips come from the last good answer, so they
+    // stay while the next choice loads or fails (M3).
+    final c = _chrome;
+    if (c != null) add(_header(c));
+    if (c != null &&
         _isOverview &&
-        o.departments.isNotEmpty &&
-        o.emptyReason == null) {
-      add(_departmentChips(o));
+        c.departments.isNotEmpty &&
+        c.emptyReason == null) {
+      add(_departmentChips(c));
     }
-    if (o != null && !_isOverview) {
-      final views = o.views.where(teamLeaveViewLabels.containsKey).toList();
+    if (c != null && !_isOverview) {
+      final views = c.views.where(teamLeaveViewLabels.containsKey).toList();
       if (views.length > 1) add(_viewChips(views));
     }
     add(
@@ -755,7 +798,7 @@ class TeamLeaveScreenState extends State<TeamLeaveScreen> {
               ],
             ),
           ),
-          if (r.state == 'pending') ...[
+          if (r.isPending) ...[
             const SizedBox(width: 8),
             const TeamPendingChip(),
           ],
