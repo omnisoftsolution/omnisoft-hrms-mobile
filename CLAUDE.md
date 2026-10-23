@@ -242,7 +242,9 @@ Spec + plan live in the connector repo:
 - `SessionService.attendanceKioskOnly` ← `employee.attendance_kiosk_only` on `/login` and
   `/me` (connector 2.51.0+; missing key = false; prefs key `attendance_kiosk_only`).
 - The Home tab is `MyDayScreen` for everyone since 1.29.0 (`home_tab_root.dart` and the
-  classic `home_screen.dart` are gone). `SessionService.attendanceKioskOnly` only has to
+  classic `home_screen.dart` are gone), except for employees HR grants the Team overview (1.34.0):
+  `HomeRoot` then shows `TeamOverviewScreen` or the Team overview | My day switch (see "Team leave +
+  Team overview" below). `SessionService.attendanceKioskOnly` only has to
   agree with `today.kiosk_only`; My day re-pulls `/me` when the day says the flag is off
   while the session still says on (HR cleared it).
 - `lib/screens/home/my_day/`: `my_day_screen.dart` (one call, `OmniMobileApi.fetchMyDay()`
@@ -506,3 +508,55 @@ Spec: connector repo `docs/superpowers/specs/2026-10-11-push-notifications-desig
   `test/screens/home/push_arrival_snackbar_test.dart`, `test/widgets/push_explainer_card_test.dart`; fakes in
   `test/services/push_fakes.dart`.
 - Older apps (≤ 1.32) never register a token: no pushes, they keep polling. No minimum-version change.
+
+## Team leave + Team overview (1.34.0, connector 2.65.0)
+Design: `session-assets/2026-10-22-team-leave-mgmt-day/proposal.md` (r3); plans: this repo
+`docs/superpowers/plans/2026-10-22-team-leave-overview-app-1.34.0.md`, connector
+`docs/superpowers/plans/2026-10-22-team-leave-overview-connector-2.65.0.md` (API contract).
+- `/login` + `/me` employee keys → `SessionService.attendanceTracked` / `overviewAccess` / `teamLeaveSource` /
+  `teamScopeSig` (prefs `attendance_tracked`, `overview_access`, `team_leave_source`, `team_scope_sig`; missing =
+  false / none / off / ''). `homeView` (myDay | overview | dual) and `teamLeaveEnabled` are derived; both also
+  need a SaaS feature: Team overview is part of **Attendance** (`homeView` needs `featureAttendance`, Time Off
+  plays no part), Team leave needs Time Off. With an overview grant but no Attendance, Home stays My day (locked
+  attendance pane + week strip + For you; plan A-L16, A-L24). With Attendance but no Time Off the server sends
+  `who_out: null` and the overview hides Who's out and its 30 / 60 / 90 link.
+- Pending (not yet approved) leave of colleagues is an HR setting, **off by default**: `TeamDisclosure.showPending`
+  is true only when the server sends `true` (plan D3, A-L25). Pending chips follow each row's `state`.
+- LEAVE tab: `TeamLeaveTile` after the approvals row (one `leave/team_outlook` call, `summary`); screen
+  `lib/screens/team/team_leave_screen.dart` (heat map `heat_map.dart`, text `team_format.dart`, colours
+  `team_colors.dart` — the only hex values, dark mode goes there). Apply sheet: `AlsoOffLine` (informational,
+  never blocks submit).
+- HOME: `HomeRoot` (`lib/screens/home/home_root.dart`) picks My day / `TeamOverviewScreen` / the switch
+  (`PillSegments`, remembered per employee `home_mode|<db>|<id>`). Overview: counts, Yesterday (reviewed),
+  drill-down `OverviewDrillScreen` (tab navigator), person sheet (root navigator), Who's out, For you (shared
+  `openForYouItem`; `yesterday_incomplete` stays on My day). Missing route / `not_allowed` → My day for the run +
+  `refreshMe()`. A Who's out row opens the person sheet only with `names` and `WhoOutToday.tracked`.
+- Errors on these screens: `friendlyError(e, context: ErrorContext.team)` (own branch: `not_allowed` / `not_found`
+  wording, usual transport words otherwise); `names_hidden` / `invalid_department` have words in every context.
+- Cache: `TeamCache` (`team_v1|<db>|<employee>|…`, signature = `team_scope_sig`, else
+  overview_access/team_leave_source/department/company), keys only via `TeamCache.outlookKey` / `overviewKey`
+  (the LEAVE row and the outlook share the 30-day entry); cleared on sign-out, logout and any access-lost answer.
+  A caller takes the key and `TeamCache.bind(s)` (employee, `teamCacheSignature`, `TeamCache.generation`,
+  `SessionService.requestEpoch`) **before** its request; the outlook, the LEAVE tile, the overlap line and the
+  overview check `binding.isCurrent(s)` before every setState an answer or cached read drives, and `write` checks
+  it too: a stale answer is neither shown nor stored, the screen clears and asks again (not while signed out).
+  Every clear bumps the generation; `requestEpoch` advances when a sign-out / logout begins and on every new
+  access token, even when a sign-in during the hook skips the wipe. Writes and clears are serialised. The person
+  sheet is never cached. A clear sets a read barrier before it notifies (`read` misses the cleared entries even
+  while the removal waits behind an earlier write) and sends the removal to storage at once, ahead of the queue,
+  so a killed app keeps no entry (A-L23). Never let a clear notify before reads miss its entries.
+- A shown answer keeps its binding (A-L22): the outlook, the LEAVE tile, the overlap line, the overview, the
+  drill-down and the person sheet listen to `TeamCache.watch(s)` (every session notify + every clear; the
+  generation is a `ValueNotifier`) and drop a stale answer before the next frame, then ask again (not while a
+  request is on the wire, signed out or during a sign-out). A failed refresh never keeps a stale answer under the
+  strip. Never keep an `OmniMobileApi` across attempts: build it from the session next to `TeamCache.bind`
+  (its token is final, and an `invalid_session` answer clears the session via `onInvalidSession`).
+  `showOverviewPersonSheet` takes an `apiFor` builder for that reason.
+- The Team overview's `for_you` cards are never served from `TeamCache` (A-X2). The overview writes its cache body
+  with `for_you: []`, strips `for_you` on read, and shows no For you section (no header, no empty state) when it
+  shows a cached answer. The reason is that the expenses and payroll flags behind those cards are not part of
+  `team_scope_sig`.
+- Tests: `test/screens/team/`, `test/screens/home/overview/`, `test/screens/home/home_root_test.dart`,
+  `test/services/session_team_flags_test.dart`, `test/services/team_api_test.dart`, `test/services/team_cache_test.dart`,
+  `test/models/team_*_test.dart`, `test/widgets/pill_segments_test.dart`.
+- Needs connector 2.65.0 for anything to show; older connectors keep 1.33 behaviour (matrix in the plan).

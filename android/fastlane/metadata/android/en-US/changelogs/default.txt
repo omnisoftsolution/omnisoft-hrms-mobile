@@ -1,1 +1,2 @@
-New: notifications. Omni HR now tells you when your leave or expense is decided, when a request waits for your approval, when HR asks about your attendance, and when your company posts news. Choose what you get in Profile > Notifications. Your company can also turn on check-in and check-out reminders. Once your company's server is updated, notifications start after you open the app and allow them.
+Team leave: see who on your team is off in the next 30, 60 or 90 days (Leave tab).
+Team overview for managers: today's check-ins, who's out and yesterday's review, when HR turns it on.
