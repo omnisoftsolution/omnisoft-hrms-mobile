@@ -21,6 +21,11 @@ import '../../widgets/range_picker_dialog.dart';
 import '../approvals/approvals_screen.dart';
 import '../home/home_shell.dart';
 import 'leave_approvals_row.dart';
+import '../../models/team_outlook.dart';
+import '../../services/team_cache.dart';
+import '../team/team_leave_screen.dart';
+import 'also_off_line.dart';
+import 'team_leave_row.dart';
 import '../../utils/leave_backdate.dart';
 
 /// Renders the remaining-balance indicator for a leave type. Returns
@@ -103,7 +108,12 @@ String receiptStatus(Map<String, dynamic> response) =>
     response['state'] == 'validate' ? 'Approved' : 'Waiting for approval';
 
 class LeaveScreen extends StatefulWidget {
-  const LeaveScreen({super.key, this.apiBuilder, this.appBar});
+  const LeaveScreen({
+    super.key,
+    this.apiBuilder,
+    this.appBar,
+    this.teamLeaveBuilder,
+  });
 
   /// Test seam: swaps in a fake API (fake-subclass pattern). The apply
   /// sheet uses it too.
@@ -111,6 +121,10 @@ class LeaveScreen extends StatefulWidget {
 
   /// Test seam: replaces [OmniAppBar] (bell, avatar, Google Fonts).
   final PreferredSizeWidget? appBar;
+
+  /// Test seam: replaces the pushed [TeamLeaveScreen].
+  @visibleForTesting
+  final Widget Function()? teamLeaveBuilder;
 
   @override
   State<LeaveScreen> createState() => LeaveScreenState();
@@ -122,6 +136,38 @@ class LeaveScreenState extends State<LeaveScreen> {
   String? _error;
   String _approvalsBreakdown = '';
 
+  /// The 30-day team outlook behind the Team leave tile (A-L1); null until
+  /// an answer, or a cached one, arrived.
+  TeamOutlook? _teamOutlook;
+
+  /// The binding [_teamOutlook] was asked (or read) under (A-L22).
+  TeamCacheBinding? _teamOutlookBinding;
+
+  /// Outlook requests of the tile on the wire; each checks its own binding
+  /// when it lands.
+  int _teamAsking = 0;
+
+  /// The tile's answer went stale while nothing could be asked (signed
+  /// out, or a sign-out running): the next notify that allows it asks.
+  bool _teamReloadPending = false;
+
+  /// Every session notify and every cache clear (A-L22).
+  late final Listenable _teamWatch;
+
+  /// The last outlook call met an older connector (HTML 404): no tile
+  /// until a later call answers.
+  bool _teamLeaveMissing = false;
+
+  /// The session's [SessionService.teamCacheSignature] when the outlook
+  /// last answered access-lost (not_allowed / names_hidden /
+  /// feature_unavailable): the tile is hidden while the session still
+  /// says this — the per-run rule A-L5 gives Home — and comes back (and
+  /// asks again) once /me changes the scope or a later call answers.
+  String? _teamLeaveLostAt;
+
+  /// Drops an outlook answer that a newer refresh has overtaken.
+  int _teamSeq = 0;
+
   OmniMobileApi _api(SessionService s) =>
       widget.apiBuilder?.call(s) ??
       OmniMobileApi(baseUrl: s.clientUrl, db: s.clientDb, token: s.token);
@@ -129,7 +175,15 @@ class LeaveScreenState extends State<LeaveScreen> {
   @override
   void initState() {
     super.initState();
+    _teamWatch = TeamCache.watch(context.read<SessionService>())
+      ..addListener(_onTeamBindingChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => refresh());
+  }
+
+  @override
+  void dispose() {
+    _teamWatch.removeListener(_onTeamBindingChanged);
+    super.dispose();
   }
 
   /// Reload the leave types, and the approvals block of /me so a user
@@ -144,6 +198,7 @@ class LeaveScreenState extends State<LeaveScreen> {
     });
     final session = context.read<SessionService>();
     unawaited(_refreshApprovals(session, force: force));
+    unawaited(_refreshTeamLeave());
     try {
       _types = await _api(session).getLeaveTypes();
     } catch (e) {
@@ -204,6 +259,152 @@ class LeaveScreenState extends State<LeaveScreen> {
     if (mounted) unawaited(_refreshApprovalsBreakdown());
   }
 
+  /// A-L1: one 30-day team outlook feeds the tile and is kept in
+  /// [TeamCache], so the outlook opens with it at once. Best effort, like
+  /// the approvals line: a failure falls back to the cached summary, an
+  /// older connector (HTML 404) hides the tile, lost access clears this
+  /// employee's cache and re-pulls /me (A-L3). Nothing runs (no prefs, no
+  /// network) while team leave is off.
+  Future<void> _refreshTeamLeave() async {
+    if (!mounted) return;
+    final session = context.read<SessionService>();
+    if (!session.teamLeaveEnabled) return;
+    final seq = ++_teamSeq;
+    _teamReloadPending = false;
+    // The same key the outlook screen opens with (A-L1, Task 3), and the
+    // cache binding taken before the request (A-L15), checked again before
+    // anything the answer drives (A-L21). The client is built from the
+    // same session in the same synchronous step (A-L22).
+    final key = TeamCache.outlookKey(session, days: 30);
+    final binding = TeamCache.bind(session);
+    final api = _api(session);
+    try {
+      final TeamOutlook outlook;
+      _teamAsking++;
+      try {
+        outlook = await api.fetchTeamOutlook();
+      } finally {
+        _teamAsking--;
+      }
+      if (!mounted || seq != _teamSeq) return;
+      if (!binding.isCurrent(session)) return _rebindTeamLeave(session);
+      setState(() {
+        _teamOutlook = outlook;
+        _teamOutlookBinding = binding;
+        _teamLeaveMissing = false;
+        _teamLeaveLostAt = null;
+      });
+      await TeamCache.write(session, key, outlook.raw, binding: binding);
+    } catch (e) {
+      if (!mounted || seq != _teamSeq) return;
+      if (!binding.isCurrent(session)) return _rebindTeamLeave(session);
+      if (isMissingRoute(e)) {
+        setState(() => _teamLeaveMissing = true);
+        return;
+      }
+      if (isAccessLost(e)) {
+        // No dead tile: hidden while the scope is the one that lost it.
+        setState(() {
+          _teamOutlook = null;
+          _teamOutlookBinding = null;
+          _teamLeaveLostAt = session.teamCacheSignature;
+        });
+        await TeamCache.clearEmployee(session);
+        await session.refreshMe();
+        return;
+      }
+      // Keep what is on screen only while its own binding is current
+      // (A-L22); a stale summary goes, and only a cached entry that passes
+      // this request's (current) binding may take its place.
+      final shown = _teamOutlookBinding;
+      if (_teamOutlook != null && shown != null && shown.isCurrent(session)) {
+        return;
+      }
+      if (_teamOutlook != null) {
+        setState(() {
+          _teamOutlook = null;
+          _teamOutlookBinding = null;
+        });
+      }
+      final cached = await TeamCache.read(session, key);
+      if (!mounted || seq != _teamSeq || cached == null) return;
+      if (!binding.isCurrent(session)) return _rebindTeamLeave(session);
+      setState(() {
+        _teamOutlook = TeamOutlook.fromJson(cached.$1);
+        _teamOutlookBinding = binding;
+      });
+    }
+  }
+
+  /// The tile's answer (or cached read) was asked under a binding that has
+  /// moved since (a cache clear, a sign-out, a new sign-in or a scope
+  /// change; A-L21): it is neither shown nor stored. The tile empties and
+  /// asks again under the new binding, with a client built from the
+  /// session of now (A-L22); nothing is asked while signed out or while a
+  /// sign-out runs (the notify that ends the sign-out asks then).
+  Future<void> _rebindTeamLeave(SessionService session) {
+    setState(() {
+      _teamOutlook = null;
+      _teamOutlookBinding = null;
+    });
+    if (session.employeeId <= 0 || session.isClearing) {
+      _teamReloadPending = true;
+      return Future<void>.value();
+    }
+    return _refreshTeamLeave();
+  }
+
+  /// A session notify or a cache clear (A-L22): the tile's summary is
+  /// checked against the binding it was asked under. A stale one goes
+  /// before the next frame and the tile asks again, unless a request is on
+  /// the wire (it checks its own binding when it lands) or nothing may be
+  /// asked yet (signed out, a sign-out running).
+  void _onTeamBindingChanged() {
+    if (!mounted) return;
+    final session = context.read<SessionService>();
+    final shown = _teamOutlookBinding;
+    if (_teamOutlook != null && (shown == null || !shown.isCurrent(session))) {
+      setState(() {
+        _teamOutlook = null;
+        _teamOutlookBinding = null;
+      });
+      if (_teamAsking == 0) _teamReloadPending = true;
+    }
+    if (!_teamReloadPending || _teamAsking > 0) return;
+    if (session.employeeId <= 0 || session.isClearing) return;
+    _teamReloadPending = false;
+    unawaited(_refreshTeamLeave());
+  }
+
+  /// The list watches the session (`_buildList`), so every session notify
+  /// lands here first. A /me that changed the scope after an access-lost
+  /// answer brings the tile back and asks the outlook again. Computed
+  /// here, never assigned in `build`.
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final lostAt = _teamLeaveLostAt;
+    if (lostAt == null) return;
+    if (context.read<SessionService>().teamCacheSignature != lostAt) {
+      _teamLeaveLostAt = null;
+      unawaited(_refreshTeamLeave());
+    }
+  }
+
+  /// Pushed on this tab's Navigator so the bottom bar stays visible; the
+  /// tile is refreshed on the way back.
+  Future<void> _openTeamLeave() async {
+    final builder = widget.teamLeaveBuilder;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => builder != null
+            ? builder()
+            : TeamLeaveScreen(context: 'team', apiBuilder: widget.apiBuilder),
+      ),
+    );
+    if (mounted) unawaited(_refreshTeamLeave());
+  }
+
   void _openApplyForm(LeaveType type) async {
     // Sheet returns the new leave's id on a successful submit (null
     // when the user dismissed without submitting). Doing the post-
@@ -239,6 +440,12 @@ class LeaveScreenState extends State<LeaveScreen> {
     // with a positive leave id → navigate. No snackbar — the in-sheet
     // receipt is the user's confirmation; doubling it with a banner
     // would be noise.
+    // "See team leave" in the Also-off line: the sheet is on the root
+    // Navigator, so the push happens here, on this tab's Navigator.
+    if (leaveId == seeTeamLeaveResult) {
+      if (mounted) await _openTeamLeave();
+      return;
+    }
     if (!mounted || leaveId == null || leaveId <= 0) return;
     final shell = context.findAncestorStateOfType<HomeShellState>();
     await shell?.navigateToLeave(leaveId);
@@ -271,8 +478,26 @@ class LeaveScreenState extends State<LeaveScreen> {
   }
 
   Widget _buildList() {
-    final showRow = context.watch<SessionService>().leaveApprovalsEnabled;
-    final offset = showRow ? 1 : 0;
+    final session = context.watch<SessionService>();
+    final lostAt = _teamLeaveLostAt;
+    final lost = lostAt != null && lostAt == session.teamCacheSignature;
+    final showTeam = session.teamLeaveEnabled && !_teamLeaveMissing && !lost;
+    // The optional rows above the leave types, in this order: Leave
+    // approvals (approvers), then Team leave.
+    final rows = <Widget>[
+      if (session.leaveApprovalsEnabled)
+        LeaveApprovalsRow(
+          breakdown: _approvalsBreakdown,
+          onTap: _openApprovals,
+        ),
+      if (showTeam)
+        TeamLeaveTile(
+          summary: _teamOutlook?.summary,
+          emptyReason: _teamOutlook?.emptyReason,
+          onTap: _openTeamLeave,
+        ),
+    ];
+    final offset = rows.length;
     // Flat list ordered by Odoo's hr.leave.type.sequence — the
     // connector returns types in `sequence asc, id asc` order, so
     // we render them as received. HR controls ordering by drag-
@@ -281,14 +506,11 @@ class LeaveScreenState extends State<LeaveScreen> {
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
       itemCount: _types.length + offset,
-      separatorBuilder: (_, i) => SizedBox(height: showRow && i == 0 ? 16 : 8),
+      // 8 between rows, 16 under the last optional row.
+      separatorBuilder: (_, i) =>
+          SizedBox(height: offset > 0 && i == offset - 1 ? 16 : 8),
       itemBuilder: (_, i) {
-        if (showRow && i == 0) {
-          return LeaveApprovalsRow(
-            breakdown: _approvalsBreakdown,
-            onTap: _openApprovals,
-          );
-        }
+        if (i < offset) return rows[i];
         final type = _types[i - offset];
         return Opacity(
           // Exhausted-allocation tiles fade in place. The red
@@ -444,9 +666,91 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
   int _previewSeq = 0;
   Timer? _previewDebounce;
 
+  // "Also off on these dates": the team overlap for the picked dates.
+  // Informational only — it never touches _periodValid, _submitting or
+  // the SUBMIT button. Created on first use (only with team leave on).
+  late final TeamOverlapLookup _overlap = TeamOverlapLookup(
+    fetch: _fetchOverlap,
+    onChanged: () {
+      if (mounted) setState(() {});
+    },
+  );
+
+  /// The binding each overlap answer was asked under (A-L22), looked up by
+  /// the answer the line shows.
+  final _overlapBindings = Expando<TeamCacheBinding>('overlap binding');
+
+  /// The line went (or a lookup failed) because the team binding moved
+  /// while nothing could be asked: the next notify that allows it asks the
+  /// same dates again.
+  bool _overlapPending = false;
+
+  /// Every session notify and every cache clear (A-L22).
+  late final Listenable _teamWatch;
+
+  /// The overlap for [from]..[to], asked under the team binding of the
+  /// moment (A-L21). An answer that lands after a cache clear, a sign-out,
+  /// a new sign-in or a scope change is never shown: the same dates are
+  /// asked again under the new binding, with a client built from the
+  /// session of now (A-L22, TLP3-F01). Signed out (or while a sign-out
+  /// runs) it fails instead, and the lookup hides the line until the
+  /// notify that ends the sign-out.
+  Future<TeamOverlap> _fetchOverlap(DateTime from, DateTime to) async {
+    final session = context.read<SessionService>();
+    while (true) {
+      final binding = TeamCache.bind(session);
+      final api = widget.apiFor(session);
+      final answer = await api.fetchTeamOverlap(from, to);
+      if (binding.isCurrent(session)) {
+        _overlapBindings[answer] = binding;
+        return answer;
+      }
+      if (!mounted || session.employeeId <= 0 || session.isClearing) {
+        _overlapPending = true;
+        throw StateError('team binding changed');
+      }
+    }
+  }
+
+  /// A session notify or a cache clear (A-L22): the line is checked
+  /// against the binding its answer was asked under. A stale line goes
+  /// before the next frame, and the same dates are asked again once
+  /// something may be asked (not while signed out or during a sign-out).
+  void _onTeamBindingChanged() {
+    if (!mounted) return;
+    final session = context.read<SessionService>();
+    final shown = _overlap.value;
+    final binding = shown == null ? null : _overlapBindings[shown];
+    if (shown != null && (binding == null || !binding.isCurrent(session))) {
+      setState(() => _overlap.invalidate(askAgain: false));
+      _overlapPending = true;
+    }
+    if (!_overlapPending) return;
+    if (session.employeeId <= 0 || session.isClearing) return;
+    _overlapPending = false;
+    if (session.teamLeaveEnabled) _overlap.invalidate();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _teamWatch = TeamCache.watch(context.read<SessionService>())
+      ..addListener(_onTeamBindingChanged);
+    _scheduleOverlap();
+  }
+
+  /// Call after any change to the dates, inside the setState that made
+  /// it (and once from initState for the default dates).
+  void _scheduleOverlap() {
+    if (!context.read<SessionService>().teamLeaveEnabled) return;
+    _overlap.schedule(_dateFrom, _hourlyCustom ? _dateFrom : _dateTo);
+  }
+
   @override
   void dispose() {
     _previewDebounce?.cancel();
+    _teamWatch.removeListener(_onTeamBindingChanged);
+    _overlap.dispose();
     _reasonController.dispose();
     super.dispose();
   }
@@ -576,6 +880,7 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
           _dateTo = picked;
           _error = null;
           _schedulePreview();
+          _scheduleOverlap();
         });
       }
       return;
@@ -600,6 +905,7 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
         _dateFrom = picked.start;
         _dateTo = picked.end;
         _error = null;
+        _scheduleOverlap();
       });
     }
   }
@@ -859,6 +1165,7 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
                   if (!_hourlyAllDay) _dateTo = _dateFrom;
                   _error = null;
                   _schedulePreview();
+                  _scheduleOverlap();
                 }),
               ),
             ],
@@ -914,6 +1221,16 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
                 ),
               ),
             ),
+            if (_overlap.visible) ...[
+              const SizedBox(height: 12),
+              AlsoOffLine(
+                overlap: _overlap.value!,
+                // The sheet is on the root Navigator: the Leave tab does
+                // the push (see _openApplyForm).
+                onSeeTeamLeave: () =>
+                    Navigator.of(context).pop(seeTeamLeaveResult),
+              ),
+            ],
             if (_hourlyCustom) ...[
               const SizedBox(height: 12),
               Row(
