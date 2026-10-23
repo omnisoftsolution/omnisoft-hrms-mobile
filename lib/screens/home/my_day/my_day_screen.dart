@@ -18,15 +18,13 @@ import '../../../services/session_service.dart';
 import '../../../widgets/error_state_view.dart';
 import '../../../widgets/feature_locked_pane.dart';
 import '../../../widgets/omni_app_bar.dart';
-import '../../approvals/approvals_screen.dart';
-import '../../expenses/expense_detail_screen.dart';
 import '../../face_scan/face_enrollment_screen.dart';
-import '../../payroll/payslips_screen.dart';
 import 'auto_closed_banner.dart';
 import 'check_in_out_screen.dart';
 import 'declaration_sheet.dart';
 import 'day_timeline.dart';
 import 'for_you_list.dart';
+import 'for_you_navigation.dart';
 import 'my_day_display.dart';
 import 'status_tile.dart';
 import 'week_strip.dart';
@@ -108,8 +106,8 @@ class MyDayScreenState extends State<MyDayScreen> {
   /// The fetch currently running; every overlapping [refresh] shares it.
   Future<void>? _inFlight;
 
-  /// Guards [_onTap] against a second tap while one is being handled.
-  bool _opening = false;
+  /// Guards the For-you rows against a second tap while one is handled.
+  final _forYouGuard = ForYouTapGuard();
 
   late final AppLifecycleListener _lifecycle;
 
@@ -241,26 +239,6 @@ class MyDayScreenState extends State<MyDayScreen> {
   Future<void> _retry() {
     setState(() => _firstLoadError = null);
     return refresh();
-  }
-
-  Future<ExpenseRecord?> _findExpense(int id) async {
-    try {
-      final page = await _api().getExpenseList();
-      return page.records.where((record) => record.id == id).firstOrNull;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  static Widget _destination(ForYouItem item, ExpenseRecord? expense) {
-    switch (item.kind) {
-      case 'leave_approvals':
-        return const ApprovalsScreen();
-      case 'my_expense':
-        return ExpenseDetailScreen(record: expense!);
-      default:
-        return const PayslipsScreen();
-    }
   }
 
   Future<void> _refreshSession() async {
@@ -602,48 +580,17 @@ class MyDayScreenState extends State<MyDayScreen> {
     if (sent && mounted) await refresh();
   }
 
-  Future<void> _onTap(ForYouItem item) async {
-    if (!item.isKnown) return;
-    // id 0 = the server omitted it: there is nothing to open.
-    if (item.id == 0 &&
-        (item.kind == 'my_leave' || item.kind == 'my_expense')) {
-      return;
-    }
-    if (item.kind == 'my_leave') {
-      widget.onOpenLeave?.call(item.id);
-      return;
-    }
-    if (_opening) return;
-    _opening = true;
-    try {
-      ExpenseRecord? expense;
-      if (item.kind == 'my_expense') {
-        expense = await _findExpense(item.id);
-        if (!mounted) return;
-        if (expense == null) {
-          widget.onOpenExpense?.call(item.id);
-          return;
-        }
-      }
-      final build = widget.destinationBuilder ?? _destination;
-      // The tab's own Navigator: the bottom bar stays visible.
-      await Navigator.of(
-        context,
-      ).push(MaterialPageRoute(builder: (_) => build(item, expense)));
-    } finally {
-      _opening = false;
-    }
-    // The guard covers the lookup and the push only: the follow-up
-    // refreshes can take up to the request timeout on a slow network, and
-    // the (still visible) rows must stay tappable meanwhile.
-    if (!mounted) return;
-    if (item.kind == 'leave_approvals') {
-      // A decision changes the approvals count kept in the session.
-      await _refreshSession();
-      if (!mounted) return;
-    }
-    await refresh();
-  }
+  Future<void> _onTap(ForYouItem item) => openForYouItem(
+    context,
+    item,
+    guard: _forYouGuard,
+    api: _api,
+    refreshSession: _refreshSession,
+    refresh: refresh,
+    onOpenLeave: widget.onOpenLeave,
+    onOpenExpense: widget.onOpenExpense,
+    destinationBuilder: widget.destinationBuilder,
+  );
 
   @override
   Widget build(BuildContext context) {
