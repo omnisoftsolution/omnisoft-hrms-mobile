@@ -37,7 +37,11 @@ class AlsoOffLine extends StatelessWidget {
   });
 
   final TeamOverlap overlap;
-  final VoidCallback onSeeTeamLeave;
+
+  /// Null makes "See team leave" disabled (greyed, like the SUBMIT button
+  /// while it sends): the apply sheet does this while a submit is on the
+  /// wire, so leaving the sheet cannot abandon it.
+  final VoidCallback? onSeeTeamLeave;
 
   static const title = 'Also off on these dates';
   static const reassurance =

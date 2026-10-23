@@ -311,7 +311,12 @@ class LeaveScreenState extends State<LeaveScreen> {
           _teamOutlookBinding = null;
           _teamLeaveLostAt = session.teamCacheSignature;
         });
-        await TeamCache.clearEmployee(session);
+        try {
+          await TeamCache.clearEmployee(session);
+        } catch (_) {
+          // A prefs failure: the tile is hidden anyway, and /me is still
+          // re-pulled below (T6-M2).
+        }
         await session.refreshMe();
         return;
       }
@@ -328,13 +333,27 @@ class LeaveScreenState extends State<LeaveScreen> {
           _teamOutlookBinding = null;
         });
       }
-      final cached = await TeamCache.read(session, key);
+      // Unreadable prefs read like an empty cache: the tile keeps showing
+      // without a summary, quietly (T6-M2).
+      final cached = await _readCachedTeamOutlook(session, key);
       if (!mounted || seq != _teamSeq || cached == null) return;
       if (!binding.isCurrent(session)) return _rebindTeamLeave(session);
       setState(() {
         _teamOutlook = TeamOutlook.fromJson(cached.$1);
         _teamOutlookBinding = binding;
       });
+    }
+  }
+
+  /// The cached outlook, or null when there is none or prefs fail.
+  Future<(Map<String, dynamic> body, DateTime savedAt)?> _readCachedTeamOutlook(
+    SessionService session,
+    String key,
+  ) async {
+    try {
+      return await TeamCache.read(session, key);
+    } catch (_) {
+      return null;
     }
   }
 
@@ -711,7 +730,12 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
   /// notify that ends the sign-out.
   Future<TeamOverlap> _fetchOverlap(DateTime from, DateTime to) async {
     final session = context.read<SessionService>();
-    while (true) {
+    // The first ask plus at most [_maxOverlapReasks] more; after that the
+    // line stays hidden (it is informational only).
+    for (var ask = 0; ask <= _maxOverlapReasks; ask++) {
+      // A /me may have turned team leave off meanwhile: no call, no line
+      // (T6-I2). Checked before every ask, the first included.
+      if (!session.teamLeaveEnabled) throw StateError('team leave is off');
       final binding = TeamCache.bind(session);
       final api = widget.apiFor(session);
       final answer = await api.fetchTeamOverlap(from, to);
@@ -724,7 +748,12 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
         throw StateError('team binding changed');
       }
     }
+    throw StateError('team binding kept changing');
   }
+
+  /// How often a stale overlap answer is asked again before the line gives
+  /// up (T6-I2).
+  static const _maxOverlapReasks = 3;
 
   /// A session notify or a cache clear (A-L22): the line is checked
   /// against the binding its answer was asked under. A stale line goes
@@ -1241,8 +1270,12 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
                 overlap: _overlap.value!,
                 // The sheet is on the root Navigator: the Leave tab does
                 // the push (see _openApplyForm).
-                onSeeTeamLeave: () =>
-                    Navigator.of(context).pop(seeTeamLeaveResult),
+                // Dead while a submit is on the wire (the SUBMIT button's own
+                // disabled look): popping now would skip the receipt, the
+                // balance refresh and onSubmitted (T6-I1).
+                onSeeTeamLeave: _submitting
+                    ? null
+                    : () => Navigator.of(context).pop(seeTeamLeaveResult),
               ),
             ],
             if (_hourlyCustom) ...[

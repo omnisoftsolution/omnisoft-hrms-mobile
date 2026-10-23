@@ -101,6 +101,12 @@ class _Api extends OmniMobileApi {
   Completer<void>? outlookGate;
   Completer<void>? overlapGate;
 
+  /// One-shot: the next applyLeave waits for it.
+  Completer<void>? applyGate;
+
+  /// Runs at the start of every overlap call (a /me that lands meanwhile).
+  void Function()? onOverlap;
+
   @override
   Future<List<ApprovalItem>> getPendingApprovals() async => const [];
 
@@ -137,6 +143,7 @@ class _Api extends OmniMobileApi {
   @override
   Future<TeamOverlap> fetchTeamOverlap(DateTime from, DateTime to) async {
     overlapCalls++;
+    onOverlap?.call();
     final error = overlapError;
     final body = overlap;
     final gate = overlapGate;
@@ -161,6 +168,11 @@ class _Api extends OmniMobileApi {
     Map<String, dynamic>? attachment,
   }) async {
     applies++;
+    final gate = applyGate;
+    if (gate != null) {
+      applyGate = null;
+      await gate.future;
+    }
     return {'success': true, 'leave_id': 51, 'state': 'confirm'};
   }
 }
@@ -170,7 +182,8 @@ class _Api extends OmniMobileApi {
 class _TeamSession extends SessionService {
   _TeamSession({this.team = true, this.approver = false});
 
-  final bool team;
+  /// Mutable: a /me can turn team leave off ([changeScope] notifies).
+  bool team;
   final bool approver;
   int meRefreshes = 0;
 
@@ -213,6 +226,28 @@ class _NoTeamWriteStore extends InMemorySharedPreferencesStore {
       key.startsWith('flutter.${TeamCache.prefix}')
       ? Future<bool>.error(StateError('disk full'))
       : super.setValue(valueType, key, value);
+}
+
+/// Storage whose reads fail while [failReads] is set.
+class _FlakyReadStore extends InMemorySharedPreferencesStore {
+  _FlakyReadStore() : super.empty();
+
+  bool failReads = false;
+
+  @override
+  Future<Map<String, Object>> getAll() => failReads
+      ? Future<Map<String, Object>>.error(StateError('prefs unreadable'))
+      : super.getAll();
+}
+
+/// Storage whose team-cache removals fail.
+class _NoTeamRemoveStore extends InMemorySharedPreferencesStore {
+  _NoTeamRemoveStore() : super.empty();
+
+  @override
+  Future<bool> remove(String key) => key.startsWith('flutter.${TeamCache.prefix}')
+      ? Future<bool>.error(StateError('prefs broken'))
+      : super.remove(key);
 }
 
 /// A test-side write with the binding taken right now.
@@ -294,6 +329,36 @@ void main() {
       expect(tester.takeException(), isNull);
       expect(find.text('2 out this week · Marketing'), findsOneWidget);
       expect(api.outlookCalls, 1);
+    });
+
+    testWidgets('offline with unreadable prefs: no unhandled error, no '
+        'summary (T6-M2)', (tester) async {
+      final store = _FlakyReadStore();
+      SharedPreferencesStorePlatform.instance = store;
+      final session = _TeamSession();
+      final api = _Api()..outlookError = ApiException('network_error');
+      // Prefs cannot be read at all: the cache read throws.
+      store.failReads = true;
+      await tester.pumpWidget(_host(api, session));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.text('Annual Leave'), findsOneWidget);
+      expect(find.textContaining('out this week'), findsNothing);
+    });
+
+    testWidgets('lost access with a cache clear that fails: no unhandled '
+        'error, the tile stays hidden, /me is still re-pulled (T6-M2)', (
+      tester,
+    ) async {
+      SharedPreferencesStorePlatform.instance = _NoTeamRemoveStore();
+      final session = _TeamSession();
+      await tester.runAsync(() => _write(session, _outlookJson()));
+      final api = _Api()..outlookError = ApiException('not_allowed');
+      await tester.pumpWidget(_host(api, session));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(_tile), findsNothing);
+      expect(session.meRefreshes, 2); // opening the tab + the lost access
     });
 
     testWidgets('team leave off: no tile and no outlook call', (
@@ -627,6 +692,88 @@ void main() {
       expect(find.text('SUBMIT LEAVE'), findsNothing);
       expect(find.text('OUTLOOK'), findsOneWidget);
       expect(api.applies, 0);
+    });
+
+    testWidgets('"See team leave" does nothing while a submit is on the wire '
+        '(T6-I1)', (tester) async {
+      final gate = Completer<void>();
+      final api = _Api()..applyGate = gate;
+      await tester.pumpWidget(_host(api, _TeamSession()));
+      await tester.pumpAndSettle();
+      await openSheetAndWait(tester);
+      await tester.ensureVisible(find.text('SUBMIT LEAVE'));
+      await tester.tap(find.text('SUBMIT LEAVE'));
+      await tester.pump();
+      expect(api.applies, 1);
+
+      await tester.ensureVisible(find.text('See team leave'));
+      await tester.tap(find.text('See team leave'), warnIfMissed: false);
+      // The SUBMIT spinner never settles: pump a fixed time.
+      await tester.pump(const Duration(milliseconds: 500));
+      // Same look as the disabled SUBMIT: the link is dead, the sheet stays.
+      expect(
+        tester
+            .widget<TextButton>(find.byKey(const ValueKey('also-off-see-team')))
+            .onPressed,
+        isNull,
+      );
+      expect(find.text('OUTLOOK'), findsNothing);
+      expect(find.byType(PrimaryButton), findsOneWidget);
+
+      gate.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('Leave request submitted'), findsOneWidget);
+      expect(find.text('OUTLOOK'), findsNothing);
+    });
+
+    testWidgets('"See team leave" is live while nothing is being submitted (T6-I1)', (
+      tester,
+    ) async {
+      final api = _Api();
+      await tester.pumpWidget(_host(api, _TeamSession()));
+      await tester.pumpAndSettle();
+      await openSheetAndWait(tester);
+      expect(
+        tester
+            .widget<TextButton>(find.byKey(const ValueKey('also-off-see-team')))
+            .onPressed,
+        isNotNull,
+      );
+    });
+
+    testWidgets('a /me that turns team leave off while an overlap fetch is '
+        'in flight: no second call, no line (T6-I2)', (tester) async {
+      final session = _TeamSession();
+      final api = _Api();
+      await tester.pumpWidget(_host(api, session));
+      await tester.pumpAndSettle();
+      final gate = Completer<void>();
+      api.overlapGate = gate;
+      await openSheet(tester);
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(api.overlapCalls, 1);
+      session.team = false;
+      session.changeScope('2222222222222222'); // the flags are in the sig
+      gate.complete();
+      await tester.pumpAndSettle();
+      expect(api.overlapCalls, 1);
+      expect(find.byKey(const ValueKey('also-off-line')), findsNothing);
+      expect(find.text('SUBMIT LEAVE'), findsOneWidget);
+    });
+
+    testWidgets('a binding that keeps moving is asked at most three more '
+        'times, then the line stays hidden (T6-I2)', (tester) async {
+      final session = _TeamSession();
+      final api = _Api();
+      await tester.pumpWidget(_host(api, session));
+      await tester.pumpAndSettle();
+      var n = 0;
+      // Every call lands under a new scope signature.
+      api.onOverlap = () => session.changeScope('scope-${n++}');
+      await openSheetAndWait(tester);
+      expect(api.overlapCalls, 4); // the ask and three re-asks
+      expect(find.byKey(const ValueKey('also-off-line')), findsNothing);
+      expect(find.text('SUBMIT LEAVE'), findsOneWidget);
     });
 
     testWidgets('an overlap answer that lands after a cache clear is never '
