@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'arrival_snack_tracker.dart';
+import 'home_root.dart';
 import 'leave_tab_icon.dart';
 import 'my_day/my_day_screen.dart';
+import 'overview/team_overview_screen.dart';
 import '../approvals/approval_detail_screen.dart';
 import '../expenses/expenses_screen.dart';
 import '../history/history_shell.dart';
@@ -33,7 +35,9 @@ class HomeShellState extends State<HomeShell> {
 
   // Per-tab screen state keys (for tab-switch refresh + notification
   // deep-linking into HistoryShell / ExpensesScreen).
+  final _homeRootKey = GlobalKey<HomeRootState>();
   final _myDayKey = GlobalKey<MyDayScreenState>();
+  final _overviewKey = GlobalKey<TeamOverviewScreenState>();
   final _leaveKey = GlobalKey<LeaveScreenState>();
   final _historyKey = GlobalKey<HistoryShellState>();
   final _expensesKey = GlobalKey<ExpensesScreenState>();
@@ -225,7 +229,13 @@ class HomeShellState extends State<HomeShell> {
       openBell: openNotifications,
       stillCurrent: still,
       runHandler: (n) async {
-        final ctx = _myDayKey.currentContext;
+        // My day, Team overview or the Home tab's navigator, whichever is
+        // mounted (A-L8: My day is not mounted while the overview shows).
+        final ctx = homeTabContext(
+          myDayKey: _myDayKey,
+          overviewKey: _overviewKey,
+          homeNavKey: _homeNavKey,
+        );
         if (ctx == null || !ctx.mounted) return openNotifications();
         await handleNotificationTap(
           ctx,
@@ -250,14 +260,14 @@ class HomeShellState extends State<HomeShell> {
       if (nav != null && nav.canPop()) {
         nav.popUntil((r) => r.isFirst);
       }
-      // My day reloads on a Home re-tap (a kiosk punch shows on the next
-      // refresh).
-      if (i == 0) _myDayKey.currentState?.refresh();
+      // Home reloads its visible screen (My day or Team overview) on a
+      // re-tap (a kiosk punch shows on the next refresh).
+      if (i == 0) _homeRootKey.currentState?.refresh();
       return;
     }
     setState(() => _index = i);
     // Refresh data when switching to these tabs.
-    if (i == 0) _myDayKey.currentState?.refresh();
+    if (i == 0) _homeRootKey.currentState?.refresh();
     if (i == 1) _leaveKey.currentState?.refresh();
     if (i == 2) _historyKey.currentState?.refresh();
     // For feature-gated tabs (Leave, Expenses) also re-pull the
@@ -312,16 +322,17 @@ class HomeShellState extends State<HomeShell> {
     await nav.push(
       MaterialPageRoute(builder: (_) => ApprovalDetailScreen(leaveId: leaveId)),
     );
-    _myDayKey.currentState?.refresh();
+    _homeRootKey.currentState?.refresh();
   }
 
-  /// Reached from "HR updated your attendance" (spec 2026-10-07 §3.7):
-  /// the Home tab at its root, reloaded.
+  /// Reached from "HR updated your attendance" (spec 2026-10-07 §3.7) and
+  /// a reminder's Open: the Home tab at its root, showing My day (dual
+  /// mode switches to it for this visit), reloaded.
   Future<void> navigateToMyDay() async {
     _homeNavKey.currentState?.popUntil((r) => r.isFirst);
     if (_index != 0) setState(() => _index = 0);
     await WidgetsBinding.instance.endOfFrame;
-    await _myDayKey.currentState?.refresh();
+    await _homeRootKey.currentState?.showMyDay();
   }
 
   /// The bell, on the root navigator above the tabs. A routable tap pops
@@ -392,8 +403,10 @@ class HomeShellState extends State<HomeShell> {
             children: [
               _buildTabNavigator(
                 navKey: _homeNavKey,
-                root: MyDayScreen(
-                  key: _myDayKey,
+                root: HomeRoot(
+                  key: _homeRootKey,
+                  myDayKey: _myDayKey,
+                  overviewKey: _overviewKey,
                   onOpenLeave: navigateToLeave,
                   onOpenExpense: navigateToExpense,
                 ),

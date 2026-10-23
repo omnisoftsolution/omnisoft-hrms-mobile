@@ -46,6 +46,7 @@ class MyDayScreen extends StatefulWidget {
     this.captureFace,
     this.signatureCaptureBuilder,
     this.enrol,
+    this.header,
   });
 
   /// Opens leave history on one request (HomeShell.navigateToLeave, the
@@ -92,6 +93,11 @@ class MyDayScreen extends StatefulWidget {
   /// Test seam: replaces the full-screen face enrolment.
   @visibleForTesting
   final Future<void> Function()? enrol;
+
+  /// Shown first, above the status tile, also while the day loads or
+  /// failed to load (HomeRoot's "Team overview | My day" switch). Null
+  /// shows nothing.
+  final Widget? header;
 
   @override
   State<MyDayScreen> createState() => MyDayScreenState();
@@ -611,16 +617,27 @@ class MyDayScreenState extends State<MyDayScreen> {
 
   Widget _body(BuildContext context) {
     final day = _day;
+    final header = widget.header;
     if (day == null) {
       final error = _firstLoadError;
-      if (error == null) {
-        return const Center(child: CircularProgressIndicator());
-      }
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: ErrorStateView(message: error, onRetry: _retry),
-        ),
+      final Widget state = error == null
+          ? const Center(child: CircularProgressIndicator())
+          : Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: ErrorStateView(message: error, onRetry: _retry),
+              ),
+            );
+      // The switch stays reachable while My day loads or failed.
+      if (header == null) return state;
+      return Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            child: header,
+          ),
+          Expanded(child: state),
+        ],
       );
     }
     final text = Theme.of(context).textTheme;
@@ -642,6 +659,11 @@ class MyDayScreenState extends State<MyDayScreen> {
               friendlyError(myDayRefreshFailed),
               style: text.bodySmall?.copyWith(color: AppTheme.error),
             ),
+          ),
+        if (header != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            child: header,
           ),
         if (attendanceOn)
           Padding(
