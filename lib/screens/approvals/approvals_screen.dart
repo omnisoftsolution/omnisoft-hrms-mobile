@@ -8,6 +8,7 @@ import '../../services/omni_mobile_api.dart';
 import '../../services/session_service.dart';
 import '../../widgets/employee_avatar.dart';
 import '../../widgets/error_state_view.dart';
+import '../../widgets/pill_segments.dart';
 import 'approval_detail_screen.dart';
 
 /// Leave approvals for Time Off Approvers and Officers.
@@ -118,7 +119,7 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
             MediaQuery.viewPaddingOf(context).bottom + 24,
           ),
           children: [
-            _Segments(
+            PillSegments(
               labels: [
                 ready ? 'Pending · ${_pending.length}' : 'Pending',
                 'Recent',
@@ -224,61 +225,6 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
       ),
     ),
   );
-}
-
-/// Two-option pill switch (Pending / Recent).
-class _Segments extends StatelessWidget {
-  const _Segments({
-    required this.labels,
-    required this.value,
-    required this.onChanged,
-  });
-
-  final List<String> labels;
-  final int value;
-  final ValueChanged<int> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: AppTheme.surfaceContainer,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Row(
-        children: [
-          for (var i = 0; i < labels.length; i++)
-            Expanded(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => onChanged(i),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                  decoration: BoxDecoration(
-                    color: i == value
-                        ? AppTheme.surfaceContainerLowest
-                        : Colors.transparent,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    labels[i],
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: i == value
-                          ? AppTheme.primary
-                          : AppTheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
 }
 
 /// The row's first line: the employee name with the step / outcome chip at
