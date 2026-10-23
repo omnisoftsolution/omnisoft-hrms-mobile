@@ -45,8 +45,23 @@ void main() {
     });
 
     test('team context leaves the other codes alone', () {
-      for (final code in ['invalid_request', 'kiosk_only', 'state_changed']) {
+      for (final code in ['kiosk_only', 'state_changed']) {
         expect(team(code), friendlyError(ApiException(code)), reason: code);
+      }
+    });
+
+    test('contract codes with no team words read as a server error, never '
+        'raw (final review M2)', () {
+      for (final code in [
+        'database_error',
+        'invalid_request',
+        'no_employee_linked',
+      ]) {
+        expect(
+          team(code),
+          'Something went wrong on our end. Please try again in a moment.',
+          reason: code,
+        );
       }
     });
 

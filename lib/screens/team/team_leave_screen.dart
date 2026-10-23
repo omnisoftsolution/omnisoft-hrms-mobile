@@ -33,16 +33,27 @@ const teamLeaveViewLabels = {
 String teamLeaveRangeKey(SessionService s) =>
     'team_leave_range|${s.clientDb}|${s.employeeId}';
 
-/// The remembered range of this employee; 30 when none (A-L2).
+/// The remembered range of this employee; 30 when none, or when prefs
+/// fail (A-L2, final review M4).
 Future<int> readTeamLeaveRange(SessionService s) async {
-  final prefs = await SharedPreferences.getInstance();
-  final v = prefs.getInt(teamLeaveRangeKey(s));
-  return teamLeaveRanges.contains(v) ? v! : 30;
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final v = prefs.getInt(teamLeaveRangeKey(s));
+    return teamLeaveRanges.contains(v) ? v! : 30;
+  } catch (e) {
+    debugPrint('Team leave: range read failed: $e');
+    return 30;
+  }
 }
 
+/// Remembers the range; never throws (a prefs failure only forgets it).
 Future<void> saveTeamLeaveRange(SessionService s, int days) async {
-  final prefs = await SharedPreferences.getInstance();
-  await prefs.setInt(teamLeaveRangeKey(s), days);
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(teamLeaveRangeKey(s), days);
+  } catch (e) {
+    debugPrint('Team leave: range save failed: $e');
+  }
 }
 
 /// Team leave outlook: who is off over the next 30 / 60 / 90 days as a
@@ -231,7 +242,8 @@ class TeamLeaveScreenState extends State<TeamLeaveScreen> {
   Future<void> _showCached(int seq) async {
     final session = context.read<SessionService>();
     final binding = TeamCache.bind(session);
-    final hit = await TeamCache.read(session, _cacheKey(session));
+    // Unreadable prefs read like an empty cache: the fetch still runs.
+    final hit = await TeamCache.readQuietly(session, _cacheKey(session));
     if (!mounted || seq != _seq || hit == null || _outlook != null) return;
     // A clear, a sign-out or a new sign-in while the read ran (A-L21): not
     // shown. The fetch that follows asks under the new binding.
@@ -296,12 +308,15 @@ class TeamLeaveScreenState extends State<TeamLeaveScreen> {
       });
       // Storing is best effort and runs on its own: a prefs failure is not
       // a failed refresh, and the refresh does not wait on the disk (M1).
-      unawaited(_store(session, key, outlook.raw, binding));
+      unawaited(
+        TeamCache.writeQuietly(session, key, outlook.raw, binding: binding),
+      );
     } catch (e) {
       if (!mounted || seq != _seq) return;
       if (!binding.isCurrent(session)) return _rebind(seq, session);
       if (isAccessLost(e)) {
-        await TeamCache.clearEmployee(session);
+        // A prefs failure in the clear still ends on the lost view.
+        await TeamCache.clearEmployeeQuietly(session);
         unawaited(session.refreshMe());
         // The clear took a while: a newer choice may be loading or shown
         // by now, and its answer must stand (M4).
@@ -330,19 +345,6 @@ class TeamLeaveScreenState extends State<TeamLeaveScreen> {
         }
       });
     }
-  }
-
-  /// Saves the answer for the next open. Never throws: a failing store
-  /// (full disk, broken prefs file) only means no offline copy.
-  Future<void> _store(
-    SessionService session,
-    String key,
-    Map<String, dynamic> body,
-    TeamCacheBinding binding,
-  ) async {
-    try {
-      await TeamCache.write(session, key, body, binding: binding);
-    } catch (_) {}
   }
 
   /// The answer in hand was asked under a binding that has moved since (a

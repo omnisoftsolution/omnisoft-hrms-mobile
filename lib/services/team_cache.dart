@@ -197,6 +197,49 @@ class TeamCache {
   /// [clearEmployee].
   static Future<void> clearAll() => _clear(prefix);
 
+  // The screens' calls (final review M4): the cache is best effort, so a
+  // prefs failure (a full disk, a broken prefs file) never fails a refresh,
+  // never leaves a screen on its skeleton and is never an unhandled error.
+  // Each one starts its call synchronously, so a clear's barrier and
+  // generation still move at once.
+
+  /// [read], with a prefs failure read as an empty cache (null).
+  static Future<(Map<String, dynamic> body, DateTime savedAt)?> readQuietly(
+    SessionService s,
+    String key,
+  ) async {
+    try {
+      return await read(s, key);
+    } catch (e) {
+      debugPrint('TeamCache: read failed: $e');
+      return null;
+    }
+  }
+
+  /// [write]; a prefs failure only means no offline copy.
+  static Future<void> writeQuietly(
+    SessionService s,
+    String key,
+    Map<String, dynamic> body, {
+    required TeamCacheBinding binding,
+  }) async {
+    try {
+      await write(s, key, body, binding: binding);
+    } catch (e) {
+      debugPrint('TeamCache: write failed: $e');
+    }
+  }
+
+  /// [clearEmployee]; the generation moves at once even when the removal
+  /// from storage then fails.
+  static Future<void> clearEmployeeQuietly(SessionService s) async {
+    try {
+      await clearEmployee(s);
+    } catch (e) {
+      debugPrint('TeamCache: clear failed: $e');
+    }
+  }
+
   /// Clears that have started and not finished, by key prefix (A-L23):
   /// while a prefix is here, [read] returns nothing under it.
   static final Map<String, int> _barriers = <String, int>{};

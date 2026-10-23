@@ -296,7 +296,9 @@ class LeaveScreenState extends State<LeaveScreen> {
       });
       // Storing is best effort and runs on its own: a prefs failure is not
       // a failed refresh (M1).
-      unawaited(_storeTeamOutlook(session, key, outlook.raw, binding));
+      unawaited(
+        TeamCache.writeQuietly(session, key, outlook.raw, binding: binding),
+      );
     } catch (e) {
       if (!mounted || seq != _teamSeq) return;
       if (!binding.isCurrent(session)) return _rebindTeamLeave(session);
@@ -311,12 +313,9 @@ class LeaveScreenState extends State<LeaveScreen> {
           _teamOutlookBinding = null;
           _teamLeaveLostAt = session.teamCacheSignature;
         });
-        try {
-          await TeamCache.clearEmployee(session);
-        } catch (_) {
-          // A prefs failure: the tile is hidden anyway, and /me is still
-          // re-pulled below (T6-M2).
-        }
+        // A prefs failure: the tile is hidden anyway, and /me is still
+        // re-pulled below (T6-M2).
+        await TeamCache.clearEmployeeQuietly(session);
         await session.refreshMe();
         return;
       }
@@ -335,7 +334,7 @@ class LeaveScreenState extends State<LeaveScreen> {
       }
       // Unreadable prefs read like an empty cache: the tile keeps showing
       // without a summary, quietly (T6-M2).
-      final cached = await _readCachedTeamOutlook(session, key);
+      final cached = await TeamCache.readQuietly(session, key);
       if (!mounted || seq != _teamSeq || cached == null) return;
       if (!binding.isCurrent(session)) return _rebindTeamLeave(session);
       setState(() {
@@ -343,30 +342,6 @@ class LeaveScreenState extends State<LeaveScreen> {
         _teamOutlookBinding = binding;
       });
     }
-  }
-
-  /// The cached outlook, or null when there is none or prefs fail.
-  Future<(Map<String, dynamic> body, DateTime savedAt)?> _readCachedTeamOutlook(
-    SessionService session,
-    String key,
-  ) async {
-    try {
-      return await TeamCache.read(session, key);
-    } catch (_) {
-      return null;
-    }
-  }
-
-  /// Saves the answer for the outlook screen's next open. Never throws.
-  Future<void> _storeTeamOutlook(
-    SessionService session,
-    String key,
-    Map<String, dynamic> body,
-    TeamCacheBinding binding,
-  ) async {
-    try {
-      await TeamCache.write(session, key, body, binding: binding);
-    } catch (_) {}
   }
 
   /// The tile's answer (or cached read) was asked under a binding that has

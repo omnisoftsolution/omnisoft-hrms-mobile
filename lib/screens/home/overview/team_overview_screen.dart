@@ -200,9 +200,16 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
   });
 
   Future<void> _load() async {
+    final session = context.read<SessionService>();
+    // Signed out, or a sign-out running (T8-m1): nothing is sent with the
+    // token being revoked. The notify that ends the sign-out asks again
+    // ([_onBindingChanged]) if someone is still signed in.
+    if (session.employeeId <= 0 || session.isClearing) {
+      _reloadPending = true;
+      return;
+    }
     final day = _day;
     final departmentId = _departmentId;
-    final session = context.read<SessionService>();
     // Only today is ever written; the key is the same for a yesterday
     // request, which never reads or writes it. The cache binding is taken
     // with the key, before the request (A-L15), and checked before
@@ -235,10 +242,10 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
         // caller's and is never changed. Storing is best effort: a prefs
         // failure is not a failed refresh (T5-M1).
         unawaited(
-          TeamCache.write(session, cacheKey, {
+          TeamCache.writeQuietly(session, cacheKey, {
             ...overview.raw,
             'for_you': const <Object>[],
-          }, binding: binding).catchError((_) {}),
+          }, binding: binding),
         );
       }
       _syncApprovals(session, overview);
@@ -251,8 +258,8 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
           // day at once instead of waiting for a /me on a slow link (A4).
           // The clear bumps the cache generation synchronously.
           // A prefs failure in the clear changes nothing here (T6-M2).
-          unawaited(TeamCache.clearEmployee(session).catchError((_) {}));
-          unawaited(_refreshSession());
+          unawaited(TeamCache.clearEmployeeQuietly(session));
+          unawaited(_refreshSession().catchError((_) {}));
         }
         setState(() {
           _dropShown();
@@ -279,7 +286,9 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
         return;
       }
       if (day == 'today') {
-        final cached = await _readCached(session, cacheKey);
+        // An unreadable cache reads as an empty one, so the error view
+        // shows instead of an endless spinner (T6-M2).
+        final cached = await TeamCache.readQuietly(session, cacheKey);
         if (!mounted || day != _day || departmentId != _departmentId) return;
         if (!binding.isCurrent(session)) return _rebind(session);
         if (cached != null) {
@@ -308,20 +317,6 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
     }
   }
 
-  /// Today's cached answer, or null when there is none or prefs fail: an
-  /// unreadable cache reads as an empty one, so the error view shows
-  /// instead of an endless spinner (T6-M2).
-  Future<(Map<String, dynamic> body, DateTime savedAt)?> _readCached(
-    SessionService session,
-    String key,
-  ) async {
-    try {
-      return await TeamCache.read(session, key);
-    } catch (_) {
-      return null;
-    }
-  }
-
   /// The answer (or cached read) in hand was asked under a binding that
   /// has moved since (a cache clear, a sign-out, a new sign-in or a scope
   /// change; A-L21): it is neither shown nor stored. What is on screen
@@ -347,7 +342,7 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
         .fold<int>(0, (n, item) => n + item.count);
     if ((session.leaveApprovalsEnabled || cardCount > 0) &&
         cardCount != session.leaveApprovalsPendingCount) {
-      unawaited(_refreshSession());
+      unawaited(_refreshSession().catchError((_) {}));
     }
   }
 
@@ -518,13 +513,24 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
       child: Text(
         at == null
             ? text
-            : '$text\n'
-                  '${OverviewCopy.showingFrom(DateFormat('HH:mm', 'en_US').format(at))}',
+            : '$text\n${OverviewCopy.showingFrom(_savedWhen(at))}',
         style: Theme.of(
           context,
         ).textTheme.bodySmall?.copyWith(color: AppTheme.error),
       ),
     );
+  }
+
+  /// When the cached answer was saved, as the strip says it (T8-m4):
+  /// "at 18:03" today, "yesterday at 18:03", else "on Tue 21 Oct at 18:03".
+  static String _savedWhen(DateTime at) {
+    final now = DateTime.now();
+    final time = DateFormat('HH:mm', 'en_US').format(at);
+    if (DateUtils.isSameDay(at, now)) return 'at $time';
+    if (DateUtils.isSameDay(at, DateTime(now.year, now.month, now.day - 1))) {
+      return 'yesterday at $time';
+    }
+    return 'on ${DateFormat('EEE d MMM', 'en_US').format(at)} at $time';
   }
 
   List<Widget> _content(BuildContext context) {
@@ -592,7 +598,9 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
             counts: counts,
             scopeLabel: scopeLabel,
             asOf: o.asOf,
-            live: o.live,
+            // A cached answer never reads as live (T8-m4): the stored body
+            // keeps the server's `live: true`.
+            live: o.live && _cachedAt == null,
           ),
           const SizedBox(height: 8),
           OverviewCountGrid(

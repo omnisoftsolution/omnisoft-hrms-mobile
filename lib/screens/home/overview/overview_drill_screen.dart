@@ -333,6 +333,9 @@ class _OverviewDrillScreenState extends State<OverviewDrillScreen> {
         if (!more) {
           _rows.clear();
           _rowsBinding = binding;
+          // A new first page: an earlier failed "more" no longer applies,
+          // so the footer goes back to asking the next page.
+          _moreFailed = false;
         }
         _rows.addAll(page.rows);
         _nextOffset = page.nextOffset;
@@ -386,7 +389,7 @@ class _OverviewDrillScreenState extends State<OverviewDrillScreen> {
     _leaving = true;
     final messenger = ScaffoldMessenger.of(context);
     final text = friendlyError(e, context: ErrorContext.team);
-    unawaited(TeamCache.clearEmployee(session));
+    unawaited(TeamCache.clearEmployeeQuietly(session));
     unawaited(session.refreshMe());
     unawaited(Navigator.of(context).maybePop());
     messenger.showSnackBar(SnackBar(content: Text(text)));

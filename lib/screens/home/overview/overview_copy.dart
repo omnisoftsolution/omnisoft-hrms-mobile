@@ -108,7 +108,9 @@ class OverviewCopy {
       'you to one.';
   static const noPeople = 'No one to show here yet.';
 
-  static String showingFrom(String hhmm) => 'Showing what you saw at $hhmm';
+  /// The offline strip's second line; [when] is the whole time phrase
+  /// ("at 18:03", "yesterday at 18:03", "on Tue 21 Oct at 18:03").
+  static String showingFrom(String when) => 'Showing what you saw $when';
 
   static String tileSemantics(String label, int n) =>
       '$label: $n ${n == 1 ? 'person' : 'people'}';

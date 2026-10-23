@@ -196,7 +196,7 @@ class _PersonSheetState extends State<_PersonSheet> {
       if (lost) {
         // A-L3: the grant changed under us; drop what this user cached and
         // let /me say what is left.
-        unawaited(TeamCache.clearEmployee(session));
+        unawaited(TeamCache.clearEmployeeQuietly(session));
         unawaited(session.refreshMe());
       }
       setState(() {

@@ -899,6 +899,46 @@ void main() {
       expect(find.text('Person 50'), findsNothing);
     });
 
+    testWidgets('load-more resumes after a refresh following a failed '
+        'load-more', (tester) async {
+      var moreAsks = 0;
+      final api = _FakeApi((_, offset) {
+        if (offset == 0) {
+          return _page(
+            'on_time',
+            [for (var i = 0; i < 50; i++) _row(100 + i, 'Person $i', 'on_time')],
+            total: 60,
+            next: 50,
+          );
+        }
+        return moreAsks++ == 0
+            ? ApiException('network_error')
+            : _page('on_time', [
+                for (var i = 50; i < 60; i++)
+                  _row(100 + i, 'Person $i', 'on_time'),
+              ], total: 60);
+      });
+      await _open(tester, api, bucket: 'on_time');
+      // The end of the list asks the next page, which fails.
+      await tester.drag(_listScrollable(), const Offset(0, -6000));
+      await tester.pumpAndSettle();
+      expect(api.calls.map((c) => c['offset']), [0, 50]);
+      expect(find.text("Couldn't load more. Try again"), findsOneWidget);
+      // A pull to refresh that succeeds, with more pages to come.
+      unawaited(
+        tester
+            .state<RefreshIndicatorState>(find.byType(RefreshIndicator))
+            .show(),
+      );
+      await tester.pumpAndSettle();
+      await tester.drag(_listScrollable(), const Offset(0, -6000));
+      await tester.pumpAndSettle();
+      // The footer is the spinner again, and it asked the next page.
+      expect(find.text("Couldn't load more. Try again"), findsNothing);
+      expect(api.calls.map((c) => c['offset']), [0, 50, 0, 50]);
+      expect(find.text('Person 59'), findsOneWidget);
+    });
+
     testWidgets('another employee signs in during the sign-out hook: the '
         "reload sends their token; the first account's rows are never shown "
         '(A-L22, TLP3-F01)', (tester) async {

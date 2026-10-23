@@ -154,9 +154,7 @@ String friendlyError(
   if (raw.contains('timeout')) {
     return 'The server is taking too long to respond. Please try again.';
   }
-  if (raw.contains('server_error')) {
-    return 'Something went wrong on our end. Please try again in a moment.';
-  }
+  if (raw.contains('server_error')) return _serverErrorMessage;
 
   // --- Session ---
   if (raw.contains('invalid_session') || raw.contains('invalid_token')) {
@@ -340,6 +338,11 @@ String friendlyError(
 
 const _genericMessage = 'Something went wrong. Please try again.';
 
+/// A failure on the server's side (`server_error`, and the team routes'
+/// contract codes the app has no words of its own for).
+const _serverErrorMessage =
+    'Something went wrong on our end. Please try again in a moment.';
+
 /// Add this phone (`auth/add_device`) words: only the codes whose meaning
 /// differs on this call; null = the usual [friendlyError] text.
 String? _addPhoneMessage(
@@ -397,6 +400,12 @@ String? _teamMessage(ApiException e) {
       return 'You no longer have access to this view.';
     case 'not_found':
       return 'This person is no longer in your view.';
+    // Documented answers of these routes with nothing for the user to do
+    // about them (final review M2): never shown as the raw code.
+    case 'database_error':
+    case 'invalid_request':
+    case 'no_employee_linked':
+      return _serverErrorMessage;
   }
   return null;
 }

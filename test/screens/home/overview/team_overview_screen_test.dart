@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 // The storage under SharedPreferences, to make a write, read or removal
@@ -726,6 +727,68 @@ void main() {
       expect(find.textContaining('Showing what you saw at '), findsOneWidget);
     });
 
+    testWidgets('a cached answer never reads as live, even when the stored '
+        'body says live (T8-m4)', (tester) async {
+      _tall(tester);
+      final session = _Session();
+      final body = _json();
+      expect(body['live'], isTrue);
+      await tester.runAsync(
+        () => TeamCache.write(
+          session,
+          TeamCache.overviewKey(session),
+          body,
+          binding: TeamCache.bind(session),
+        ),
+      );
+      await tester.pumpWidget(
+        _host(_Api([ApiException('network_error')]), session: session),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('42 checked in'), findsOneWidget);
+      expect(find.byKey(_strip), findsOneWidget);
+      expect(find.textContaining('Live · '), findsNothing);
+      expect(find.textContaining('not yet reviewed by HR'), findsNothing);
+    });
+
+    testWidgets('the strip names the day of a cache saved before today '
+        '(T8-m4)', (tester) async {
+      _tall(tester);
+      addTearDown(() => TeamCache.clock = DateTime.now);
+      final now = DateTime.now();
+      final cases = {
+        DateTime(now.year, now.month, now.day - 1, 18, 3):
+            'Showing what you saw yesterday at 18:03',
+        DateTime(now.year, now.month, now.day - 2, 18, 3):
+            'Showing what you saw on '
+            '${DateFormat('EEE d MMM', 'en_US').format(DateTime(now.year, now.month, now.day - 2))}'
+            ' at 18:03',
+      };
+      for (final MapEntry(key: saved, value: line) in cases.entries) {
+        final session = _Session();
+        TeamCache.clock = () => saved;
+        await tester.runAsync(
+          () => TeamCache.write(
+            session,
+            TeamCache.overviewKey(session),
+            _json(),
+            binding: TeamCache.bind(session),
+          ),
+        );
+        await tester.pumpWidget(
+          _host(
+            _Api([ApiException('network_error')]),
+            key: UniqueKey(),
+            session: session,
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.textContaining(line), findsOneWidget, reason: line);
+        expect(find.textContaining('Showing what you saw at '), findsNothing);
+        await tester.pumpWidget(const SizedBox());
+      }
+    });
+
     testWidgets('offline with no cache: the error and Retry', (tester) async {
       _tall(tester);
       final api = _Api([ApiException('network_error'), _json()]);
@@ -1281,7 +1344,106 @@ void main() {
         findsOneWidget,
       );
     });
+
+    testWidgets('lost access with a /me re-pull that throws: no unhandled '
+        'error, the fallback still runs (T8-m3)', (tester) async {
+      _tall(tester);
+      final log = _Log();
+      var asked = 0;
+      await tester.pumpWidget(
+        _host(
+          _Api([ApiException('not_allowed')]),
+          log: log,
+          refreshSession: () async {
+            asked++;
+            throw StateError('me failed');
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(asked, 1);
+      expect(log.unavailable, 1);
+      expect(
+        find.text('You no longer have access to this view.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a chip tap during a held sign-out sends no request; the end '
+        'of the sign-out asks nothing for a signed-out phone (T8-m1)', (
+      tester,
+    ) async {
+      FlutterSecureStorage.setMockInitialValues({});
+      _tall(tester);
+      final session = _RealSession();
+      await tester.runAsync(() => _signIn(session, 'tok-A', 6));
+      final api = _Api([_json(), _json(label: 'Marketing', departmentId: 5)]);
+      await tester.pumpWidget(_host(api, session: session));
+      await tester.pumpAndSettle();
+      expect(api.calls, ['today/-']);
+      late Completer<void> hook;
+      late Future<void> out;
+      await tester.runAsync(() async {
+        hook = Completer<void>();
+        session.onSessionClearing = () => hook.future;
+        out = session.clearSession(); // waits in its hook
+        await Future<void>.delayed(Duration.zero);
+      });
+      expect(session.isClearing, isTrue);
+      // The new choice's spinner keeps running: no pumpAndSettle here.
+      await tester.tap(find.byKey(const ValueKey('ov-dept-5')));
+      await tester.pump();
+      await tester.pump();
+      expect(api.calls, ['today/-']); // nothing sent with the revoked token
+      await tester.runAsync(() async {
+        hook.complete();
+        await out;
+      });
+      await tester.pump();
+      await tester.pump();
+      expect(session.employeeId, 0);
+      expect(api.calls, ['today/-']);
+      expect(find.text('of 49 expected · Novaworks today'), findsNothing);
+    });
+
+    testWidgets('a reload kept pending by a held sign-out runs when a new '
+        'sign-in ends it (T8-m1)', (tester) async {
+      FlutterSecureStorage.setMockInitialValues({});
+      _tall(tester);
+      final session = _RealSession();
+      await tester.runAsync(() => _signIn(session, 'tok-A', 6));
+      final api = _Api([_json(), _json(label: 'Marketing', departmentId: 5)]);
+      await tester.pumpWidget(_host(api, session: session));
+      await tester.pumpAndSettle();
+      late Completer<void> hook;
+      late Future<void> out;
+      await tester.runAsync(() async {
+        hook = Completer<void>();
+        session.onSessionClearing = () => hook.future;
+        out = session.clearSession();
+        await Future<void>.delayed(Duration.zero);
+      });
+      await tester.tap(find.byKey(const ValueKey('ov-dept-5')));
+      await tester.pump();
+      await tester.pump();
+      expect(api.calls, ['today/-']);
+      await tester.runAsync(() async {
+        await _signIn(session, 'tok-B', 6); // newer: the wipe is skipped
+        hook.complete();
+        await out;
+      });
+      await tester.pumpAndSettle();
+      expect(api.calls, ['today/-', 'today/5']);
+      expect(find.text('of 49 expected · Marketing today'), findsOneWidget);
+    });
   });
+}
+
+/// The real employee id (`saveSession` sets it, a sign-out wipes it).
+class _RealSession extends SessionService {
+  @override
+  String get clientDb => 'acme';
 }
 
 /// A For-you `my_leave` row ("Annual leave …").

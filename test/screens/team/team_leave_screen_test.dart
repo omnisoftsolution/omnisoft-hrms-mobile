@@ -483,6 +483,63 @@ void main() {
     });
   });
 
+  group('prefs that fail (final review M4)', () {
+    testWidgets('a store that throws on every read: the screen shows the '
+        'fresh fetch, not a stuck skeleton', (tester) async {
+      _tall(tester);
+      SharedPreferencesStorePlatform.instance = _BrokenStore();
+      final api = _FakeApi([outlook()]);
+      await tester.pumpWidget(_host(api));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(api.calls, [
+        {'days': 30, 'context': 'team', 'view': 'team', 'department_id': null},
+      ]);
+      expect(find.byKey(const ValueKey('team-skeleton')), findsNothing);
+      expect(find.text('Mei Lin Ong'), findsOneWidget);
+      expect(find.byType(ErrorStateView), findsNothing);
+    });
+
+    testWidgets('a range switch with a store that throws: the new range '
+        'loads, no unhandled error', (tester) async {
+      _tall(tester);
+      SharedPreferencesStorePlatform.instance = _BrokenStore();
+      final api = _FakeApi([outlook(), outlook(days: 60)]);
+      await tester.pumpWidget(_host(api));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('pill-1')));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(api.calls.last['days'], 60);
+      expect(find.text('December 2026'), findsOneWidget);
+    });
+
+    testWidgets('access lost with a cache clear that fails: the lost view, '
+        'no unhandled error, /me re-pulled', (tester) async {
+      _tall(tester);
+      SharedPreferencesStorePlatform.instance = _NoTeamRemoveStore();
+      final session = _Session();
+      await tester.runAsync(
+        () => TeamCache.write(
+          session,
+          _key(session),
+          outlookJson(),
+          binding: TeamCache.bind(session),
+        ),
+      );
+      await tester.pumpWidget(
+        _host(_FakeApi([ApiException('not_allowed')]), session: session),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(
+        find.text('You no longer have access to this view.'),
+        findsOneWidget,
+      );
+      expect(session.refreshes, 1);
+    });
+  });
+
   testWidgets('an access-lost answer that lands after the choice moved on '
       'does not overwrite the newer one (M4)', (tester) async {
     _tall(tester);
@@ -999,6 +1056,26 @@ class _NoTeamWriteStore extends InMemorySharedPreferencesStore {
       key.startsWith('flutter.${TeamCache.prefix}')
       ? Future<bool>.error(StateError('disk full'))
       : super.setValue(valueType, key, value);
+}
+
+/// Storage that cannot be read at all (a broken prefs file): every
+/// `SharedPreferences.getInstance()` fails.
+class _BrokenStore extends InMemorySharedPreferencesStore {
+  _BrokenStore() : super.empty();
+
+  @override
+  Future<Map<String, Object>> getAll() =>
+      Future<Map<String, Object>>.error(StateError('prefs unreadable'));
+}
+
+/// Storage whose team-cache removals fail.
+class _NoTeamRemoveStore extends InMemorySharedPreferencesStore {
+  _NoTeamRemoveStore() : super.empty();
+
+  @override
+  Future<bool> remove(String key) => key.startsWith('flutter.${TeamCache.prefix}')
+      ? Future<bool>.error(StateError('prefs broken'))
+      : super.remove(key);
 }
 
 /// Storage whose team-cache writes wait for [release].
