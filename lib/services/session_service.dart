@@ -8,6 +8,7 @@ import '../core/constants.dart';
 import '../models/company_info.dart';
 import 'omni_mobile_api.dart';
 import 'saas_service.dart';
+import 'team_cache.dart';
 
 /// Result of [SessionService.refreshAccessToken]: `ok` = new access
 /// token saved; `invalid` = the server refused the refresh token (or
@@ -65,6 +66,15 @@ class SessionService extends ChangeNotifier {
   /// `auth/refresh` that was on the wire then is superseded: its answer
   /// belongs to the session being signed out.
   int _signOutsStarted = 0;
+
+  /// Request validity (A-L21): advances synchronously when a sign-out
+  /// ([clearSession], [signOut]) or [logout] begins and whenever a new
+  /// access token is saved, whether or not the sign-out then wipes the
+  /// fields. A team answer asked before it moved is neither shown nor
+  /// cached ([TeamCacheBinding]). Unlike [_authEpoch] it decides nothing
+  /// about the wipe.
+  int _requestEpoch = 0;
+  int get requestEpoch => _requestEpoch;
 
   /// True from the start of a sign-out until its fields are wiped (or
   /// kept for a newer sign-in). PushService adopts no access token
@@ -664,6 +674,7 @@ class SessionService extends ChangeNotifier {
   /// untouched).
   Future<void> _saveAccessToken(String accessToken, DateTime? expiresAt) async {
     _authEpoch++;
+    _requestEpoch++;
     _accessToken = accessToken;
     _expiresAt = expiresAt;
     final prefs = await SharedPreferences.getInstance();
@@ -957,6 +968,9 @@ class SessionService extends ChangeNotifier {
   }
 
   Future<void> _clear() async {
+    // Before the hook and before the wipe check: a sign-in during the hook
+    // keeps the fields, but nothing asked before this sign-out is current.
+    _requestEpoch++;
     _clearings++;
     try {
       final epoch = _authEpoch;
@@ -1065,6 +1079,9 @@ class SessionService extends ChangeNotifier {
     await prefs.remove(_keyEmployeeTimeOffApprover);
     await prefs.remove(_keyEmployeeAttendanceApprover);
     await prefs.remove(_keyEmployeeExpenseApprover);
+    // The offline team answers belong to this sign-in (A-L3). No lock:
+    // this runs inside the caller's _persisting body.
+    await TeamCache.clearAll();
     if (notify) notifyListeners();
   }
 
@@ -1319,6 +1336,7 @@ class SessionService extends ChangeNotifier {
   /// first; a [clearSession] while this runs joins it. Unlike
   /// [clearSession] the wipe is unconditional (the user asked for it).
   Future<void> logout() async {
+    _requestEpoch++;
     if (!_inOwnClearingHook) {
       for (var running = _clearRun; running != null; running = _clearRun) {
         await running;
