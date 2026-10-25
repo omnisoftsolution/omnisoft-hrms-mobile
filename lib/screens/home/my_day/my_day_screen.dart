@@ -217,11 +217,20 @@ class MyDayScreenState extends State<MyDayScreen> {
     } catch (e) {
       if (!mounted) return;
       // The employee, the session or the access is gone: the remembered
-      // body goes too, and a day painted from it with it.
+      // body goes, and so does the day on screen — whether it came from
+      // memory or an earlier fetch, even after an earlier failed refresh —
+      // with the punch controller and its GPS timer.
       final drop = MyDayMemory.dropsOn(e);
-      if (drop) MyDayMemory.clear();
+      if (drop) {
+        MyDayMemory.clear();
+        _dropController();
+      }
       setState(() {
-        if (drop && _fromMemory) _day = null;
+        if (drop) {
+          _day = null;
+          _refreshFailed = false;
+          _autoClosed = null;
+        }
         _fromMemory = false;
         if (_day == null) {
           _firstLoadError = friendlyError(e);
@@ -235,13 +244,19 @@ class MyDayScreenState extends State<MyDayScreen> {
   /// Phone check-in days own a controller (status + GPS); kiosk-only days
   /// and tenants without Attendance drop it. Called after every successful
   /// day load.
+  /// Stops the GPS timer and disposes the punch controller (no-op when
+  /// there is none).
+  void _dropController() {
+    _gpsTimer?.cancel();
+    _gpsTimer = null;
+    _controller?.removeListener(_onControllerChange);
+    _controller?.dispose();
+    _controller = null;
+  }
+
   Future<void> _syncController(MyDay day) async {
     if (day.kioskOnly || !context.read<SessionService>().featureAttendance) {
-      _gpsTimer?.cancel();
-      _gpsTimer = null;
-      _controller?.removeListener(_onControllerChange);
-      _controller?.dispose();
-      _controller = null;
+      _dropController();
       // _load's setState ran while the controller was still set.
       if (mounted) setState(() {});
       return;

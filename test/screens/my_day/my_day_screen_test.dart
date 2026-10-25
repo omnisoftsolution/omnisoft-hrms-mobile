@@ -17,8 +17,10 @@ import 'package:omni_hr/screens/home/my_day/declaration_sheet.dart';
 import 'package:omni_hr/screens/home/my_day/my_day_screen.dart';
 import 'package:omni_hr/services/attendance_action_controller.dart';
 import 'package:omni_hr/services/face_recognition_service.dart';
+import 'package:omni_hr/services/my_day_memory.dart';
 import 'package:omni_hr/services/omni_mobile_api.dart';
 import 'package:omni_hr/services/session_service.dart';
+import 'package:omni_hr/widgets/error_state_view.dart';
 
 import '../../fixtures/my_day_fixture.dart';
 
@@ -273,9 +275,89 @@ void _tallScreen(WidgetTester tester) {
   addTearDown(tester.view.reset);
 }
 
+/// A signed-in employee: MyDayMemory keeps nothing without one.
+class _EmployeeSession extends SessionService {
+  @override
+  int get employeeId => 6;
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  setUp(() => SharedPreferences.setMockInitialValues({}));
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    MyDayMemory.clear();
+  });
+
+  group('access loss after an earlier failed refresh (review fix)', () {
+    testWidgets('remembered day → network_error keeps it → '
+        'no_employee_linked drops it from screen and memory', (tester) async {
+      _tallScreen(tester);
+      final session = _EmployeeSession();
+      MyDayMemory.write(session, MyDayMemory.bind(session), sampleMyDay());
+      final key = GlobalKey<MyDayScreenState>();
+      final api = _FakeApi([
+        ApiException('network_error'),
+        ApiException('no_employee_linked'),
+      ]);
+      await tester.pumpWidget(_host(api, key: key, session: session));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('status-tile')), findsOneWidget);
+      expect(find.text(_banner), findsOneWidget); // kept, stale strip
+
+      await key.currentState!.refresh();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('status-tile')), findsNothing);
+      expect(find.text(_banner), findsNothing);
+      expect(find.byType(ErrorStateView), findsOneWidget);
+      expect(MyDayMemory.read(session), isNull);
+    });
+
+    testWidgets('fetched day with a controller → network_error → '
+        'no_employee_linked: day, controller and GPS timer go', (
+      tester,
+    ) async {
+      _tallScreen(tester);
+      final key = GlobalKey<MyDayScreenState>();
+      var gps = 0;
+      final api = _FakeApi([
+        sampleMyDay(state: 'not_checked_in', kioskOnly: false),
+        ApiException('network_error'),
+        ApiException('no_employee_linked'),
+      ]);
+      await tester.pumpWidget(
+        _host(
+          api,
+          key: key,
+          session: _EmployeeSession(),
+          getLocation: () async {
+            gps++;
+            return LocationResult(
+              status: LocationStatus.ready,
+              latitude: 1.3,
+              longitude: 103.8,
+              accuracy: 5,
+            );
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Check in'), findsOneWidget); // controller is live
+
+      await key.currentState!.refresh();
+      await tester.pumpAndSettle();
+      expect(find.text(_banner), findsOneWidget);
+      expect(find.text('Check in'), findsOneWidget);
+
+      await key.currentState!.refresh();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('status-tile')), findsNothing);
+      expect(find.text('Check in'), findsNothing);
+      expect(find.byType(ErrorStateView), findsOneWidget);
+      final before = gps;
+      await tester.pump(const Duration(seconds: 61));
+      expect(gps, before); // the 60 s GPS timer is gone
+    });
+  });
 
   testWidgets('loads once and shows the card, the timeline and For you', (
     tester,
