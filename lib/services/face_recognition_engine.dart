@@ -256,12 +256,27 @@ class FaceCompareResult {
   /// Why compare failed — only set when ok=false. Passed back to UI.
   final String? reason;
 
+  /// True when the comparison could not be completed (1.34.1): the LIVE
+  /// image yielded no embedding (no face, decode / inference failure). It
+  /// is an error, never a mismatch — only a completed comparison below the
+  /// threshold is a mismatch (and only a mismatch is retried at check-in).
+  final bool failed;
+
   FaceCompareResult({
     required this.ok,
     required this.implemented,
     this.score,
     this.reason,
+    this.failed = false,
   });
+
+  /// The comparison could not run on the live image (see [failed]).
+  factory FaceCompareResult.failed(String reason) => FaceCompareResult(
+        ok: false,
+        implemented: true,
+        reason: reason,
+        failed: true,
+      );
 
   factory FaceCompareResult.match(double score) =>
       FaceCompareResult(ok: true, implemented: true, score: score);
@@ -445,13 +460,18 @@ class MLKitFaceRecognitionEngine implements FaceRecognitionEngine {
     final input = InputImage.fromFilePath(normalizedPath);
     final faces = await _detector.processImage(input);
 
+    // Face measurements (box size, eye probabilities) and paths are logged
+    // in debug builds only (debugPrint also runs in release).
     if (faces.isEmpty) {
-      debugPrint('ML Kit faces=0 result=noFace path=$normalizedPath');
+      if (kDebugMode) {
+        debugPrint('ML Kit faces=0 result=noFace path=$normalizedPath');
+      }
       return FaceQualityResult.fail(FaceQualityIssue.noFace);
     }
     if (faces.length > 1) {
-      debugPrint(
-          'ML Kit faces=${faces.length} result=multipleFaces');
+      if (kDebugMode) {
+        debugPrint('ML Kit faces=${faces.length} result=multipleFaces');
+      }
       return FaceQualityResult.fail(FaceQualityIssue.multipleFaces);
     }
 
@@ -466,9 +486,11 @@ class MLKitFaceRecognitionEngine implements FaceRecognitionEngine {
       final w = face.boundingBox.width.abs();
       boxFraction = w / shortSide;
       if (boxFraction < DevConstants.faceMinSizeFraction) {
-        debugPrint(
-            'ML Kit faces=1 box=${boxFraction.toStringAsFixed(2)} '
-            'result=faceTooSmall');
+        if (kDebugMode) {
+          debugPrint(
+              'ML Kit faces=1 box=${boxFraction.toStringAsFixed(2)} '
+              'result=faceTooSmall');
+        }
         return FaceQualityResult.fail(FaceQualityIssue.faceTooSmall);
       }
     }
@@ -481,20 +503,24 @@ class MLKitFaceRecognitionEngine implements FaceRecognitionEngine {
       // <0.5 means "more likely closed than open".
       final avgOpen = (leftOpen + rightOpen) / 2.0;
       if (avgOpen < 0.5) {
-        debugPrint(
-          'ML Kit faces=1 box=${boxFraction?.toStringAsFixed(2)} '
-          'leftEye=${leftOpen.toStringAsFixed(2)} '
-          'rightEye=${rightOpen.toStringAsFixed(2)} result=eyesClosed',
-        );
+        if (kDebugMode) {
+          debugPrint(
+            'ML Kit faces=1 box=${boxFraction?.toStringAsFixed(2)} '
+            'leftEye=${leftOpen.toStringAsFixed(2)} '
+            'rightEye=${rightOpen.toStringAsFixed(2)} result=eyesClosed',
+          );
+        }
         return FaceQualityResult.fail(FaceQualityIssue.eyesClosed);
       }
     }
 
-    debugPrint(
-      'ML Kit faces=1 box=${boxFraction?.toStringAsFixed(2)} '
-      'leftEye=${leftOpen?.toStringAsFixed(2) ?? "null"} '
-      'rightEye=${rightOpen?.toStringAsFixed(2) ?? "null"} result=ok',
-    );
+    if (kDebugMode) {
+      debugPrint(
+        'ML Kit faces=1 box=${boxFraction?.toStringAsFixed(2)} '
+        'leftEye=${leftOpen?.toStringAsFixed(2) ?? "null"} '
+        'rightEye=${rightOpen?.toStringAsFixed(2) ?? "null"} result=ok',
+      );
+    }
     return FaceQualityResult.ok(
       boxFraction: boxFraction,
       leftEye: leftOpen,
@@ -779,15 +805,14 @@ class MLKitFaceRecognitionEngine implements FaceRecognitionEngine {
     }
     final live = await extractEmbedding(liveImagePath);
     if (live == null) {
-      // Live image has no face / multiple faces — quality gate
-      // should have caught this, but be defensive. Surface the actual
-      // reason so the user knows what to fix.
-      return FaceCompareResult(
-        ok: false,
-        implemented: true,
-        score: 0.0,
-        reason: _lastExtractError ??
-            'Face not recognized. Please try again.',
+      // Live image has no face / multiple faces / the embedder failed —
+      // quality gate should have caught the first two, but be defensive.
+      // No comparison ran: an error, NOT a mismatch with score 0 (1.34.1:
+      // a mismatch is retried at check-in, an engine failure is not).
+      // Surface the actual reason so the user knows what to fix.
+      return FaceCompareResult.failed(
+        _lastExtractError ??
+            "Couldn't read your face in this photo. Please try again.",
       );
     }
 
@@ -797,8 +822,12 @@ class MLKitFaceRecognitionEngine implements FaceRecognitionEngine {
       dot += enrolled[i] * live[i];
     }
     final score = dot.clamp(-1.0, 1.0);
-    debugPrint('MobileFaceNet cosine=${score.toStringAsFixed(3)} '
-        'threshold=${DevConstants.faceMatchThreshold}');
+    // Scores are biometric data: debug builds only (debugPrint also runs
+    // in release).
+    if (kDebugMode) {
+      debugPrint('MobileFaceNet cosine=${score.toStringAsFixed(3)} '
+          'threshold=${DevConstants.faceMatchThreshold}');
+    }
     if (score >= DevConstants.faceMatchThreshold) {
       return FaceCompareResult.match(score);
     }

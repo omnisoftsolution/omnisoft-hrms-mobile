@@ -237,25 +237,20 @@ class FaceRecognitionService extends ChangeNotifier {
 
     final compare =
         await _compareEngine.compare(_localFacePath!, liveImagePath);
-    final FaceVerifyResult result;
-    if (!compare.implemented) {
-      result = FaceVerifyResult.error(compare.reason ??
-          'On-device identity matching is not yet wired up.');
-    } else if (!compare.ok) {
-      result = FaceVerifyResult.mismatch(compare.score ?? 0,
-          reason: compare.reason);
-    } else {
-      result = FaceVerifyResult.success(
-        score: compare.score,
-        simulated: !_compareEngine.isProduction,
+    final result = FaceVerifyResult.fromCompare(
+      compare,
+      simulated: !_compareEngine.isProduction,
+    );
+    // Match scores are biometric data: debug builds only (debugPrint also
+    // runs in release).
+    if (kDebugMode) {
+      debugPrint(
+        'verifyFace result ok=${result.ok} '
+        'score=${result.score?.toStringAsFixed(2) ?? "n/a"} '
+        'simulated=${result.simulated} '
+        'error=${result.errorMessage ?? "-"}',
       );
     }
-    debugPrint(
-      'verifyFace result ok=${result.ok} '
-      'score=${result.score?.toStringAsFixed(2) ?? "n/a"} '
-      'simulated=${result.simulated} '
-      'error=${result.errorMessage ?? "-"}',
-    );
     return result;
   }
 
@@ -285,6 +280,35 @@ class FaceVerifyResult {
 
   factory FaceVerifyResult.success({double? score, bool simulated = false}) =>
       FaceVerifyResult(ok: true, score: score, simulated: simulated);
+
+  /// The identity engine's answer as a verify result (production mapping).
+  /// Not implemented, or a comparison that could not run on the live image
+  /// ([FaceCompareResult.failed], 1.34.1) = an error; only a completed
+  /// comparison below the threshold is a mismatch (the one result a
+  /// check-in retries).
+  factory FaceVerifyResult.fromCompare(
+    FaceCompareResult compare, {
+    bool simulated = false,
+  }) {
+    if (!compare.implemented) {
+      return FaceVerifyResult.error(
+        compare.reason ?? 'On-device identity matching is not yet wired up.',
+      );
+    }
+    if (compare.failed) {
+      return FaceVerifyResult.error(
+        compare.reason ??
+            "Couldn't read your face in this photo. Please try again.",
+      );
+    }
+    if (!compare.ok) {
+      return FaceVerifyResult.mismatch(
+        compare.score ?? 0,
+        reason: compare.reason,
+      );
+    }
+    return FaceVerifyResult.success(score: compare.score, simulated: simulated);
+  }
 
   factory FaceVerifyResult.mismatch(double score, {String? reason}) =>
       FaceVerifyResult(

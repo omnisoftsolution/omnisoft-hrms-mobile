@@ -151,9 +151,12 @@ class FaceSpoofDetector {
         out2[0].cast<double>(),
         stopwatch.elapsedMilliseconds,
       );
-      debugPrint('FaceSpoofDetector android result: '
-          'isLive=${result.isLive} score=${result.score.toStringAsFixed(3)} '
-          'elapsedMs=${result.elapsedMs}');
+      // Liveness scores: debug builds only (debugPrint runs in release).
+      if (kDebugMode) {
+        debugPrint('FaceSpoofDetector android result: '
+            'isLive=${result.isLive} score=${result.score.toStringAsFixed(3)} '
+            'elapsedMs=${result.elapsedMs}');
+      }
       return result;
     } catch (e) {
       debugPrint('FaceSpoofDetector inference failed: $e');
@@ -200,10 +203,12 @@ class FaceSpoofDetector {
               .map((e) => e.toDouble())
               .toList() ??
           const <double>[];
-      debugPrint('FaceSpoofDetector ios result: '
-          'isLive=$isLive score=${score.toStringAsFixed(3)} '
-          'elapsedMs=$elapsedMs argmax=$argmax '
-          's1=$s1 s2=$s2');
+      if (kDebugMode) {
+        debugPrint('FaceSpoofDetector ios result: '
+            'isLive=$isLive score=${score.toStringAsFixed(3)} '
+            'elapsedMs=$elapsedMs argmax=$argmax '
+            's1=$s1 s2=$s2');
+      }
       return FaceSpoofResult(
         isLive: isLive,
         score: score,

@@ -450,13 +450,16 @@ class AttendanceActionController extends ChangeNotifier {
           }
           shotsLeft -= capture.attempts.clamp(1, shotsLeft);
           final verify = await _verifyFace(capture.imagePath!);
-          // Debug log only: the try, the outcome and the score — no PII.
-          debugPrint(
-            'Face check: try $attempt '
-            '${verify.ok ? 'match' : (verify.isError ? 'error' : 'no match')} '
-            'score=${verify.score?.toStringAsFixed(2) ?? 'n/a'} '
-            'shots left $shotsLeft',
-          );
+          // Debug builds only (debugPrint also runs in release): the try,
+          // the outcome and the score — no PII.
+          if (kDebugMode) {
+            debugPrint(
+              'Face check: try $attempt '
+              '${verify.ok ? 'match' : (verify.isError ? 'error' : 'no match')} '
+              'score=${verify.score?.toStringAsFixed(2) ?? 'n/a'} '
+              'shots left $shotsLeft',
+            );
+          }
           if (verify.ok) {
             faceVerified = capture.faceVerified;
             break;
