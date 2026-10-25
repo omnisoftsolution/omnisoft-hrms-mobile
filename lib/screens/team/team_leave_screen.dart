@@ -139,6 +139,12 @@ class TeamLeaveScreenState extends State<TeamLeaveScreen> {
 
   DateTime? _selected;
 
+  /// The open day sheet, if any (1.34.1): it shows the answer it was opened
+  /// on, so it closes whenever that answer goes ([_closeDaySheet]). Bumped
+  /// per sheet so an older sheet's end does not clear a newer one.
+  int _daySheet = 0;
+  bool _daySheetOpen = false;
+
   /// The fetch running for the current choice; overlapping [refresh]
   /// calls share it. A choice change starts a new one and bumps [_seq],
   /// so an older answer is dropped.
@@ -180,6 +186,7 @@ class TeamLeaveScreenState extends State<TeamLeaveScreen> {
     final session = context.read<SessionService>();
     if (_staleShown(session)) {
       setState(_dropShown);
+      _closeDaySheet();
       // A request on the wire checks its own binding when it lands
       // (_rebind), so only an idle screen asks again from here.
       if (_inFlight == null) _reloadPending = true;
@@ -331,6 +338,7 @@ class TeamLeaveScreenState extends State<TeamLeaveScreen> {
           _stripError = null;
           _fatalError = null;
         });
+        _closeDaySheet();
         return;
       }
       final text = friendlyError(e, context: ErrorContext.team);
@@ -345,6 +353,7 @@ class TeamLeaveScreenState extends State<TeamLeaveScreen> {
           _stripError = text;
         }
       });
+      if (stale) _closeDaySheet();
     }
   }
 
@@ -357,6 +366,7 @@ class TeamLeaveScreenState extends State<TeamLeaveScreen> {
   /// runs; the notify that ends the sign-out asks then (_onBindingChanged).
   Future<void> _rebind(int seq, SessionService session) {
     setState(_dropShown);
+    _closeDaySheet();
     if (session.employeeId <= 0 || session.isClearing) {
       _reloadPending = true;
       return Future<void>.value();
@@ -389,6 +399,7 @@ class TeamLeaveScreenState extends State<TeamLeaveScreen> {
       _stripError = null;
       _fatalError = null;
     });
+    _closeDaySheet();
     await _showCached(_seq);
     if (!mounted) return;
     await refresh();
@@ -657,7 +668,10 @@ class TeamLeaveScreenState extends State<TeamLeaveScreen> {
         Text(
           body,
           textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 14, color: AppTheme.onSurfaceVariant),
+          style: const TextStyle(
+            fontSize: 14,
+            color: AppTheme.onSurfaceVariant,
+          ),
         ),
         if (action != null) ...[const SizedBox(height: 16), action],
       ],
@@ -705,7 +719,25 @@ class TeamLeaveScreenState extends State<TeamLeaveScreen> {
   /// opens in the day sheet, where it is in view whatever the scroll.
   void _onDayTap(TeamOutlook o, DateTime day) {
     setState(() => _selected = day);
-    unawaited(showTeamDaySheet(context, o, day));
+    final sheet = ++_daySheet;
+    _daySheetOpen = true;
+    unawaited(
+      showTeamDaySheet(context, o, day).whenComplete(() {
+        if (sheet == _daySheet) _daySheetOpen = false;
+      }),
+    );
+  }
+
+  /// The answer the open day sheet shows went (a stale binding, lost
+  /// access, a new choice): the sheet closes with it, so no names of a
+  /// dropped answer stay on screen. Everything above this screen's route on
+  /// its navigator is the sheet (it is modal).
+  void _closeDaySheet() {
+    if (!_daySheetOpen || !mounted) return;
+    _daySheetOpen = false;
+    _daySheet++;
+    final base = ModalRoute.of(context);
+    Navigator.of(context).popUntil((r) => r == base || r.isFirst);
   }
 }
 
@@ -746,7 +778,11 @@ class _Skeleton extends StatelessWidget {
               decoration: _card,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [_bar(0.45, 12), const SizedBox(height: 12), _bar(1, 26)],
+                children: [
+                  _bar(0.45, 12),
+                  const SizedBox(height: 12),
+                  _bar(1, 26),
+                ],
               ),
             ),
             const SizedBox(height: 18),
@@ -754,7 +790,10 @@ class _Skeleton extends StatelessWidget {
             for (var i = 0; i < 4; i++) ...[
               const SizedBox(height: 12),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
                 decoration: _card,
                 child: Row(
                   children: [

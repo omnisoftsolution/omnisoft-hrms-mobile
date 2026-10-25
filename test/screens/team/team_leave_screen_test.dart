@@ -111,9 +111,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
-  testWidgets('happy path: header, range, heat map, today', (
-    tester,
-  ) async {
+  testWidgets('happy path: header, range, heat map, today', (tester) async {
     _tall(tester);
     // HR turned pending on (off by default, D3): the fixture's leaves
     // include Priya's pending request.
@@ -196,7 +194,10 @@ void main() {
       find.descendant(of: row, matching: find.text('Alexa Tan')),
       findsOneWidget,
     );
-    expect(find.descendant(of: row, matching: find.text('You')), findsOneWidget);
+    expect(
+      find.descendant(of: row, matching: find.text('You')),
+      findsOneWidget,
+    );
     // The server sent a type for this row only (D4).
     expect(
       find.descendant(
@@ -289,18 +290,12 @@ void main() {
     await tester.pumpAndSettle();
     final sheet = find.byKey(const ValueKey('team-day-sheet'));
     expect(sheet, findsOneWidget);
-    expect(
-      Navigator.of(tester.element(sheet)),
-      same(tabNav.currentState),
-    );
+    expect(Navigator.of(tester.element(sheet)), same(tabNav.currentState));
     // The last row is reachable by scrolling inside the sheet.
     await tester.scrollUntilVisible(
       find.byKey(const ValueKey('team-sheet-row-2029')),
       200,
-      scrollable: find.descendant(
-        of: sheet,
-        matching: find.byType(Scrollable),
-      ),
+      scrollable: find.descendant(of: sheet, matching: find.byType(Scrollable)),
     );
     expect(find.byKey(const ValueKey('team-sheet-row-2029')), findsOneWidget);
   });
@@ -418,7 +413,11 @@ void main() {
   ) async {
     _tall(tester);
     await tester.pumpWidget(
-      _host(_FakeApi([outlook(views: const ['team', 'company', 'future'])])),
+      _host(
+        _FakeApi([
+          outlook(views: const ['team', 'company', 'future']),
+        ]),
+      ),
     );
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
@@ -434,7 +433,11 @@ void main() {
   ) async {
     _tall(tester);
     await tester.pumpWidget(
-      _host(_FakeApi([outlook(views: const ['team', 'future'])])),
+      _host(
+        _FakeApi([
+          outlook(views: const ['team', 'future']),
+        ]),
+      ),
     );
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
@@ -752,9 +755,7 @@ void main() {
   for (final reason in ['no_department', 'no_approver', 'no_people', 'off']) {
     testWidgets('empty_reason $reason explains itself', (tester) async {
       _tall(tester);
-      await tester.pumpWidget(
-        _host(_FakeApi([outlook(emptyReason: reason)])),
-      );
+      await tester.pumpWidget(_host(_FakeApi([outlook(emptyReason: reason)])));
       await tester.pumpAndSettle();
       expect(find.text('No team to show yet'), findsOneWidget);
       expect(find.text(_emptyText[reason]!), findsOneWidget);
@@ -870,7 +871,10 @@ void main() {
       _host(_FakeApi([ApiException('not_allowed')]), session: session),
     );
     await tester.pumpAndSettle();
-    expect(find.text('You no longer have access to this view.'), findsOneWidget);
+    expect(
+      find.text('You no longer have access to this view.'),
+      findsOneWidget,
+    );
     expect(find.text('Mei Lin Ong'), findsNothing);
     expect(session.refreshes, 1);
     expect(await TeamCache.read(session, key), isNull);
@@ -1021,6 +1025,51 @@ void main() {
       expect(find.text('Old'), findsNothing);
       expect(find.text('New'), findsOneWidget);
     });
+
+    testWidgets('an open day sheet closes when its answer goes: a scope '
+        'change (1.34.1 review fix 7)', (tester) async {
+      _tall(tester);
+      final session = _ScopeSession();
+      final api = _FakeApi([
+        outlook(team: const {'kind': 'department', 'label': 'Old', 'size': 1}),
+        ApiException('network_error'),
+      ]);
+      await tester.pumpWidget(_host(api, session: session));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('heat-tap-2026-11-12')));
+      await tester.pumpAndSettle();
+      final sheet = find.byKey(const ValueKey('team-day-sheet'));
+      expect(sheet, findsOneWidget);
+      session.changeAccess('team');
+      await tester.pumpAndSettle();
+      expect(sheet, findsNothing);
+      expect(find.text('Alexa Tan'), findsNothing);
+      expect(find.byType(ErrorStateView), findsOneWidget);
+    });
+
+    testWidgets('an open day sheet closes when a cache clear elsewhere drops '
+        'its answer; a later tap opens the new answer', (tester) async {
+      _tall(tester);
+      final session = _Session();
+      final api = _FakeApi([
+        outlook(team: const {'kind': 'department', 'label': 'Old', 'size': 1}),
+        outlook(team: const {'kind': 'department', 'label': 'New', 'size': 1}),
+      ]);
+      await tester.pumpWidget(_host(api, session: session));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('heat-tap-2026-11-12')));
+      await tester.pumpAndSettle();
+      final sheet = find.byKey(const ValueKey('team-day-sheet'));
+      expect(sheet, findsOneWidget);
+      await tester.runAsync(() => TeamCache.clearEmployee(session));
+      await tester.pumpAndSettle();
+      expect(sheet, findsNothing);
+      expect(find.text('New'), findsOneWidget);
+      // The screen itself is still there and a new tap opens a sheet.
+      await tester.tap(find.byKey(const ValueKey('heat-tap-2026-11-12')));
+      await tester.pumpAndSettle();
+      expect(sheet, findsOneWidget);
+    });
   });
 
   group('each attempt builds its client from the session of now (A-L22, '
@@ -1048,7 +1097,10 @@ void main() {
         () => TeamCache.read(session, _key(session)),
       );
       expect(TeamOutlook.fromJson(cached!.$1).team?.label, 'Team of tok-B');
-      expect(await tester.runAsync(_storedTeamBodies), isNot(contains('tok-A')));
+      expect(
+        await tester.runAsync(_storedTeamBodies),
+        isNot(contains('tok-A')),
+      );
     });
 
     testWidgets('another employee signs in during the sign-out hook: the '
@@ -1075,7 +1127,10 @@ void main() {
         () => TeamCache.read(session, _key(session)),
       );
       expect(TeamOutlook.fromJson(cached!.$1).team?.label, 'Team of tok-B');
-      expect(await tester.runAsync(_storedTeamBodies), isNot(contains('tok-A')));
+      expect(
+        await tester.runAsync(_storedTeamBodies),
+        isNot(contains('tok-A')),
+      );
     });
   });
 
@@ -1169,7 +1224,8 @@ class _NoTeamRemoveStore extends InMemorySharedPreferencesStore {
   _NoTeamRemoveStore() : super.empty();
 
   @override
-  Future<bool> remove(String key) => key.startsWith('flutter.${TeamCache.prefix}')
+  Future<bool> remove(String key) =>
+      key.startsWith('flutter.${TeamCache.prefix}')
       ? Future<bool>.error(StateError('prefs broken'))
       : super.remove(key);
 }
@@ -1249,8 +1305,7 @@ class _TokenLog {
 /// answers with the team of the token it was built with, so an answer sent
 /// with an old token is recognisable on screen and in the cache.
 class _TokenApi extends OmniMobileApi {
-  _TokenApi(this.log, String token)
-    : super(baseUrl: '', db: '', token: token);
+  _TokenApi(this.log, String token) : super(baseUrl: '', db: '', token: token);
 
   final _TokenLog log;
 
