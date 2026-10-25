@@ -11,12 +11,28 @@ import 'team_format.dart';
 class TeamColors {
   TeamColors._();
 
-  // ---- Heat map (TeamLeave.dc.html `c`) --------------------------------
-  /// A working day nobody is off.
-  static const cell0 = Color(0xFFE6E8EA);
+  // ---- Heat map (TeamLeave.dc.html `c`, recoloured in 1.34.1) ----------
+  // 1.34.1 (colleague feedback): the three near-identical greys are gone.
+  // A working day is a very light surface with a hairline, a non-working day
+  // has no fill and a muted digit, a public holiday is a light red tint with
+  // a red "PH", and Sunday's digit is red like a paper calendar.
 
-  /// A day nobody in the set works (mockup `cellW`).
-  static const cellOff = Color(0xFFF2F4F6);
+  /// A working day nobody is off: a very light neutral surface…
+  static const cell0 = Color(0xFFF5F7F9);
+
+  /// …outlined by this hairline.
+  static const cellLine = Color(0xFFE0E3E5);
+
+  /// A day nobody in the set works: no fill (the digit is [offDigit]).
+  static const cellOff = Color(0x00000000);
+
+  /// The digit of a non-working day (muted; 5.4:1 on the white card).
+  static const offDigit = muted;
+
+  /// Sunday's digit and weekday letter (calendar convention only — it does
+  /// not say the day is a rest day). AppTheme.error; 6:1 on [cell0], 4.6:1
+  /// on [c1]. On [c2] / [c3] the usual digit colour is kept for contrast.
+  static const sunday = AppTheme.error;
 
   /// One, two, three or more people off.
   static const c1 = Color(0xFFC9DAF8);
@@ -26,11 +42,11 @@ class TeamColors {
   /// Text on [c3].
   static const onC3 = Color(0xFFFFFFFF);
 
-  /// Public holiday (legend swatch colour).
-  static const hol = Color(0xFF9AA5A6);
+  /// A public holiday for everyone: light red tint (the error container).
+  static const holCell = Color(0xFFFFDAD6);
 
-  /// A public-holiday cell: [hol] at the mockup's `88` alpha.
-  static const holCell = Color(0x889AA5A6);
+  /// The "PH" on [holCell] (AppTheme.error; 5.1:1).
+  static const holText = AppTheme.error;
 
   /// The dot on a day that is a public holiday for some people only.
   static const holDot = Color(0xFFB3261E);

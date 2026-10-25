@@ -66,7 +66,8 @@ class _Legend extends StatelessWidget {
 
   static const _style = TextStyle(fontSize: 11, color: TeamColors.muted);
 
-  Widget _swatch(Color color, String label) => Row(
+  Widget _swatch(Color color, String label, {Key? key, Color? border}) => Row(
+    key: key,
     mainAxisSize: MainAxisSize.min,
     children: [
       Container(
@@ -75,6 +76,7 @@ class _Legend extends StatelessWidget {
         decoration: BoxDecoration(
           color: color,
           borderRadius: BorderRadius.circular(3),
+          border: border == null ? null : Border.all(color: border),
         ),
       ),
       const SizedBox(width: 4),
@@ -92,10 +94,20 @@ class _Legend extends StatelessWidget {
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
           const Text('People off:', style: _style),
+          _swatch(
+            TeamColors.cell0,
+            '0',
+            key: const ValueKey('legend-0'),
+            border: TeamColors.cellLine,
+          ),
           _swatch(TeamColors.c1, '1'),
           _swatch(TeamColors.c2, '2'),
           _swatch(TeamColors.c3, '3+'),
-          _swatch(TeamColors.holCell, 'PH = public holiday'),
+          _swatch(
+            TeamColors.holCell,
+            'PH = public holiday',
+            key: const ValueKey('legend-ph'),
+          ),
           const Text('Tap a day to see who', style: _style),
         ],
       ),
@@ -172,13 +184,15 @@ class _MonthCard extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.only(bottom: 4),
               child: _row([
-                for (final w in _weekdays)
+                for (var i = 0; i < _weekdays.length; i++)
                   Text(
-                    w,
+                    _weekdays[i],
+                    key: i == 6 ? const ValueKey('heat-head-sun') : null,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11,
-                      color: TeamColors.muted,
+                      // Sunday in red, like a paper calendar (1.34.1).
+                      color: i == 6 ? TeamColors.sunday : TeamColors.muted,
                     ),
                   ),
               ]),
@@ -226,13 +240,31 @@ class _MonthCard extends StatelessWidget {
         : !workday
         ? TeamColors.cellOff
         : TeamColors.shade(off);
-    final fg = fill == TeamColors.c3 ? TeamColors.onC3 : AppTheme.onSurface;
+    final dark = fill == TeamColors.c3;
+    // The count / "PH" line: white on the darkest shade, red "PH".
+    final subFg = everyone
+        ? TeamColors.holText
+        : dark
+        ? TeamColors.onC3
+        : AppTheme.onSurface;
+    // The digit: Sunday red unless the shade is too dark for it, a muted
+    // digit on a non-working day, else the sub line's colour.
+    final isSunday = date.weekday == DateTime.sunday;
+    final digitFg = dark
+        ? TeamColors.onC3
+        : isSunday && fill != TeamColors.c2
+        ? TeamColors.sunday
+        : fill == TeamColors.cellOff
+        ? TeamColors.offDigit
+        : AppTheme.onSurface;
     final isToday = date == today;
     final isSelected = date == selected;
     final side = isSelected
         ? const BorderSide(color: TeamColors.accent, width: 2)
         : isToday
         ? const BorderSide(color: TeamColors.accent, width: 1.5)
+        : fill == TeamColors.cell0
+        ? const BorderSide(color: TeamColors.cellLine)
         : BorderSide.none;
     final sub = everyone ? 'PH' : (off > 0 ? '$off off' : '');
     return Semantics(
@@ -267,7 +299,7 @@ class _MonthCard extends StatelessWidget {
                               fontWeight: isToday || isSelected
                                   ? FontWeight.w800
                                   : FontWeight.w500,
-                              color: fg,
+                              color: digitFg,
                             ),
                           ),
                           if (sub.isNotEmpty)
@@ -277,7 +309,7 @@ class _MonthCard extends StatelessWidget {
                                 fontSize: 9,
                                 fontWeight: FontWeight.w700,
                                 height: 1,
-                                color: fg,
+                                color: subFg,
                               ),
                             ),
                         ],
