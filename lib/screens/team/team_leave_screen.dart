@@ -15,6 +15,7 @@ import '../../widgets/omni_app_bar.dart';
 import '../../widgets/pill_segments.dart';
 import 'heat_map.dart';
 import 'team_colors.dart';
+import 'team_day_detail.dart';
 import 'team_format.dart';
 import 'team_widgets.dart';
 
@@ -511,7 +512,7 @@ class TeamLeaveScreenState extends State<TeamLeaveScreen> {
         TeamHeatMap(
           outlook: o,
           selected: _selected,
-          onSelect: (d) => setState(() => _selected = d),
+          onSelect: (d) => _onDayTap(o, d),
         ),
       );
       if (o.truncated) {
@@ -689,108 +690,22 @@ class TeamLeaveScreenState extends State<TeamLeaveScreen> {
     body: teamEmptyReasonText(reason),
   );
 
-  Widget _dayCard(TeamOutlook o, DateTime day) {
-    TeamDay? entry;
-    for (final d in o.days) {
-      if (dayOnly(d.date) == day) entry = d;
-    }
-    final off = entry?.off ?? 0;
-    final holiday = entry?.holiday;
-    // Mockup `selTitle`: date · holiday · "N off".
-    final title =
-        '${dayTitle(day)}'
-        '${holiday != null && holiday.name.isNotEmpty ? ' · ${holiday.name}' : ''}'
-        ' · $off off';
-    // days[].off is the server's count; the rows are the leaves covering the
-    // day, shown only when that count says someone is off.
-    final rows = off > 0 ? leavesOnByName(o, day) : const <TeamLeaveRow>[];
-    final people = {for (final p in o.people) p.id: p};
-    return Container(
-      key: const ValueKey('team-day-card'),
-      decoration: _card,
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-            child: Text(
-              title,
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
-                color: AppTheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-          if (rows.isEmpty)
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
-              child: Text(
-                'No one off. Tap a shaded day.',
-                style: TextStyle(fontSize: 13, color: TeamColors.muted),
-              ),
-            )
-          else
-            for (final r in rows) _personRow(r, people[r.employeeId]),
-        ],
-      ),
-    );
-  }
+  /// The selected day under the calendar: the day the outlook opens on
+  /// (today, else the busiest day), then the last day tapped. Kept next to
+  /// the sheet because on a 30-day range it is visible without a tap and
+  /// answers "who is off today" at a glance.
+  Widget _dayCard(TeamOutlook o, DateTime day) => Container(
+    key: const ValueKey('team-day-card'),
+    decoration: _card,
+    padding: const EdgeInsets.only(bottom: 6),
+    child: TeamDayDetail(outlook: o, day: day),
+  );
 
-  Widget _personRow(TeamLeaveRow r, TeamPerson? p) {
-    final type = r.type;
-    final when =
-        leaveWhenLabel(r) +
-        (type != null && type.isNotEmpty ? ' · $type' : '');
-    return Padding(
-      key: ValueKey('team-row-${r.id}'),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      child: Row(
-        children: [
-          TeamAvatar(id: r.employeeId, initials: p?.initials ?? ''),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        p?.name ?? '',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: AppTheme.onSurface,
-                        ),
-                      ),
-                    ),
-                    if (p?.you ?? false) ...[
-                      const SizedBox(width: 6),
-                      const TeamYouChip(),
-                    ],
-                  ],
-                ),
-                Text(
-                  when,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppTheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (r.isPending) ...[
-            const SizedBox(width: 8),
-            const TeamPendingChip(),
-          ],
-        ],
-      ),
-    );
+  /// A tap on a calendar day: it becomes the selected day and its detail
+  /// opens in the day sheet, where it is in view whatever the scroll.
+  void _onDayTap(TeamOutlook o, DateTime day) {
+    setState(() => _selected = day);
+    unawaited(showTeamDaySheet(context, o, day));
   }
 }
 

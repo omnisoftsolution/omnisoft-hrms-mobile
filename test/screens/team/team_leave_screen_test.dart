@@ -184,8 +184,14 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('heat-tap-2026-11-12')));
     await tester.pumpAndSettle();
-    expect(find.text('Thu 12 Nov · 1 off'), findsOneWidget);
-    final row = find.byKey(const ValueKey('team-row-903'));
+    // The tap opens the day sheet (1.34.1) with the same rows as the card.
+    final sheet = find.byKey(const ValueKey('team-day-sheet'));
+    expect(sheet, findsOneWidget);
+    expect(
+      find.descendant(of: sheet, matching: find.text('Thu 12 Nov · 1 off')),
+      findsOneWidget,
+    );
+    final row = find.byKey(const ValueKey('team-sheet-row-903'));
     expect(
       find.descendant(of: row, matching: find.text('Alexa Tan')),
       findsOneWidget,
@@ -193,14 +199,110 @@ void main() {
     expect(find.descendant(of: row, matching: find.text('You')), findsOneWidget);
     // The server sent a type for this row only (D4).
     expect(
-      find.text('Thu 12 Nov – Fri 13 Nov · 2 days · Annual Leave'),
+      find.descendant(
+        of: sheet,
+        matching: find.text('Thu 12 Nov – Fri 13 Nov · 2 days · Annual Leave'),
+      ),
+      findsOneWidget,
+    );
+    // The inline card follows the tapped day too.
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('team-day-card')),
+        matching: find.text('Thu 12 Nov · 1 off'),
+      ),
       findsOneWidget,
     );
 
+    // Close the sheet, tap a day nobody is off.
+    Navigator.of(tester.element(sheet)).pop();
+    await tester.pumpAndSettle();
+    expect(sheet, findsNothing);
     await tester.tap(find.byKey(const ValueKey('heat-tap-2026-10-23')));
     await tester.pumpAndSettle();
-    expect(find.text('Fri 23 Oct · 0 off'), findsOneWidget);
-    expect(find.text('No one off. Tap a shaded day.'), findsOneWidget);
+    expect(
+      find.descendant(of: sheet, matching: find.text('Fri 23 Oct · 0 off')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: sheet, matching: find.text('No one off.')),
+      findsOneWidget,
+    );
+    expect(find.text('No one off. Tap a shaded day.'), findsOneWidget); // card
+  });
+
+  testWidgets('the day sheet sits on the tab navigator and scrolls a long '
+      'list (1.34.1)', (tester) async {
+    // A nested navigator stands in for the tab navigator: the sheet must be
+    // shown on it, not on the root.
+    final tabNav = GlobalKey<NavigatorState>();
+    final leaves = [
+      for (var i = 0; i < 30; i++)
+        <String, dynamic>{
+          'id': 2000 + i,
+          'employee_id': 3000 + i,
+          'date_from': '2026-10-22',
+          'date_to': '2026-10-22',
+          'from_period': null,
+          'to_period': null,
+          'hour_from': 0.0,
+          'hour_to': 0.0,
+          'number_of_days': 1.0,
+          'unit': 'day',
+          'state': 'approved',
+          'type': null,
+        },
+    ];
+    final people = [
+      for (var i = 0; i < 30; i++)
+        <String, dynamic>{
+          'id': 3000 + i,
+          'name': 'Person ${i.toString().padLeft(2, '0')}',
+          'initials': 'P$i',
+          'department': 'Marketing',
+          'you': false,
+        },
+    ];
+    final body = outlookJson(
+      off: const {'2026-10-22': 30},
+      people: people,
+      leaves: leaves,
+    );
+    await tester.pumpWidget(
+      ChangeNotifierProvider<SessionService>.value(
+        value: _Session(),
+        child: MaterialApp(
+          home: Navigator(
+            key: tabNav,
+            onGenerateRoute: (_) => MaterialPageRoute(
+              builder: (_) => TeamLeaveScreen(
+                apiBuilder: (_) => _FakeApi([TeamOutlook.fromJson(body)]),
+                appBar: AppBar(title: const Text('TEST BAR')),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('heat-tap-2026-10-22')));
+    await tester.pumpAndSettle();
+    final sheet = find.byKey(const ValueKey('team-day-sheet'));
+    expect(sheet, findsOneWidget);
+    expect(
+      Navigator.of(tester.element(sheet)),
+      same(tabNav.currentState),
+    );
+    // The last row is reachable by scrolling inside the sheet.
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('team-sheet-row-2029')),
+      200,
+      scrollable: find.descendant(
+        of: sheet,
+        matching: find.byType(Scrollable),
+      ),
+    );
+    expect(find.byKey(const ValueKey('team-sheet-row-2029')), findsOneWidget);
   });
 
   testWidgets('the selected day names its holiday', (tester) async {
@@ -219,8 +321,11 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('heat-tap-2026-11-09')));
     await tester.pumpAndSettle();
-    // Mockup order: date · holiday · count.
-    expect(find.text('Mon 9 Nov · Deepavali (observed) · 0 off'), findsOneWidget);
+    // Mockup order: date · holiday · count (in the sheet and the card).
+    expect(
+      find.text('Mon 9 Nov · Deepavali (observed) · 0 off'),
+      findsNWidgets(2),
+    );
   });
 
   testWidgets('a truncated answer says some rows are not shown', (
