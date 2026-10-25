@@ -892,6 +892,59 @@ void main() {
       expect(find.byKey(const ValueKey('ov-progress')), findsNothing);
     });
 
+    testWidgets('a kept previous selection is dimmed and its Who\'s out rows, '
+        'For-you cards and See 30 / 60 / 90 open nothing (review fix 8)', (
+      tester,
+    ) async {
+      _tall(tester);
+      final log = _Log();
+      final api = _Api([
+        _json(forYou: [_myLeave]),
+        _json(label: 'Marketing', departmentId: 5, forYou: [_myLeave]),
+      ]);
+      await tester.pumpWidget(_host(api, log: log));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('ov-kept')), findsNothing);
+      api.gate = Completer<void>();
+      await tester.tap(find.byKey(const ValueKey('ov-dept-5')));
+      await tester.pump();
+      expect(find.byKey(const ValueKey('ov-kept')), findsOneWidget);
+      expect(find.text('42 checked in'), findsOneWidget); // kept, dimmed
+
+      // Taps do not reach the kept sections, and their handlers refuse too.
+      final row = find.byKey(const ValueKey('ov-out-31'));
+      final card = find.byKey(const ValueKey('for-you-my_leave-412'));
+      final see = find.byKey(const ValueKey('ov-see-outlook'));
+      for (final f in [row, card, see]) {
+        await tester.ensureVisible(f);
+        await tester.tap(f, warnIfMissed: false);
+        await tester.pump();
+      }
+      final handlers = [
+        tester.widget<InkWell>(row).onTap,
+        tester.widget<ListTile>(card).onTap,
+        tester.widget<OutlinedButton>(see).onPressed,
+      ];
+      expect(handlers, everyElement(isNotNull));
+      for (final tap in handlers) {
+        tap!.call();
+        await tester.pump();
+      }
+      expect(log.people, isEmpty);
+      expect(log.leave, isEmpty);
+      expect(log.outlook, isEmpty);
+      expect(find.text('OUTLOOK'), findsNothing);
+
+      api.gate!.complete();
+      api.gate = null;
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('ov-kept')), findsNothing);
+      await tester.ensureVisible(see);
+      await tester.tap(see);
+      await tester.pumpAndSettle();
+      expect(log.outlook, ['overview/5']);
+    });
+
     testWidgets('P1: a failed switch drops the previous selection instead of '
         "showing its numbers as the new one's", (tester) async {
       _tall(tester);

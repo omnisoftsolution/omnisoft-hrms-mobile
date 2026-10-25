@@ -472,7 +472,14 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
     await refresh();
   }
 
-  Future<void> _onForYouTap(ForYouItem item) => openForYouItem(
+  /// A For-you card. The cards of a previous selection, kept while the new
+  /// one loads, open nothing (1.34.1 review fix 8).
+  Future<void> _onForYouTap(ForYouItem item) async {
+    if (!_shownMatches) return;
+    await _openForYou(item);
+  }
+
+  Future<void> _openForYou(ForYouItem item) => openForYouItem(
     context,
     item,
     guard: _forYouGuard,
@@ -486,7 +493,10 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
 
   /// "See 30 / 60 / 90 days": the outlook in the overview context for the
   /// current department, at the stored range (A-L2), on the tab Navigator.
+  /// The link of a previous selection, kept while the new one loads, opens
+  /// nothing: it would open the new department under the old card.
   Future<void> _openOutlook() async {
+    if (!_shownMatches) return;
     final departmentId = _departmentId;
     final builder = widget.outlookBuilder;
     await Navigator.of(context).push(
@@ -533,7 +543,10 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
 
   /// A Who's out row (names, Attendance and a tracked person, L2): Task 7's
   /// person sheet on the root Navigator.
+  /// A row of a previous selection, kept while the new one loads, opens
+  /// nothing.
   void _openPerson(int employeeId) {
+    if (!_shownMatches) return;
     final custom = widget.onPersonTap;
     if (custom != null) return custom(employeeId);
     // The sheet builds its client per attempt (A-L22). The builder
@@ -670,7 +683,21 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
           ),
           const SizedBox(height: 12),
         ],
-        ..._sections(context, overview),
+        // A previous selection kept while the new one loads is dimmed; its
+        // rows, cards and links open nothing (1.34.1 review fix 8).
+        if (_shownMatches)
+          ..._sections(context, overview)
+        else
+          Opacity(
+            key: const ValueKey('ov-kept'),
+            opacity: 0.55,
+            child: IgnorePointer(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: _sections(context, overview),
+              ),
+            ),
+          ),
       ],
     ];
   }
