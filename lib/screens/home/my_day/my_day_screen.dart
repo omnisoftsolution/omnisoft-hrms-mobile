@@ -344,7 +344,8 @@ class MyDayScreenState extends State<MyDayScreen> {
     final custom = widget.captureFace;
     if (custom != null || c.buttonState == AttendanceButtonState.enroll) {
       return c.perform(
-        captureFace: custom ?? () async => FaceCaptureResult.cancelled(),
+        captureFace: (_) async =>
+            custom != null ? await custom() : FaceCaptureResult.cancelled(),
         enrol: _enrol,
       );
     }

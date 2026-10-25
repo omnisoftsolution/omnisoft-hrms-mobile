@@ -51,9 +51,11 @@ class _Host {
   );
 }
 
+const _firstTry = FaceAttempt(number: 1, shotsLeft: 3);
+
 /// The steps a successful perform() reports, around the capture.
 Future<AttendanceActionOutcome?> _happyRun(
-  Future<FaceCaptureResult> Function() capture,
+  FaceCapture capture,
   PunchStepCallback onStep, {
   bool checkedIn = true,
 }) async {
@@ -62,7 +64,7 @@ Future<AttendanceActionOutcome?> _happyRun(
   onStep(PunchStep.wifi, PunchStepState.running, 'Checking…');
   onStep(PunchStep.wifi, PunchStepState.skipped, 'Not required');
   onStep(PunchStep.face, PunchStepState.running, 'Look at the camera');
-  final r = await capture();
+  final r = await capture(_firstTry);
   if (!r.success) return null;
   onStep(PunchStep.face, PunchStepState.done, 'Matched');
   onStep(PunchStep.record, PunchStepState.running, 'Sending…');
@@ -73,7 +75,7 @@ Future<AttendanceActionOutcome?> _happyRun(
 CheckInOutScreen _page({
   bool checkingOut = false,
   required Future<AttendanceActionOutcome?> Function(
-    Future<FaceCaptureResult> Function() capture,
+    FaceCapture capture,
     PunchStepCallback onStep,
   )
   run,
@@ -240,6 +242,78 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  testWidgets('P3: a mismatch shows "Not recognised · 2 tries left" in the '
+      'Face row and opens a fresh camera; the match ticks it', (tester) async {
+    final host = _Host();
+    final tries = <FaceAttempt>[];
+    await _open(
+      tester,
+      host,
+      _page(
+        run: (capture, onStep) async {
+          onStep(PunchStep.face, PunchStepState.running, 'Look at the camera');
+          tries.add(_firstTry);
+          await capture(_firstTry);
+          onStep(PunchStep.face, PunchStepState.retrying, faceRetryLabel(2));
+          const second = FaceAttempt(number: 2, shotsLeft: 2);
+          tries.add(second);
+          final r = await capture(second);
+          if (!r.success) return null;
+          onStep(PunchStep.face, PunchStepState.done, 'Matched');
+          onStep(PunchStep.record, PunchStepState.running, 'Sending…');
+          return const AttendanceActionOutcome.success(checkedIn: true);
+        },
+      ),
+    );
+    await tester.pump(const Duration(seconds: 1));
+    await tester.tap(find.byKey(const ValueKey('fake-capture')));
+    await tester.pump();
+    expect(find.text('Not recognised · 2 tries left'), findsOneWidget);
+    expect(find.byKey(const ValueKey('step-face-retry')), findsOneWidget);
+    // The camera is back for the second try (a fresh one), no Close.
+    expect(find.byKey(const ValueKey('face-try-2')), findsOneWidget);
+    expect(find.byKey(const ValueKey('fake-capture')), findsOneWidget);
+    expect(find.text('Close'), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('fake-capture')));
+    await tester.pump();
+    expect(find.text('Matched'), findsOneWidget);
+    await tester.pumpAndSettle(const Duration(seconds: 2));
+    expect(host.popped?.outcome?.ok, isTrue);
+    expect(tries.map((t) => t.number), [1, 2]);
+  });
+
+  testWidgets('P3: the last mismatch turns the Face row red with Close', (
+    tester,
+  ) async {
+    final host = _Host();
+    await _open(
+      tester,
+      host,
+      _page(
+        run: (capture, onStep) async {
+          onStep(PunchStep.face, PunchStepState.running, 'Look at the camera');
+          await capture(_firstTry);
+          onStep(PunchStep.face, PunchStepState.retrying, faceRetryLabel(1));
+          await capture(const FaceAttempt(number: 2, shotsLeft: 1));
+          return const AttendanceActionOutcome.failure(
+            'Face not recognized. Please try again.',
+          );
+        },
+      ),
+    );
+    await tester.pump(const Duration(seconds: 1));
+    await tester.tap(find.byKey(const ValueKey('fake-capture')));
+    await tester.pump();
+    expect(find.text('Not recognised · 1 try left'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('fake-capture')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byKey(const ValueKey('step-face-failed')), findsOneWidget);
+    expect(find.text('Face not recognized. Please try again.'), findsOneWidget);
+    expect(find.text('Close'), findsOneWidget);
+  });
+
   testWidgets('check-out reads CHECK OUT and Checked out', (tester) async {
     final host = _Host();
     await _open(
@@ -270,7 +344,7 @@ void main() {
       host,
       _page(
         run: (capture, onStep) async {
-          await capture();
+          await capture(_firstTry);
           onStep(PunchStep.record, PunchStepState.running, 'Sending…');
           await sent.future;
           return const AttendanceActionOutcome.success(checkedIn: true);

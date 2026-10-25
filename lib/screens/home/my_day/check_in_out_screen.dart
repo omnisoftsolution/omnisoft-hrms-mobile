@@ -52,7 +52,7 @@ class CheckInOutScreen extends StatefulWidget {
   /// The punch (`AttendanceActionController.perform`): it calls the given
   /// capture when it needs the face and reports each checklist step.
   final Future<AttendanceActionOutcome?> Function(
-    Future<FaceCaptureResult> Function() captureFace,
+    FaceCapture captureFace,
     PunchStepCallback onStep,
   )
   run;
@@ -94,12 +94,19 @@ const double _kCircle = 260;
 
 enum _Phase { preparing, capturing, checking, done, failed }
 
-enum _Row { pending, running, done, skipped, failed }
+enum _Row { pending, running, done, skipped, failed, retry }
 
 class _CheckInOutScreenState extends State<CheckInOutScreen> {
   _Phase _phase = _Phase.preparing;
   final Stopwatch _shown = Stopwatch()..start();
   Completer<FaceCaptureResult>? _capture;
+
+  /// The face capture being shown (1.34.1, P3): its shot budget and
+  /// whether it follows a mismatch.
+  FaceAttempt _attempt = const FaceAttempt(
+    number: 1,
+    shotsLeft: AttendanceActionController.maxFaceAttempts,
+  );
   final Map<PunchStep, _Row> _rows = {
     for (final s in PunchStep.values) s: _Row.pending,
   };
@@ -147,6 +154,7 @@ class _CheckInOutScreenState extends State<CheckInOutScreen> {
         PunchStepState.running => _Row.running,
         PunchStepState.done => _Row.done,
         PunchStepState.skipped => _Row.skipped,
+        PunchStepState.retrying => _Row.retry,
       };
       _details[step] = detail;
       if (step == PunchStep.record && state == PunchStepState.running) {
@@ -160,7 +168,7 @@ class _CheckInOutScreenState extends State<CheckInOutScreen> {
     if (!mounted) return;
     final steps = PunchStep.values;
     final at = steps.firstWhere(
-      (s) => _rows[s] == _Row.running,
+      (s) => _rows[s] == _Row.running || _rows[s] == _Row.retry,
       orElse: () => steps.firstWhere(
         (s) => _rows[s] == _Row.pending,
         orElse: () => PunchStep.record,
@@ -173,13 +181,17 @@ class _CheckInOutScreenState extends State<CheckInOutScreen> {
     });
   }
 
-  Future<FaceCaptureResult> _captureFace() async {
+  Future<FaceCaptureResult> _captureFace(FaceAttempt attempt) async {
+    // The pulse only precedes the first camera; a retry reopens it at once.
     final left = widget.minPulse - _shown.elapsed;
-    if (left > Duration.zero) await Future<void>.delayed(left);
+    if (!attempt.isRetry && left > Duration.zero) {
+      await Future<void>.delayed(left);
+    }
     if (!mounted) return FaceCaptureResult.cancelled();
     final completer = Completer<FaceCaptureResult>();
     setState(() {
       _capture = completer;
+      _attempt = attempt;
       _phase = _Phase.capturing;
     });
     return completer.future;
@@ -204,9 +216,19 @@ class _CheckInOutScreenState extends State<CheckInOutScreen> {
     switch (_phase) {
       case _Phase.capturing:
         final build = widget.captureBuilder;
-        return build != null
-            ? build(_onCaptured)
-            : InlineFaceCapture(size: _kCircle, onResult: _onCaptured);
+        // A new key per try: a retry opens a fresh camera with its own
+        // countdown, limited to the shots the action has left.
+        return KeyedSubtree(
+          key: ValueKey('face-try-${_attempt.number}'),
+          child: build != null
+              ? build(_onCaptured)
+              : InlineFaceCapture(
+                  size: _kCircle,
+                  maxAttempts: _attempt.shotsLeft,
+                  hint: _attempt.isRetry ? 'Not recognised · try again' : null,
+                  onResult: _onCaptured,
+                ),
+        );
       case _Phase.done:
         return _DoneCircle(label: _doneTitle);
       case _Phase.preparing:
@@ -525,11 +547,18 @@ class _StepRow extends StatelessWidget {
         AppTheme.error,
         const Icon(Icons.close_rounded, size: 18, color: AppTheme.error),
       ),
+      // Not recognised, the camera opens again (P3): red text, a retry
+      // mark instead of the cross — the action is still going.
+      _Row.retry => (
+        const Color(0xFFFFDAD6),
+        AppTheme.error,
+        const Icon(Icons.refresh_rounded, size: 18, color: AppTheme.error),
+      ),
       _Row.pending => (AppTheme.surfaceContainer, AppTheme.outline, null),
     };
     final titleColor = switch (row) {
       _Row.running => AppTheme.primary,
-      _Row.failed => AppTheme.error,
+      _Row.failed || _Row.retry => AppTheme.error,
       _Row.pending || _Row.skipped => AppTheme.outline,
       _Row.done => AppTheme.onSurface,
     };
@@ -567,7 +596,7 @@ class _StepRow extends StatelessWidget {
                     detail,
                     style: TextStyle(
                       fontSize: 12,
-                      color: row == _Row.failed
+                      color: row == _Row.failed || row == _Row.retry
                           ? AppTheme.error
                           : AppTheme.onSurfaceVariant,
                     ),

@@ -35,10 +35,21 @@ class InlineFaceCapture extends StatefulWidget {
   /// Fires exactly once with the capture outcome.
   final ValueChanged<FaceCaptureResult> onResult;
 
+  /// Camera shots this capture may take, its quality / liveness retries
+  /// included (1.34.1, P3: the punch's shared budget left). The result's
+  /// `attempts` says how many it took.
+  final int maxAttempts;
+
+  /// Shown in the status pill before the first countdown (a retry after
+  /// a mismatch: "Not recognised · try again"); null = the usual text.
+  final String? hint;
+
   const InlineFaceCapture({
     super.key,
     this.size = 200,
     this.haloPadding = 48,
+    this.maxAttempts = 3,
+    this.hint,
     required this.onResult,
   });
 
@@ -66,9 +77,11 @@ class _InlineFaceCaptureState extends State<InlineFaceCapture> {
   static const Duration _hardTimeout = Duration(seconds: 18);
 
   // Cap on quality / liveness retries inside a single session — each
-  // failure re-arms the countdown. Three lets a user adjust framing
-  // without being trapped in a battery-draining loop if they walk away.
-  static const int _maxFailedAttempts = 3;
+  // failure re-arms the countdown. At most three lets a user adjust
+  // framing without being trapped in a battery-draining loop if they walk
+  // away; since 1.34.1 the punch passes what is left of its shared budget
+  // (P3), so a retry after a mismatch may allow fewer.
+  int get _maxFailedAttempts => widget.maxAttempts.clamp(1, 3);
 
   @override
   void initState() {
@@ -111,7 +124,7 @@ class _InlineFaceCaptureState extends State<InlineFaceCapture> {
       setState(() {
         _controller = controller;
         _phase = _Phase.countdown;
-        _status = 'Position your face';
+        _status = widget.hint ?? 'Position your face';
       });
       _startCountdown();
     } on CameraException catch (e) {
@@ -169,7 +182,9 @@ class _InlineFaceCaptureState extends State<InlineFaceCapture> {
             'Live photo check failed. Try again in better light.');
         return;
       }
-      _resolve(FaceCaptureResult.success(file.path));
+      _resolve(
+        FaceCaptureResult.success(file.path, attempts: _failedAttempts + 1),
+      );
     } on CameraException catch (e) {
       _failHard(_humanizeCameraError(e));
     } catch (e) {
@@ -180,7 +195,7 @@ class _InlineFaceCaptureState extends State<InlineFaceCapture> {
   void _onAttemptFailed(String message) {
     _failedAttempts += 1;
     if (_failedAttempts >= _maxFailedAttempts) {
-      _resolve(FaceCaptureResult.error(message));
+      _resolve(FaceCaptureResult.error(message, attempts: _failedAttempts));
       return;
     }
     setState(() {

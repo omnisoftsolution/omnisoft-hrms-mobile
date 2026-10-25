@@ -27,10 +27,37 @@ enum PunchStep { location, wifi, face, record }
 
 /// running → done (or skipped when the tenant does not require it). A
 /// step that fails just never reports done; the outcome carries why.
-enum PunchStepState { running, done, skipped }
+/// `retrying` (face only, 1.34.1): the face was not recognised and the
+/// camera opens again; the detail says how many tries are left.
+enum PunchStepState { running, done, skipped, retrying }
 
 typedef PunchStepCallback =
     void Function(PunchStep step, PunchStepState state, String detail);
+
+/// One face capture of a punch (1.34.1, P3): which identity try it is and
+/// how many camera shots the action has left. The capture must not take
+/// more shots than [shotsLeft] (its own quality / liveness retries
+/// included).
+class FaceAttempt {
+  const FaceAttempt({required this.number, required this.shotsLeft});
+
+  /// 1 for the first capture of the action, 2 after a mismatch, …
+  final int number;
+
+  /// Camera shots left in the action's shared budget (≥ 1).
+  final int shotsLeft;
+
+  /// True after a mismatch: the camera reopens for another try.
+  bool get isRetry => number > 1;
+}
+
+/// Shows the camera for [attempt] and returns its result.
+typedef FaceCapture = Future<FaceCaptureResult> Function(FaceAttempt attempt);
+
+/// The Face row while the camera reopens after a mismatch:
+/// "Not recognised · 2 tries left", "Not recognised · 1 try left".
+String faceRetryLabel(int triesLeft) =>
+    'Not recognised · $triesLeft ${triesLeft == 1 ? 'try' : 'tries'} left';
 
 /// The result of [AttendanceActionController.perform]. `null` from
 /// perform means nothing happened (a second tap, a cancelled capture).
@@ -132,6 +159,12 @@ class AttendanceActionController extends ChangeNotifier {
   /// Fallback office radius when the tenant configured a geofence but
   /// left the radius unset. Matches the connector's server-side default.
   static const double defaultRadiusMeters = 200;
+
+  /// Camera shots one check-in / check-out may take in total (1.34.1,
+  /// P3). ONE shared budget: a capture's quality / liveness retries and a
+  /// fresh capture after an identity mismatch both spend it, so a punch
+  /// never takes more than this many shots.
+  static const int maxFaceAttempts = 3;
 
   AttendanceStatus? status;
   DateTime? statusFetchedAt;
@@ -305,8 +338,15 @@ class AttendanceActionController extends ChangeNotifier {
   /// `checkIn` / `checkOut` and a status refresh. [captureFace] shows the
   /// camera and returns its result; [enrol] shows the one-time setup.
   /// [onStep] follows the checklist on the check-in page.
+  ///
+  /// Face (1.34.1, P3): a genuine mismatch (`ok == false`, not an error)
+  /// opens the camera again while the action's [maxFaceAttempts] shots
+  /// last; each try is a fresh capture with quality, liveness and identity
+  /// re-run at the same threshold. Not enrolled, engine / model errors,
+  /// quality or liveness errors and camera errors end the action at once.
+  /// Nothing is sent before a match.
   Future<AttendanceActionOutcome?> perform({
-    required Future<FaceCaptureResult> Function() captureFace,
+    required FaceCapture captureFace,
     required Future<void> Function() enrol,
     PunchStepCallback? onStep,
   }) async {
@@ -395,20 +435,44 @@ class AttendanceActionController extends ChangeNotifier {
       var faceVerified = false;
       if (session.featureFaceVerification) {
         step(PunchStep.face, PunchStepState.running, 'Look at the camera');
-        final capture = await captureFace();
-        if (!capture.success) {
-          final message = capture.errorMessage;
-          return message == null
-              ? null
-              : AttendanceActionOutcome.failure(message);
-        }
-        final verify = await _verifyFace(capture.imagePath!);
-        if (!verify.ok) {
-          return AttendanceActionOutcome.failure(
-            verify.errorMessage ?? 'Face not recognized. Please try again.',
+        var shotsLeft = maxFaceAttempts;
+        for (var attempt = 1; ; attempt++) {
+          final capture = await captureFace(
+            FaceAttempt(number: attempt, shotsLeft: shotsLeft),
+          );
+          if (!capture.success) {
+            // Cancelled (silent), camera error, or the capture's own
+            // quality / liveness retries ran out: never retried here.
+            final message = capture.errorMessage;
+            return message == null
+                ? null
+                : AttendanceActionOutcome.failure(message);
+          }
+          shotsLeft -= capture.attempts.clamp(1, shotsLeft);
+          final verify = await _verifyFace(capture.imagePath!);
+          // Debug log only: the try, the outcome and the score — no PII.
+          debugPrint(
+            'Face check: try $attempt '
+            '${verify.ok ? 'match' : (verify.isError ? 'error' : 'no match')} '
+            'score=${verify.score?.toStringAsFixed(2) ?? 'n/a'} '
+            'shots left $shotsLeft',
+          );
+          if (verify.ok) {
+            faceVerified = capture.faceVerified;
+            break;
+          }
+          final mismatch = !verify.isError;
+          if (!mismatch || shotsLeft <= 0) {
+            return AttendanceActionOutcome.failure(
+              verify.errorMessage ?? 'Face not recognized. Please try again.',
+            );
+          }
+          step(
+            PunchStep.face,
+            PunchStepState.retrying,
+            faceRetryLabel(shotsLeft),
           );
         }
-        faceVerified = capture.faceVerified;
         step(PunchStep.face, PunchStepState.done, 'Matched');
       } else {
         step(PunchStep.face, PunchStepState.skipped, 'Not required');

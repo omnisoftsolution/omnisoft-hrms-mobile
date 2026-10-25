@@ -123,7 +123,7 @@ class _Harness {
 
   Future<AttendanceActionOutcome?> perform({bool cancel = false}) =>
       controller.perform(
-        captureFace: () async {
+        captureFace: (_) async {
           captures++;
           return cancel
               ? FaceCaptureResult.cancelled()
@@ -293,7 +293,7 @@ void main() {
           simulateFace: false,
         );
         final pending = controller.perform(
-          captureFace: () async => FaceCaptureResult.success('/tmp/face.jpg'),
+          captureFace: (_) async => FaceCaptureResult.success('/tmp/face.jpg'),
           enrol: () async {},
         );
         await Future<void>.delayed(Duration.zero);
@@ -304,11 +304,191 @@ void main() {
     );
   });
 
+  group('face retries share one budget of 3 shots (P3, 1.34.1)', () {
+    final match = FaceVerifyResult.success(score: 0.82);
+    final mismatch = FaceVerifyResult.mismatch(0.41);
+
+    /// A controller whose verifyFace answers [verifies] in order (the last
+    /// repeats) and whose captures answer [captures] in order (default: one
+    /// good shot each).
+    Future<
+      ({
+        AttendanceActionOutcome? outcome,
+        _FakeApi api,
+        List<FaceAttempt> attempts,
+        int verifies,
+        List<String> steps,
+      })
+    >
+    run(
+      List<FaceVerifyResult> verifies, {
+      List<FaceCaptureResult>? captures,
+    }) async {
+      final api = _FakeApi(_status());
+      var verifyCalls = 0;
+      final controller = AttendanceActionController(
+        session: SessionService(),
+        apiBuilder: (_) => api,
+        getLocation: () async => _at(_officeLat, _officeLng),
+        getWifi: () async => const WifiInfoResult.ready(ssid: 'office'),
+        getDeviceId: () async => 'device-1',
+        isEnrolled: () => true,
+        verifyFace: (_) async {
+          final i = verifyCalls < verifies.length
+              ? verifyCalls
+              : verifies.length - 1;
+          verifyCalls++;
+          return verifies[i];
+        },
+        refreshEnrolled: () async {},
+        devLocation: false,
+        simulateFace: false,
+      );
+      await controller.refreshStatus();
+      final attempts = <FaceAttempt>[];
+      final steps = <String>[];
+      final outcome = await controller.perform(
+        captureFace: (a) async {
+          attempts.add(a);
+          final list = captures;
+          final i = attempts.length - 1;
+          if (list != null && i < list.length) return list[i];
+          return FaceCaptureResult.success('/tmp/face-$i.jpg');
+        },
+        enrol: () async {},
+        onStep: (step, state, detail) {
+          if (step == PunchStep.face) steps.add('${state.name} $detail');
+        },
+      );
+      return (
+        outcome: outcome,
+        api: api,
+        attempts: attempts,
+        verifies: verifyCalls,
+        steps: steps,
+      );
+    }
+
+    test('mismatch → retry → match punches once, face_verified true', () async {
+      final r = await run([mismatch, match]);
+      expect(r.outcome?.ok, isTrue);
+      expect(r.api.checkIns, hasLength(1));
+      expect(r.api.checkIns.single['face'], isTrue);
+      expect(r.verifies, 2); // identity re-run on the fresh capture
+      expect(r.attempts.map((a) => (a.number, a.shotsLeft)), [(1, 3), (2, 2)]);
+      expect(r.steps, [
+        'running Look at the camera',
+        'retrying Not recognised · 2 tries left',
+        'done Matched',
+      ]);
+    });
+
+    test(
+      'three mismatches: failure, nothing sent, three captures only',
+      () async {
+        final r = await run([mismatch]);
+        expect(r.outcome?.error, 'Face not recognized. Please try again.');
+        expect(r.api.checkIns, isEmpty);
+        expect(r.api.checkOuts, isEmpty);
+        expect(r.attempts, hasLength(3));
+        expect(r.verifies, 3);
+        expect(r.steps, [
+          'running Look at the camera',
+          'retrying Not recognised · 2 tries left',
+          'retrying Not recognised · 1 try left',
+        ]);
+      },
+    );
+
+    test('quality retries inside a capture spend the same budget', () async {
+      // The first capture needed two shots (one quality failure inside the
+      // camera, then a good one): one shot is left for the retry.
+      final r = await run(
+        [mismatch, match],
+        captures: [FaceCaptureResult.success('/tmp/a.jpg', attempts: 2)],
+      );
+      expect(r.outcome?.ok, isTrue);
+      expect(r.attempts.map((a) => a.shotsLeft), [3, 1]);
+      expect(r.steps[1], 'retrying Not recognised · 1 try left');
+    });
+
+    test('a capture that used up the budget is not retried after a '
+        'mismatch', () async {
+      final r = await run(
+        [mismatch],
+        captures: [FaceCaptureResult.success('/tmp/a.jpg', attempts: 3)],
+      );
+      expect(r.outcome?.error, 'Face not recognized. Please try again.');
+      expect(r.attempts, hasLength(1));
+      expect(r.api.checkIns, isEmpty);
+    });
+
+    test(
+      'a quality failure that ends the retry capture ends the action',
+      () async {
+        final r = await run(
+          [mismatch],
+          captures: [
+            FaceCaptureResult.success('/tmp/a.jpg'),
+            FaceCaptureResult.error('Move closer to the camera.', attempts: 2),
+          ],
+        );
+        expect(r.outcome?.error, 'Move closer to the camera.');
+        expect(r.attempts, hasLength(2));
+        expect(r.verifies, 1);
+        expect(r.api.checkIns, isEmpty);
+      },
+    );
+
+    for (final (name, result) in [
+      ('not enrolled', FaceVerifyResult.notEnrolled()),
+      ('an engine error', FaceVerifyResult.error('Model failed to load.')),
+      (
+        'a liveness error',
+        FaceVerifyResult(
+          ok: false,
+          isError: true,
+          errorMessage: 'Live photo check failed.',
+        ),
+      ),
+    ]) {
+      test('$name is never retried', () async {
+        final r = await run([result, match]);
+        expect(r.outcome?.error, result.errorMessage);
+        expect(r.attempts, hasLength(1));
+        expect(r.verifies, 1);
+        expect(r.api.checkIns, isEmpty);
+      });
+    }
+
+    test('a camera error or a cancel is never retried', () async {
+      final err = await run(
+        [match],
+        captures: [FaceCaptureResult.error('Camera permission was denied.')],
+      );
+      expect(err.outcome?.error, 'Camera permission was denied.');
+      expect(err.attempts, hasLength(1));
+      expect(err.verifies, 0);
+
+      final cancel = await run(
+        [match],
+        captures: [FaceCaptureResult.cancelled()],
+      );
+      expect(cancel.outcome, isNull);
+      expect(cancel.attempts, hasLength(1));
+    });
+
+    test('faceRetryLabel', () {
+      expect(faceRetryLabel(2), 'Not recognised · 2 tries left');
+      expect(faceRetryLabel(1), 'Not recognised · 1 try left');
+    });
+  });
+
   group('punch steps (check-in page checklist)', () {
     Future<List<String>> run(_Harness h, {bool cancel = false}) async {
       final steps = <String>[];
       await h.controller.perform(
-        captureFace: () async => cancel
+        captureFace: (_) async => cancel
             ? FaceCaptureResult.cancelled()
             : FaceCaptureResult.success('/tmp/face.jpg'),
         enrol: () async {},
