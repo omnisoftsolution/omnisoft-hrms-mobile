@@ -248,6 +248,31 @@ void main() {
     expect(find.text('Emp 7'), findsOneWidget);
   });
 
+  testWidgets('P1: a reload after the first load keeps the lists (no '
+      'spinner); a failed one keeps them and says so', (tester) async {
+    final api = FakeApi(pending: [pendingItem(1)]);
+    await tester.pumpWidget(host(api));
+    await tester.pumpAndSettle();
+    expect(find.text('Emp 1'), findsOneWidget);
+
+    api.pending = [pendingItem(1), pendingItem(7)];
+    tester.state<RefreshIndicatorState>(find.byType(RefreshIndicator)).show();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    // The list stays while the reload runs (only the pull indicator).
+    expect(find.text('Emp 1'), findsOneWidget);
+    await tester.pumpAndSettle();
+    expect(find.text('Emp 7'), findsOneWidget);
+
+    api.listError = ApiException('network_error');
+    tester.state<RefreshIndicatorState>(find.byType(RefreshIndicator)).show();
+    await tester.pumpAndSettle();
+    expect(find.text('Emp 1'), findsOneWidget);
+    expect(find.text('Emp 7'), findsOneWidget);
+    expect(find.text('Retry'), findsNothing);
+    expect(find.byType(SnackBar), findsOneWidget);
+  });
+
   testWidgets('Pending splits into Waiting for you and You can also approve', (
     tester,
   ) async {

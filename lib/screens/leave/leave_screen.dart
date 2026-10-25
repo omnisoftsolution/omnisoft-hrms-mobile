@@ -134,6 +134,12 @@ class LeaveScreenState extends State<LeaveScreen> {
   List<LeaveType> _types = [];
   bool _loading = true;
   String? _error;
+
+  /// The leave types answered once: later refreshes run in the background.
+  bool _typesLoaded = false;
+
+  /// Drops a leave-types answer a newer refresh has overtaken.
+  int _typesSeq = 0;
   String _approvalsBreakdown = '';
 
   /// The 30-day team outlook behind the Team leave tile (A-L1); null until
@@ -191,20 +197,48 @@ class LeaveScreenState extends State<LeaveScreen> {
   /// the LEAVE badge) on opening the tab. /me is re-pulled at most once
   /// per 30 s ([SessionService.refreshMeIfStale]); a pull-down
   /// ([force]) always asks.
+  ///
+  /// HomeShell calls this on every LEAVE tab visit. Once the types have
+  /// loaded, a refresh runs in the background (P1, 1.34.1): the tab keeps
+  /// what it shows instead of the full spinner; a failed background
+  /// refresh keeps it too (a pull-down says so in a snackbar). Only the
+  /// newest call's answer is applied.
   Future<void> refresh({bool force = false}) async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    final quiet = _typesLoaded;
+    final seq = ++_typesSeq;
+    if (!quiet) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     final session = context.read<SessionService>();
     unawaited(_refreshApprovals(session, force: force));
     unawaited(_refreshTeamLeave());
     try {
-      _types = await _api(session).getLeaveTypes();
+      final types = await _api(session).getLeaveTypes();
+      if (!mounted || seq != _typesSeq) return;
+      setState(() {
+        _types = types;
+        _typesLoaded = true;
+        _error = null;
+        _loading = false;
+      });
     } catch (e) {
-      _error = friendlyError(e);
-    } finally {
-      if (mounted) setState(() => _loading = false);
+      if (!mounted || seq != _typesSeq) return;
+      if (quiet) {
+        debugPrint('Leave: background refresh failed: $e');
+        if (force) {
+          ScaffoldMessenger.maybeOf(
+            context,
+          )?.showSnackBar(SnackBar(content: Text(friendlyError(e))));
+        }
+        return;
+      }
+      setState(() {
+        _error = friendlyError(e);
+        _loading = false;
+      });
     }
   }
 

@@ -12,6 +12,7 @@ import 'package:omni_hr/screens/home/home_root.dart';
 import 'package:omni_hr/screens/home/my_day/my_day_screen.dart';
 import 'package:omni_hr/screens/home/overview/team_overview_screen.dart';
 import 'package:omni_hr/screens/notifications/notification_tap.dart';
+import 'package:omni_hr/services/my_day_memory.dart';
 import 'package:omni_hr/services/notification_service.dart';
 import 'package:omni_hr/services/omni_mobile_api.dart';
 import 'package:omni_hr/services/session_service.dart';
@@ -54,9 +55,14 @@ class _MyDayApi extends OmniMobileApi {
   int calls = 0;
   Object? error;
 
+  /// When set, every call waits for it before answering.
+  Completer<void>? gate;
+
   @override
   Future<MyDay> fetchMyDay() async {
     calls++;
+    final g = gate;
+    if (g != null) await g.future;
     final e = error;
     if (e != null) throw e;
     return sampleMyDay();
@@ -315,6 +321,8 @@ void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
     FlutterSecureStorage.setMockInitialValues({});
+    // In-memory and static: one test's My day must not paint the next's.
+    MyDayMemory.clear();
   });
 
   group('compatibility matrix (front matter), row by row', () {
@@ -618,6 +626,115 @@ void main() {
           .getTopLeft(find.byKey(const ValueKey('status-tile')))
           .dy;
       expect(switchTop, lessThan(tileTop));
+    });
+
+    testWidgets('P1: flipping back to My day paints the last day at once '
+        '(in memory) and refetches; no punch button until the fresh answer', (
+      tester,
+    ) async {
+      _tall(tester);
+      final session = await _signedIn(
+        tester,
+        _employee(tracked: true, access: 'company', source: 'department'),
+      );
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(homeModeKey(session), 'my_day');
+      final myDayApi = _MyDayApi();
+      await tester.pumpWidget(
+        _host(session, myDayApi: myDayApi, overviewApi: _OverviewApi()),
+      );
+      await tester.pumpAndSettle();
+      expect(myDayApi.calls, 1);
+      expect(MyDayMemory.read(session), isNotNull);
+      final keysBefore = prefs.getKeys();
+
+      await tester.tap(_pill(0));
+      await tester.pumpAndSettle();
+      expect(find.text('OVERVIEW BAR'), findsOneWidget);
+
+      myDayApi.gate = Completer<void>();
+      await tester.tap(_pill(1));
+      await tester.pump();
+      expect(find.byKey(const ValueKey('status-tile')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('my-day-memory-progress')),
+        findsOneWidget,
+      );
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(myDayApi.calls, 2); // refetching
+      myDayApi.gate!.complete();
+      myDayApi.gate = null;
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('my-day-memory-progress')),
+        findsNothing,
+      );
+      // Nothing new on disk for My day (the overview's own TeamCache entry
+      // is the only addition).
+      expect(
+        prefs.getKeys().difference(keysBefore).where(
+          (k) => !k.startsWith('team_v1|'),
+        ),
+        isEmpty,
+      );
+    });
+
+    testWidgets('P1: a failed refetch keeps the remembered day under the '
+        'stale strip; an access answer drops it', (tester) async {
+      _tall(tester);
+      final session = await _signedIn(
+        tester,
+        _employee(tracked: true, access: 'company', source: 'department'),
+      );
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(homeModeKey(session), 'my_day');
+      final myDayApi = _MyDayApi();
+      await tester.pumpWidget(
+        _host(session, myDayApi: myDayApi, overviewApi: _OverviewApi()),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(_pill(0));
+      await tester.pumpAndSettle();
+
+      myDayApi.error = ApiException('network_error');
+      await tester.tap(_pill(1));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('status-tile')), findsOneWidget);
+      expect(find.textContaining("Couldn't refresh"), findsOneWidget);
+      expect(find.byType(ErrorStateView), findsNothing);
+
+      await tester.tap(_pill(0));
+      await tester.pumpAndSettle();
+      myDayApi.error = ApiException('no_employee_linked');
+      await tester.tap(_pill(1));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('status-tile')), findsNothing);
+      expect(find.byType(ErrorStateView), findsOneWidget);
+      expect(MyDayMemory.read(session), isNull);
+    });
+
+    testWidgets('P1: signing out forgets the remembered day', (tester) async {
+      _tall(tester);
+      final session = await _signedIn(
+        tester,
+        _employee(tracked: true, access: 'company', source: 'department'),
+      );
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(homeModeKey(session), 'my_day');
+      await tester.pumpWidget(
+        _host(session, myDayApi: _MyDayApi(), overviewApi: _OverviewApi()),
+      );
+      await tester.pumpAndSettle();
+      expect(MyDayMemory.read(session), isNotNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(session.clearSession);
+      expect(MyDayMemory.read(session), isNull);
+      // A new sign-in of the same employee does not see it either.
+      final again = await _signedIn(
+        tester,
+        _employee(tracked: true, access: 'company', source: 'department'),
+      );
+      expect(MyDayMemory.read(again), isNull);
     });
 
     testWidgets('stays while My day fails, so Team overview is one tap away', (

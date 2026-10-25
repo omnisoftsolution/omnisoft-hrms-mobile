@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -20,11 +22,24 @@ class FakeApi extends OmniMobileApi {
   /// Days left on Annual Leave, per getLeaveTypes call (last repeats).
   List<double>? balances;
 
+  /// When set, getLeaveTypes waits for it.
+  Completer<void>? typesGate;
+
+  /// When set, getLeaveTypes throws it.
+  Object? typesError;
+
   @override
   Future<List<ApprovalItem>> getPendingApprovals() async => const [];
 
   @override
   Future<List<LeaveType>> getLeaveTypes() async {
+    final g = typesGate;
+    if (g != null) await g.future;
+    final err = typesError;
+    if (err != null) {
+      typeCalls++;
+      throw err;
+    }
     final b = balances;
     final left = b?[typeCalls.clamp(0, b.length - 1)];
     typeCalls++;
@@ -227,6 +242,84 @@ void main() {
       await key.currentState!.refresh(force: true); // pull-down
       await tester.pumpAndSettle();
       expect(session.meCalls, 2);
+    });
+  });
+
+  group('tab visits refresh in the background (P1, 1.34.1)', () {
+    setUp(() => SharedPreferences.setMockInitialValues({}));
+
+    Widget keyed(FakeApi api, GlobalKey<LeaveScreenState> key) =>
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<SessionService>(
+              create: (_) => FakeSession(),
+            ),
+            ChangeNotifierProvider<HolidayService>(
+              create: (_) => HolidayService(),
+            ),
+          ],
+          child: MaterialApp(
+            home: LeaveScreen(
+              key: key,
+              apiBuilder: (_) => api,
+              appBar: AppBar(title: const Text('TEST BAR')),
+            ),
+          ),
+        );
+
+    testWidgets('a visit after the first load keeps the list, no spinner', (
+      tester,
+    ) async {
+      final key = GlobalKey<LeaveScreenState>();
+      final api = FakeApi()..balances = [5, 4];
+      await tester.pumpWidget(keyed(api, key));
+      await tester.pumpAndSettle();
+      expect(find.text('5d left'), findsOneWidget);
+
+      api.typesGate = Completer<void>();
+      unawaited(key.currentState!.refresh()); // HomeShell: LEAVE tab tap
+      await tester.pump();
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.text('5d left'), findsOneWidget);
+      api.typesGate!.complete();
+      api.typesGate = null;
+      await tester.pumpAndSettle();
+      expect(api.typeCalls, 2);
+      expect(find.text('4d left'), findsOneWidget); // the fresh answer
+    });
+
+    testWidgets('a failed background refresh keeps the list; a failed '
+        'pull-down says so', (tester) async {
+      final key = GlobalKey<LeaveScreenState>();
+      final api = FakeApi();
+      await tester.pumpWidget(keyed(api, key));
+      await tester.pumpAndSettle();
+      api.typesError = ApiException('network_error');
+      await key.currentState!.refresh();
+      await tester.pumpAndSettle();
+      expect(find.text('Annual Leave'), findsOneWidget);
+      expect(find.text('Retry'), findsNothing);
+      expect(find.byType(SnackBar), findsNothing);
+
+      await key.currentState!.refresh(force: true);
+      await tester.pump();
+      expect(find.text('Annual Leave'), findsOneWidget);
+      expect(find.byType(SnackBar), findsOneWidget);
+    });
+
+    testWidgets('the first load still shows the spinner, and its failure '
+        'the error view', (tester) async {
+      final key = GlobalKey<LeaveScreenState>();
+      final api = FakeApi()
+        ..typesGate = Completer<void>()
+        ..typesError = ApiException('network_error');
+      await tester.pumpWidget(keyed(api, key));
+      await tester.pump();
+      await tester.pump();
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      api.typesGate!.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('Retry'), findsOneWidget);
     });
   });
 

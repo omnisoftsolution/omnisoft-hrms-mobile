@@ -13,6 +13,7 @@ import '../../../models/face_capture_result.dart';
 import '../../../models/my_day.dart';
 import '../../../services/attendance_action_controller.dart';
 import '../../../services/face_recognition_service.dart';
+import '../../../services/my_day_memory.dart';
 import '../../../services/omni_mobile_api.dart';
 import '../../../services/session_service.dart';
 import '../../../widgets/error_state_view.dart';
@@ -109,6 +110,11 @@ class MyDayScreenState extends State<MyDayScreen> {
   String? _firstLoadError;
   bool _refreshFailed = false;
 
+  /// [_day] is the remembered body of this sign-in ([MyDayMemory], P1),
+  /// painted at once while the first fetch of this screen runs (a thin
+  /// progress line shows meanwhile). False once a fetch answered.
+  bool _fromMemory = false;
+
   /// The fetch currently running; every overlapping [refresh] shares it.
   Future<void>? _inFlight;
 
@@ -135,6 +141,14 @@ class MyDayScreenState extends State<MyDayScreen> {
         refresh();
       },
     );
+    // Home flipped back to My day: paint the last body of this sign-in at
+    // once and refetch (P1). In memory only; no controller is made from it
+    // (the fresh answer makes it), so nothing can be punched on it.
+    final remembered = MyDayMemory.read(context.read<SessionService>());
+    if (remembered != null) {
+      _day = remembered;
+      _fromMemory = true;
+    }
     refresh();
   }
 
@@ -170,15 +184,18 @@ class MyDayScreenState extends State<MyDayScreen> {
   });
 
   Future<void> _load() async {
+    final memo = MyDayMemory.bind(context.read<SessionService>());
     try {
       final day = await _api().fetchMyDay();
       if (!mounted) return;
       setState(() {
         _day = day;
+        _fromMemory = false;
         _firstLoadError = null;
         _refreshFailed = false;
       });
       final session = context.read<SessionService>();
+      MyDayMemory.write(session, memo, day);
       // HR cleared the flag: re-pull /me so the session agrees with the
       // day (the server already refuses phone punches the other way).
       if (!day.kioskOnly && session.attendanceKioskOnly) {
@@ -199,7 +216,13 @@ class MyDayScreenState extends State<MyDayScreen> {
       await _syncController(day);
     } catch (e) {
       if (!mounted) return;
+      // The employee, the session or the access is gone: the remembered
+      // body goes too, and a day painted from it with it.
+      final drop = MyDayMemory.dropsOn(e);
+      if (drop) MyDayMemory.clear();
       setState(() {
+        if (drop && _fromMemory) _day = null;
+        _fromMemory = false;
         if (_day == null) {
           _firstLoadError = friendlyError(e);
         } else {
@@ -650,6 +673,11 @@ class MyDayScreenState extends State<MyDayScreen> {
     final attendanceOn = context.watch<SessionService>().featureAttendance;
     return Column(
       children: [
+        if (_fromMemory)
+          const LinearProgressIndicator(
+            key: ValueKey('my-day-memory-progress'),
+            minHeight: 2,
+          ),
         if (_refreshFailed)
           Container(
             width: double.infinity,

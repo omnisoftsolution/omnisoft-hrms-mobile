@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/constants.dart';
 import '../models/company_info.dart';
+import 'my_day_memory.dart';
 import 'omni_mobile_api.dart';
 import 'saas_service.dart';
 import 'team_cache.dart';
@@ -971,6 +972,8 @@ class SessionService extends ChangeNotifier {
     // Before the hook and before the wipe check: a sign-in during the hook
     // keeps the fields, but nothing asked before this sign-out is current.
     _requestEpoch++;
+    // The remembered My day body is in memory only; it goes at once (P1).
+    MyDayMemory.clear();
     _clearings++;
     try {
       final epoch = _authEpoch;
@@ -1337,6 +1340,7 @@ class SessionService extends ChangeNotifier {
   /// [clearSession] the wipe is unconditional (the user asked for it).
   Future<void> logout() async {
     _requestEpoch++;
+    MyDayMemory.clear();
     if (!_inOwnClearingHook) {
       for (var running = _clearRun; running != null; running = _clearRun) {
         await running;

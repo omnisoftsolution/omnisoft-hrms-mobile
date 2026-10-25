@@ -41,6 +41,12 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
   bool _loading = true;
   String? _error;
 
+  /// Both lists answered once: later reloads run in the background.
+  bool _loaded = false;
+
+  /// Drops an answer a newer reload has overtaken.
+  int _seq = 0;
+
   @override
   void initState() {
     super.initState();
@@ -56,24 +62,40 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
     _load();
   }
 
+  /// Loads both lists. Once they have loaded, a reload (pull-down, back
+  /// from a request) runs in the background (P1, 1.34.1): the lists stay
+  /// instead of the full spinner, and a failed reload keeps them and says
+  /// so in a snackbar. Only the newest call's answer is applied.
   Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    final quiet = _loaded;
+    final seq = ++_seq;
+    if (!quiet) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     try {
       final results = await Future.wait([
         _api.getPendingApprovals(),
         _api.getRecentApprovals(),
       ]);
-      if (!mounted) return;
+      if (!mounted || seq != _seq) return;
       setState(() {
         _pending = results[0];
         _recent = results[1];
+        _loaded = true;
+        _error = null;
         _loading = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || seq != _seq) return;
+      if (quiet) {
+        ScaffoldMessenger.maybeOf(
+          context,
+        )?.showSnackBar(SnackBar(content: Text(friendlyError(e))));
+        return;
+      }
       setState(() {
         _error = friendlyError(e);
         _loading = false;

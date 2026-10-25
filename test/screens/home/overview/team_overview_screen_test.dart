@@ -801,6 +801,116 @@ void main() {
       }
     });
 
+    testWidgets('P1: the cached answer paints before the first fetch '
+        'answers, under a thin line; the live answer replaces it', (
+      tester,
+    ) async {
+      _tall(tester);
+      final session = _Session();
+      await tester.runAsync(
+        () => TeamCache.write(
+          session,
+          TeamCache.overviewKey(session),
+          _json(label: 'Cached'),
+          binding: TeamCache.bind(session),
+        ),
+      );
+      final api = _Api([_json()])..gate = Completer<void>();
+      await tester.pumpWidget(_host(api, session: session));
+      await tester.pump();
+      await tester.pump();
+      expect(api.calls, ['today/-']); // the fetch was not held by the read
+      expect(find.text('of 49 expected · Cached today'), findsOneWidget);
+      expect(find.byKey(const ValueKey('ov-progress')), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      // A cached answer is never live and has no For you (A-X2, T8-m4).
+      expect(find.textContaining('Live · '), findsNothing);
+      expect(find.text(OverviewCopy.forYou), findsNothing);
+      expect(find.byKey(_strip), findsNothing);
+
+      api.gate!.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('of 49 expected · Novaworks today'), findsOneWidget);
+      expect(find.text('of 49 expected · Cached today'), findsNothing);
+      expect(find.byKey(const ValueKey('ov-progress')), findsNothing);
+      expect(find.text(OverviewCopy.forYou), findsOneWidget);
+    });
+
+    testWidgets('P1: a cache stored under another scope is never painted', (
+      tester,
+    ) async {
+      _tall(tester);
+      final session = _ScopeSession();
+      await tester.runAsync(
+        () => TeamCache.write(
+          session,
+          TeamCache.overviewKey(session),
+          _json(label: 'Cached'),
+          binding: TeamCache.bind(session),
+        ),
+      );
+      session.scope = '2222222222222222'; // a /me changed the scope since
+      final api = _Api([_json()])..gate = Completer<void>();
+      await tester.pumpWidget(_host(api, session: session));
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('of 49 expected · Cached today'), findsNothing);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      api.gate!.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('of 49 expected · Novaworks today'), findsOneWidget);
+    });
+
+    testWidgets('P1: a day switch keeps the sections under a thin line; the '
+        'late answer of the previous selection never overwrites the new one; '
+        'stale tiles open nothing', (tester) async {
+      _tall(tester);
+      final key = GlobalKey<TeamOverviewScreenState>();
+      final log = _Log();
+      final api = _Api([_json(), _json(), _json(day: 'yesterday')]);
+      await tester.pumpWidget(_host(api, key: key, log: log));
+      await tester.pumpAndSettle();
+      // A refresh of today is on the wire when Yesterday is tapped.
+      api.gate = Completer<void>();
+      unawaited(key.currentState!.refresh());
+      await tester.pump();
+      await tester.tap(find.text('Yesterday · reviewed'));
+      await tester.pump();
+      expect(find.text('42 checked in'), findsOneWidget); // kept
+      expect(find.byKey(const ValueKey('ov-progress')), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('ov-tile-late')));
+      await tester.pump();
+      expect(log.buckets, isEmpty);
+
+      api.gate!.complete(); // today's answer lands late: dropped
+      api.gate = null;
+      await tester.pumpAndSettle();
+      expect(api.calls, ['today/-', 'today/-', 'yesterday/-']);
+      expect(find.text('47 worked'), findsOneWidget);
+      expect(find.text('42 checked in'), findsNothing);
+      expect(find.byKey(const ValueKey('ov-progress')), findsNothing);
+    });
+
+    testWidgets('P1: a failed switch drops the previous selection instead of '
+        "showing its numbers as the new one's", (tester) async {
+      _tall(tester);
+      final api = _Api([_json(), ApiException('network_error')]);
+      await tester.pumpWidget(_host(api));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('ov-dept-5')));
+      await tester.pumpAndSettle();
+      expect(api.calls, ['today/-', 'today/5']);
+      expect(find.text('42 checked in'), findsNothing);
+      expect(find.byKey(_strip), findsNothing);
+      expect(
+        find.text('No internet connection. Check your network and try again.'),
+        findsOneWidget,
+      );
+      // The chips stay: All is one tap away.
+      expect(find.byKey(const ValueKey('ov-dept-all')), findsOneWidget);
+    });
+
     testWidgets('offline with no cache: the error and Retry', (tester) async {
       _tall(tester);
       final api = _Api([ApiException('network_error'), _json()]);

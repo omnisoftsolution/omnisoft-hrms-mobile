@@ -91,8 +91,19 @@ class TeamOverviewScreen extends StatefulWidget {
 }
 
 class TeamOverviewScreenState extends State<TeamOverviewScreen> {
-  /// The answer for the current day + department; null while it loads.
+  /// The answer on screen. Usually for the current day + department; after
+  /// a day or department switch it is the previous selection's, kept under
+  /// a thin progress line until the new answer lands (P1, 1.34.1) —
+  /// [_shownDay] / [_shownDepartment] say which selection it is for. Null
+  /// while nothing can be shown.
   TeamOverview? _overview;
+
+  /// The day (`today` / `yesterday`) and department [_overview] answers.
+  String? _shownDay;
+  int? _shownDepartment;
+
+  /// A fetch is running (drives the thin progress line).
+  bool _busy = false;
 
   /// The last good answer of any selection: keeps the department chips and
   /// the day switch on screen while a new selection loads.
@@ -135,6 +146,52 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
       },
     );
     refresh();
+    // The cached answer paints while the first fetch runs (P1), as the
+    // outlook does; read under its own binding, never shown when stale.
+    unawaited(_showCached());
+  }
+
+  /// [_overview] answers the selection on screen now (not a previous day
+  /// or department kept while the new one loads).
+  bool get _shownMatches =>
+      _overview != null &&
+      _shownDay == _day &&
+      _shownDepartment == _departmentId;
+
+  /// Shows the cached answer of the current selection (today only; only
+  /// today is cached) unless a matching answer is already on screen: on
+  /// first build, and after a switch to a department of today. The binding
+  /// is taken with the key, before the read (A-L15); a read that lands
+  /// after a clear, a sign-out, a new sign-in, a scope change or another
+  /// switch is dropped (A-L21). For you is stripped (A-X2).
+  Future<void> _showCached() async {
+    final session = context.read<SessionService>();
+    if (session.employeeId <= 0 || session.isClearing) return;
+    final day = _day;
+    final departmentId = _departmentId;
+    if (day != 'today') return;
+    final key = TeamCache.overviewKey(session, departmentId: departmentId);
+    final binding = TeamCache.bind(session);
+    final hit = await TeamCache.readQuietly(session, key);
+    if (!mounted || hit == null) return;
+    if (day != _day || departmentId != _departmentId || _shownMatches) return;
+    if (!binding.isCurrent(session)) return;
+    final overview = TeamOverview.fromJson({
+      ...hit.$1,
+      'for_you': const <Object>[],
+    });
+    setState(() {
+      _overview = overview;
+      _overviewBinding = binding;
+      _shownDay = day;
+      _shownDepartment = departmentId;
+      if (_last == null) {
+        _last = overview;
+        _lastBinding = binding;
+      }
+      _cachedAt = hit.$2;
+      _firstLoadError = null;
+    });
   }
 
   @override
@@ -167,6 +224,8 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
   void _dropShown() {
     _overview = null;
     _overviewBinding = null;
+    _shownDay = null;
+    _shownDepartment = null;
     _last = null;
     _lastBinding = null;
     _cachedAt = null;
@@ -195,9 +254,17 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
   /// Reload the overview. Called on first build, pull-to-refresh, on
   /// return from a pushed screen, on app resume and by HomeRoot (Task 9).
   /// Overlapping calls share the one request in flight.
-  Future<void> refresh() => _inFlight ??= _load().whenComplete(() {
+  Future<void> refresh() => _inFlight ??= _startLoad().whenComplete(() {
     _inFlight = null;
+    if (mounted && _busy) setState(() => _busy = false);
   });
+
+  Future<void> _startLoad() {
+    // No setState: refresh() runs from initState too; the frames that
+    // show the progress line (a switch, a cached answer) rebuild anyway.
+    _busy = true;
+    return _load();
+  }
 
   Future<void> _load() async {
     final session = context.read<SessionService>();
@@ -230,6 +297,8 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
       setState(() {
         _overview = overview;
         _overviewBinding = binding;
+        _shownDay = day;
+        _shownDepartment = departmentId;
         _last = overview;
         _lastBinding = binding;
         _cachedAt = null;
@@ -281,6 +350,17 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
       // whose binding moved goes, and only a cached entry read under this
       // request's (current) binding may take its place.
       if (!_shownIsCurrent(session)) setState(_dropShown);
+      // An answer kept from the previous selection (P1) is not this
+      // selection's: it goes; the chips in [_last] stay.
+      if (_overview != null && !_shownMatches) {
+        setState(() {
+          _overview = null;
+          _overviewBinding = null;
+          _shownDay = null;
+          _shownDepartment = null;
+          _cachedAt = null;
+        });
+      }
       if (_overview != null) {
         setState(() => _refreshFailed = true);
         return;
@@ -301,6 +381,8 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
           setState(() {
             _overview = overview;
             _overviewBinding = binding;
+            _shownDay = day;
+            _shownDepartment = departmentId;
             if (_last == null) {
               _last = overview;
               _lastBinding = binding;
@@ -360,9 +442,11 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
     return refresh();
   }
 
-  /// A day or department switch. The request on the wire (for the old
-  /// selection) lands first and is dropped by [_load]; then the new
-  /// selection loads.
+  /// A day or department switch. What is on screen stays, under a thin
+  /// progress line, until the new selection answers (P1, 1.34.1); a cached
+  /// answer of a today selection replaces it at once. The request on the
+  /// wire (for the old selection) lands first and is dropped by [_load]
+  /// (it checks day and department), then the new selection loads.
   Future<void> _select({
     String? day,
     int? departmentId,
@@ -376,14 +460,15 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
     setState(() {
       _day = nextDay;
       _departmentId = nextDepartment;
-      _overview = null;
-      _overviewBinding = null;
-      _cachedAt = null;
+      _busy = true;
       _firstLoadError = null;
       _refreshFailed = false;
     });
+    unawaited(_showCached());
     await _inFlight;
     if (!mounted) return;
+    // The old request's end cleared the line; this one keeps it on.
+    setState(() => _busy = true);
     await refresh();
   }
 
@@ -421,6 +506,9 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
   /// A count tile (names only): Task 7's drill-down on the tab Navigator,
   /// for today's counts and the current department; back refreshes.
   void _openBucket(String bucket) {
+    // The tiles of a previous selection, kept while the new one loads, do
+    // not open a drill-down for the new one.
+    if (!_shownMatches) return;
     final custom = widget.onBucketTap;
     if (custom != null) return custom(bucket);
     final overview = _overview;
@@ -572,8 +660,18 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
                 child: Center(child: CircularProgressIndicator()),
               )
             : ErrorStateView(message: error, onRetry: _retry)
-      else
+      else ...[
+        // The sections stay while a switch or the first fetch runs (P1):
+        // a thin line says newer numbers are on the way.
+        if (_busy && (!_shownMatches || _cachedAt != null)) ...[
+          const LinearProgressIndicator(
+            key: ValueKey('ov-progress'),
+            minHeight: 2,
+          ),
+          const SizedBox(height: 12),
+        ],
         ..._sections(context, overview),
+      ],
     ];
   }
 
@@ -588,12 +686,15 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
     final reviewed = o.reviewed;
     final whoOut = o.whoOut;
     final today = o.date ?? DateUtils.dateOnly(DateTime.now());
+    // The day the shown answer is for (a switch keeps the previous one on
+    // screen until the new one lands).
+    final shownDay = _shownDay ?? _day;
     return [
       if (empty != null) ...[
         _emptyCard(empty),
         const SizedBox(height: 16),
       ] else ...[
-        if (_day == 'today' && counts != null) ...[
+        if (shownDay == 'today' && counts != null) ...[
           OverviewTodayTile(
             counts: counts,
             scopeLabel: scopeLabel,
@@ -609,7 +710,7 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
           ),
           const SizedBox(height: 14),
         ],
-        if (_day == 'yesterday' && reviewed != null) ...[
+        if (shownDay == 'yesterday' && reviewed != null) ...[
           OverviewYesterdayTile(reviewed: reviewed, scopeLabel: scopeLabel),
           const SizedBox(height: 8),
           OverviewCountGrid(cells: yesterdayCells(reviewed)),
