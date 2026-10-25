@@ -1,3 +1,4 @@
-Team leave: see who on your team is off in the next 30, 60 or 90 days (Leave tab).
-Team overview for managers: today's check-ins, who's out and yesterday's review, when HR turns it on.
-Both need your company's server to be updated first.
+Team leave: tap a day to see who is off; clearer calendar colours (Sundays and public holidays in red).
+Team overview: Who's out lists each person once for the next 7 days; switching day or department keeps the page while it updates.
+Check-in: if your face isn't recognised, try again right away (up to 3 tries).
+Home and Leave reload with less waiting.

@@ -261,6 +261,12 @@ Spec + plan live in the connector repo:
   `refresh()` calls share one in-flight request. A `kiosk_only: false` answer re-pulls
   `/me` (the tile gets its check-in button back; My day stays). `_onTap` ignores taps while
   one is in progress.
+- `MyDayMemory` (lib/services/my_day_memory.dart, 1.34.1): the last My day body of this sign-in, **in memory
+  only** (key = client URL + db + employee + `requestEpoch`; nothing without an employee). A new `MyDayScreen` (Home
+  switch Team overview → My day) paints it at once under a thin `my-day-memory-progress` line and refetches; the
+  controller (GPS timer, punch button) is still made only from the fresh answer. Cleared when a sign-out / logout
+  begins (`SessionService._clear` / `logout`) and on `MyDayMemory.dropsOn` answers (no_employee_linked,
+  invalid_session, not_allowed, …). Never keep MyDayScreen mounted offstage instead (its 60 s GPS timer).
 - For-you rows: `ForYouItem.id == 0` (server omitted it) means a `my_leave` / `my_expense`
   row does nothing on tap. `my_expense.state` shows `submitted` → "Waiting for approval",
   `approved` / `posted` / `in_payment` / `paid` → "Approved", `refused` → "Refused".
@@ -388,6 +394,14 @@ Spec + plan live in the connector repo:
   The 1.30.1 (93) first cut had the circle off-centre (a shrink-wrapped Column) and no context.
 - Circle size `_kCircle` = 260 (the 1.28 button's 200 + 30%, Willy 2026-10-08); halo +48 → 308 for
   the button, the camera and the tick alike. Title of the Home tab: `helloTitle()` → "Hello, Ethan".
+- Face retries (1.34.1, P3): a genuine mismatch (`FaceVerifyResult.ok == false && !isError`) reopens the camera
+  inside the same punch. **One shared budget** of `AttendanceActionController.maxFaceAttempts` = 3 camera shots per
+  check-in/out: `perform(captureFace: (FaceAttempt a) …)` passes `shotsLeft`, `InlineFaceCapture(maxAttempts:)`
+  caps its own quality/liveness retries to it and reports `FaceCaptureResult.attempts`. Quality + liveness +
+  identity re-run every try (same 0.70 threshold); not-enrolled, engine errors, quality/liveness errors, camera
+  errors and cancels are never retried; nothing is posted before a match. The Face row shows
+  `faceRetryLabel` ("Not recognised · 2 tries left", `PunchStepState.retrying`); scores in debugPrint only. The
+  minimum pulse only precedes the first camera.
 - `FaceCaptureScreen` is now only used by face enrolment.
 - Seams: `MyDayScreen.captureFace` (punch without the page, the older tests) and
   `MyDayScreen.signatureCaptureBuilder` / `CheckInOutScreen.captureBuilder` (fake camera).
@@ -526,11 +540,27 @@ Design: `session-assets/2026-10-22-team-leave-mgmt-day/proposal.md` (r3); plans:
   `lib/screens/team/team_leave_screen.dart` (heat map `heat_map.dart`, text `team_format.dart`, colours
   `team_colors.dart` — the only hex values, dark mode goes there). Apply sheet: `AlsoOffLine` (informational,
   never blocks submit).
+- 1.34.1 outlook: a day tap opens `showTeamDaySheet` (`team_day_detail.dart`; `TeamDayDetail` is shared with the
+  inline day card, which stays and follows the tapped day) **on the tab navigator** like My day's day sheet. Calendar
+  colours: working day nobody off = `cell0` light surface + `cellLine` hairline; non-working = no fill, muted digit;
+  Sunday digit + weekday letter red (`sunday`, not on the `c2`/`c3` shades; a calendar accent, not "rest day");
+  public holiday = `holCell` #FFDAD6 + red "PH"; blue `c1`–`c3` density unchanged; legend has a "0" swatch.
+  **No privacy banner** (removed 1.34.1): the server discloses type / pending per viewer (requester, approvers and
+  Time Off officers always see both), so a company-default line was wrong for officers.
 - HOME: `HomeRoot` (`lib/screens/home/home_root.dart`) picks My day / `TeamOverviewScreen` / the switch
   (`PillSegments`, remembered per employee `home_mode|<db>|<id>`). Overview: counts, Yesterday (reviewed),
   drill-down `OverviewDrillScreen` (tab navigator), person sheet (root navigator), Who's out, For you (shared
   `openForYouItem`; `yesterday_incomplete` stays on My day). Missing route / any access-lost answer → My day for the run +
   `refreshMe()`. A Who's out row opens the person sheet only with `names` and `WhoOutToday.tracked`.
+  Who's out NEXT 7 DAYS (1.34.1): `collapseNext7` (who_out_card.dart) folds the server's per-day lists into one
+  line per person per run of consecutive dates ("Vanessa Leonora · R&D · Mon 26 – Sun 1"), split at a gap (any day
+  not listed, weekends included) or a pending/approved change; pending = `TeamPendingChip`. Payload unchanged.
+- Fewer spinners (1.34.1, P1): the overview paints its `TeamCache` answer (read under its own binding, For you
+  stripped, never live) while the first fetch runs, under a thin `ov-progress` line. A Today/Yesterday or department
+  switch keeps the shown sections (`_shownDay` / `_shownDepartment` say which selection they answer) under that line;
+  a late answer for the previous selection is dropped, a failed switch drops the old numbers (chips stay), stale
+  count tiles open nothing. The LEAVE tab (`LeaveScreen.refresh`, called on every tab visit) and `ApprovalsScreen`
+  reload in the background once loaded; a failed background reload keeps the content (pull-down: snackbar).
 - Errors on these screens: `friendlyError(e, context: ErrorContext.team)` (own branch: `not_allowed` / `not_found`
   wording, usual transport words otherwise); `names_hidden` / `invalid_department` have words in every context.
 - Cache: `TeamCache` (`team_v1|<db>|<employee>|…`, signature = `team_scope_sig`, else
@@ -556,7 +586,9 @@ Design: `session-assets/2026-10-22-team-leave-mgmt-day/proposal.md` (r3); plans:
   with `for_you: []`, strips `for_you` on read, and shows no For you section (no header, no empty state) when it
   shows a cached answer. The reason is that the expenses and payroll flags behind those cards are not part of
   `team_scope_sig`.
-- Tests: `test/screens/team/`, `test/screens/home/overview/`, `test/screens/home/home_root_test.dart`,
+- Tests: `test/screens/team/`, `test/screens/home/overview/`, `test/screens/home/home_root_test.dart` (its setUp
+  clears `MyDayMemory`, a static: do the same in any new test that mounts MyDayScreen with an employee),
+  `test/services/my_day_memory_test.dart`,
   `test/services/session_team_flags_test.dart`, `test/services/team_api_test.dart`, `test/services/team_cache_test.dart`,
   `test/models/team_*_test.dart`, `test/widgets/pill_segments_test.dart`.
 - Needs connector 2.65.0 for anything to show; older connectors keep 1.33 behaviour (matrix in the plan).
