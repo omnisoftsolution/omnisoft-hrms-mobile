@@ -49,29 +49,24 @@ IPA_OUTPUT_NAME = "omnihr.ipa"
 # this per release. Inlined (not read from a file) so it can't break on a
 # path/cwd surprise during the upload step. TestFlight allows ~4000 chars.
 TESTFLIGHT_CHANGELOG = <<~NOTES.freeze
-  New in this build (1.33.0, needs connector 2.63.0 and hrmsmanager 1.9.0):
-  - Notifications: leave and expense decisions, "Approval needed" for
-    approvers, questions and changes from HR about your attendance,
-    company news and personal messages, a new phone added to your
-    account, and (when your company turns them on) check-in / check-out
-    reminders. Home asks once "Stay on top of your day"; turn them on
-    there or later in Profile > Notifications, where each group can be
-    switched off (Security stays on).
-  - Tapping a notification opens the matching screen. With the app open
-    you get a small banner at the bottom instead.
-  - When someone else decides a request first, its "Approval needed"
-    notification disappears from your phone.
+  New in this build (1.34.1, best with connector 2.65.3):
+  - Team overview (people HR gives it): Today and Yesterday counts,
+    Who's out with one line per person ("Mon 26 - Tue 3"), and the
+    30 / 60 / 90-day team leave calendar.
+  - Team leave calendar: tap a day to see who is off in a sheet;
+    clearer colours (Sundays and public holidays in red, "PH").
+  - Check-in: if your face isn't recognised, the camera opens again
+    straight away (3 tries in total per check-in).
+  - Less waiting: switching Team overview / My day, Today / Yesterday
+    or department keeps the page while it updates; the Leave tab no
+    longer flashes a spinner.
 
   Please test:
-  1. Open the app, accept "Stay on top of your day" and allow
-     notifications.
-  2. Ask HR to approve or refuse one of your leaves: the notification
-     arrives with the phone locked, and a tap opens your leave.
-  3. As an approver, get "Approval needed", tap it, approve: the request
-     opens and the Leave badge updates.
-  4. Profile > Notifications: switch Company news off, ask HR to send a
-     message: nothing arrives. Switch it back on.
-  5. Log out: no more notifications arrive on this phone.
+  1. Check in with your face half covered: "Not recognised - 2 tries
+     left", then check in normally on the next try.
+  2. Team overview (if you have it): open Who's out and the 30-day
+     calendar, tap a day.
+  3. Approve or refuse a leave as an approver.
 NOTES
 
 platform :ios do
