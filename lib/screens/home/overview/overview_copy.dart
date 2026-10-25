@@ -76,9 +76,8 @@ class OverviewCopy {
   ].join(' · ');
 
   /// A-L7: Yesterday is scored in the morning by the Daily Review.
-  static const reviewedFinal =
-      "Scored by the Daily Review — the same verdicts HR sees, including "
-      "HR's corrections.";
+  /// 1.34.1: shortened (colleague feedback) — the long form wrapped to three lines.
+  static const reviewedFinal = 'Scored by the Daily Review';
   static const reviewedProvisional =
       'Still being scored — numbers may change tonight.';
 

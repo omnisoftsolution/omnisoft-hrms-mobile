@@ -63,11 +63,7 @@ void main() {
 
   group('OverviewCopy', () {
     test('Yesterday copy (A-L7)', () {
-      expect(
-        OverviewCopy.reviewedFinal,
-        "Scored by the Daily Review — the same verdicts HR sees, including "
-        "HR's corrections.",
-      );
+      expect(OverviewCopy.reviewedFinal, 'Scored by the Daily Review');
       expect(
         OverviewCopy.reviewedProvisional,
         'Still being scored — numbers may change tonight.',
