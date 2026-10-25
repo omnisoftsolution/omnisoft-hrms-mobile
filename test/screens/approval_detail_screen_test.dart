@@ -365,6 +365,54 @@ void main() {
     expect(session.refreshMeCalls, 1);
   });
 
+  testWidgets('server_error on Approve re-reads the request, never "Request '
+      'not changed" (the decision may be saved, connector 2.65.3)', (
+    tester,
+  ) async {
+    await tester.pumpWidget(host(api, session, popped));
+    await open(tester);
+    api.approveError = ApiException('server_error');
+    // The approval did land before the server failed.
+    api.detail = detailJson(state: 'validate', canApprove: false, canRefuse: false);
+    await tapVisible(tester, approveButton);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(find.text('Request not changed'), findsNothing);
+    expect(
+      find.text("Couldn't confirm the result. Showing the latest."),
+      findsOneWidget,
+    );
+    expect(api.calls, ['get:148', 'approve:148:confirm', 'get:148']);
+    expect(approveButton, findsNothing);
+    expect(find.byType(ApprovalDetailScreen), findsOneWidget);
+    expect(popped, isEmpty);
+    expect(session.refreshMeCalls, 1);
+  });
+
+  testWidgets('server_error on Refuse closes the sheet and re-reads', (
+    tester,
+  ) async {
+    await tester.pumpWidget(host(api, session, popped));
+    await open(tester);
+    api.refuseError = ApiException('server_error');
+    await tapVisible(tester, refuseButton);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'Coverage issue');
+    await tester.pump();
+    await tester.tap(sheetRefuseButton);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Refuse this request'), findsNothing);
+    expect(find.text('Request not changed'), findsNothing);
+    expect(
+      find.text("Couldn't confirm the result. Showing the latest."),
+      findsOneWidget,
+    );
+    expect(api.calls.last, 'get:148');
+    expect(session.refreshMeCalls, 1);
+  });
+
   testWidgets('a request that is gone goes back to the list with a message',
       (tester) async {
     api.getError = ApiException('not_found');

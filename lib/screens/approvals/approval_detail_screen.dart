@@ -124,6 +124,16 @@ class _ApprovalDetailScreenState extends State<ApprovalDetailScreen> {
       await _load();
       return;
     }
+    if (code == 'server_error') {
+      // The server may have saved the decision and failed after it
+      // (connector 2.65.3 answers server_error when its commit raised), so
+      // never say "not changed": show the request as it is now.
+      _refreshCount();
+      if (!mounted) return;
+      _toast("Couldn't confirm the result. Showing the latest.", error: true);
+      await _load();
+      return;
+    }
     if (!mounted) return;
     // Anything else (no network, or Odoo refused the change with a
     // validation message): say so, the request stays as it was.
