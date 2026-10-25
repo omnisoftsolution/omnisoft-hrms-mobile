@@ -50,18 +50,40 @@ class Next7Range {
     required this.from,
     required this.to,
     required this.pending,
+    this.until,
   });
 
   /// The person as the first day of the range lists them.
   final WhoOutToday person;
+
+  /// First and last day the window lists the person in this run.
   final DateTime from;
   final DateTime to;
   final bool pending;
 
-  /// "Mon 26" for one day, "Mon 26 – Sun 1" for several.
-  String get whenLabel => from == to
-      ? next7DayLabel(from)
-      : '${next7DayLabel(from)} – ${next7DayLabel(to)}';
+  /// The request's last day as the server sends it on the run's last day
+  /// (`until`, connector 2.65.3; may be past the 7-day window). Null on an
+  /// older connector.
+  final DateTime? until;
+
+  /// The day the line ends on: [until] when it is after [to] (the leave
+  /// goes on past the window, or over days the window does not list),
+  /// else [to].
+  DateTime get end {
+    final u = until;
+    return u != null && u.isAfter(to) ? u : to;
+  }
+
+  /// "Mon 26" for one day, "Mon 26 – Thu 29" within a month, and with the
+  /// months when they differ: "Mon 26 Oct – Tue 3 Nov".
+  String get whenLabel {
+    final last = end;
+    if (from == last) return next7DayLabel(from);
+    if (from.month != last.month || from.year != last.year) {
+      return '${dayTitle(from)} – ${dayTitle(last)}';
+    }
+    return '${next7DayLabel(from)} – ${next7DayLabel(last)}';
+  }
 
   /// "R&D · Mon 26 – Sun 1" (the department only when sent).
   String get detail => [
@@ -79,17 +101,24 @@ class Next7Range {
 /// The NEXT 7 DAYS section as one line per person per run of consecutive
 /// days (1.34.1; the server lists every day): a run ends at a gap (a day
 /// the person is not listed, weekends included) or where the request's
-/// status changes between pending and approved. Ordered by first day, then
-/// name. A person is matched by id; one without an id (0) by name and
-/// department.
+/// status changes between pending and approved. With the request's `until`
+/// (connector 2.65.3) a run ends on that day instead (past the window, or
+/// over unlisted days such as a weekend), and a later run of the same
+/// person and status that starts by then is the same leave and folds in.
+/// Ordered by first day, then name. A person is matched by id; one without
+/// an id (0) by name and department.
 List<Next7Range> collapseNext7(List<WhoOutDay> days) {
   final sorted = [...days]
     ..sort(
       (a, b) =>
           DateUtils.dateOnly(a.date).compareTo(DateUtils.dateOnly(b.date)),
     );
+  DateTime? untilOf(WhoOutToday p) =>
+      p.until == null ? null : DateUtils.dateOnly(p.until!);
   final open = <String, Next7Range>{};
-  final out = <Next7Range>[];
+  final byKey = <String, List<Next7Range>>{};
+  void close(String key, Next7Range run) =>
+      (byKey[key] ??= <Next7Range>[]).add(run);
   for (final day in sorted) {
     final date = DateUtils.dateOnly(day.date);
     final seen = <String>{};
@@ -105,19 +134,47 @@ List<Next7Range> collapseNext7(List<WhoOutDay> days) {
           from: run.from,
           to: date,
           pending: pending,
+          until: untilOf(p),
         );
       } else {
-        if (run != null) out.add(run);
+        if (run != null) close(key, run);
         open[key] = Next7Range(
           person: p,
           from: date,
           to: date,
           pending: pending,
+          until: untilOf(p),
         );
       }
     }
   }
-  out.addAll(open.values);
+  open.forEach(close);
+  // A run whose leave (until) reaches the next run of the same person and
+  // status is one leave split by unlisted days: fold them.
+  final out = <Next7Range>[];
+  for (final runs in byKey.values) {
+    Next7Range? cur;
+    for (final r in runs) {
+      final c = cur;
+      final u = c?.until;
+      if (c != null &&
+          c.pending == r.pending &&
+          u != null &&
+          !r.from.isAfter(u)) {
+        cur = Next7Range(
+          person: c.person,
+          from: c.from,
+          to: r.to,
+          pending: r.pending,
+          until: r.until ?? u,
+        );
+      } else {
+        if (c != null) out.add(c);
+        cur = r;
+      }
+    }
+    if (cur != null) out.add(cur);
+  }
   out.sort((a, b) {
     final byDay = a.from.compareTo(b.from);
     if (byDay != 0) return byDay;

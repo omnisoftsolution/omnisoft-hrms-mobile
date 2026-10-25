@@ -178,7 +178,6 @@ void main() {
     test('day label', () {
       expect(next7DayLabel(DateTime(2026, 10, 23)), 'Fri 23');
     });
-
   });
 
   group('collapseNext7 (1.34.1)', () {
@@ -187,15 +186,21 @@ void main() {
       String name, {
       String department = 'R&D',
       String state = 'approved',
-    }) => {'id': id, 'name': name, 'department': department, 'state': state};
+      String? until,
+    }) => {
+      'id': id,
+      'name': name,
+      'department': department,
+      'state': state,
+      'until': ?until,
+    };
 
     List<Next7Range> collapse(Map<String, List<Map<String, dynamic>>> byDay) =>
         collapseNext7(
           WhoOut.fromJson({
             'today': [],
             'next_7': [
-              for (final e in byDay.entries)
-                {'date': e.key, 'people': e.value},
+              for (final e in byDay.entries) {'date': e.key, 'people': e.value},
             ],
           }).next7,
         );
@@ -208,13 +213,15 @@ void main() {
       expect(r.single.pending, isFalse);
     });
 
-    test('consecutive days become one line', () {
+    test('consecutive days become one line; months shown when they differ', () {
       final r = collapse({
         for (final d in ['26', '27', '28', '29', '30', '31'])
           '2026-10-$d': [p(7, 'Vanessa Leonora')],
         '2026-11-01': [p(7, 'Vanessa Leonora')],
       });
-      expect(r.map((x) => x.line), ['Vanessa Leonora · R&D · Mon 26 – Sun 1']);
+      expect(r.map((x) => x.line), [
+        'Vanessa Leonora · R&D · Mon 26 Oct – Sun 1 Nov',
+      ]);
       expect(r.single.from, DateTime(2026, 10, 26));
       expect(r.single.to, DateTime(2026, 11, 1));
     });
@@ -225,7 +232,9 @@ void main() {
         '2026-11-01': [p(7, 'Vanessa Leonora')],
         '2026-11-02': [p(7, 'Vanessa Leonora')],
       });
-      expect(r.map((x) => x.line), ['Vanessa Leonora · R&D · Sat 31 – Mon 2']);
+      expect(r.map((x) => x.line), [
+        'Vanessa Leonora · R&D · Sat 31 Oct – Mon 2 Nov',
+      ]);
     });
 
     test('a gap splits the run', () {
@@ -278,6 +287,76 @@ void main() {
         '2026-10-23': [p(7, 'Vanessa Leonora'), p(7, 'Vanessa Leonora')],
       });
       expect(r.map((x) => x.line), ['Vanessa Leonora · R&D · Fri 23 – Sat 24']);
+    });
+
+    test('until past the window: the line ends on the leave\'s last day', () {
+      final r = collapse({
+        '2026-10-26': [p(7, 'Vanessa Leonora', until: '2026-10-30')],
+        '2026-10-27': [p(7, 'Vanessa Leonora', until: '2026-10-30')],
+      });
+      expect(r.map((x) => x.line), ['Vanessa Leonora · R&D · Mon 26 – Fri 30']);
+      expect(r.single.to, DateTime(2026, 10, 27));
+      expect(r.single.end, DateTime(2026, 10, 30));
+    });
+
+    test('until in another month adds both months', () {
+      final r = collapse({
+        '2026-10-26': [p(7, 'Vanessa Leonora', until: '2026-11-03')],
+        '2026-10-27': [p(7, 'Vanessa Leonora', until: '2026-11-03')],
+      });
+      expect(r.map((x) => x.line), [
+        'Vanessa Leonora · R&D · Mon 26 Oct – Tue 3 Nov',
+      ]);
+    });
+
+    test(
+      'one leave split by a weekend the window does not list is one line',
+      () {
+        final r = collapse({
+          '2026-10-29': [p(7, 'Vanessa Leonora', until: '2026-11-03')],
+          '2026-10-30': [p(7, 'Vanessa Leonora', until: '2026-11-03')],
+          '2026-11-02': [p(7, 'Vanessa Leonora', until: '2026-11-03')],
+        });
+        expect(r.map((x) => x.line), [
+          'Vanessa Leonora · R&D · Thu 29 Oct – Tue 3 Nov',
+        ]);
+        expect(r.single.to, DateTime(2026, 11, 2));
+      },
+    );
+
+    test('until before the next run: two leaves stay two lines', () {
+      final r = collapse({
+        '2026-10-26': [p(7, 'Vanessa Leonora', until: '2026-10-27')],
+        '2026-10-27': [p(7, 'Vanessa Leonora', until: '2026-10-27')],
+        '2026-10-29': [p(7, 'Vanessa Leonora', until: '2026-10-30')],
+      });
+      expect(r.map((x) => x.line), [
+        'Vanessa Leonora · R&D · Mon 26 – Tue 27',
+        'Vanessa Leonora · R&D · Thu 29 – Fri 30',
+      ]);
+    });
+
+    test('a pending run is not folded into an approved leave', () {
+      final r = collapse({
+        '2026-10-26': [p(7, 'Vanessa Leonora', until: '2026-10-28')],
+        '2026-10-28': [
+          p(7, 'Vanessa Leonora', state: 'pending', until: '2026-10-28'),
+        ],
+      });
+      expect(r.map((x) => x.toString()), [
+        'Vanessa Leonora · R&D · Mon 26 – Wed 28',
+        'Vanessa Leonora · R&D · Wed 28 (pending)',
+      ]);
+    });
+
+    test('no until (older connector): the window\'s days only', () {
+      final r = collapse({
+        '2026-10-26': [p(7, 'Vanessa Leonora')],
+        '2026-10-27': [p(7, 'Vanessa Leonora')],
+      });
+      expect(r.single.until, isNull);
+      expect(r.single.end, DateTime(2026, 10, 27));
+      expect(r.map((x) => x.line), ['Vanessa Leonora · R&D · Mon 26 – Tue 27']);
     });
 
     test('nothing in the next 7 days: no lines', () {
