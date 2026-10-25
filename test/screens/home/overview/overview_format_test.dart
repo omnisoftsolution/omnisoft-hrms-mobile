@@ -179,48 +179,110 @@ void main() {
       expect(next7DayLabel(DateTime(2026, 10, 23)), 'Fri 23');
     });
 
-    test('names with department and pending', () {
-      final people = TeamOverview.fromJson({
-        'who_out': {
-          'today': [],
-          'next_7': [
-            {
-              'date': '2026-10-23',
-              'people': [
-                {
-                  'id': 14,
-                  'name': 'Priya Nair',
-                  'department': 'Marketing',
-                  'state': 'approved',
-                },
-                {
-                  'id': 31,
-                  'name': 'Lina Koh',
-                  'department': 'Fabric',
-                  'state': 'pending',
-                },
-                {
-                  'id': 40,
-                  'name': 'Daniel Tan',
-                  'department': '',
-                  'state': 'pending',
-                },
-                {
-                  'id': 41,
-                  'name': 'Marcus Yeo',
-                  'department': '',
-                  'state': 'approved',
-                },
-              ],
-            },
-          ],
-        },
-      }).whoOut!.next7.single.people;
-      expect(
-        next7Names(people),
-        'Priya Nair (Marketing), Lina Koh (Fabric, pending), '
-        'Daniel Tan (pending), Marcus Yeo',
-      );
+  });
+
+  group('collapseNext7 (1.34.1)', () {
+    Map<String, dynamic> p(
+      int id,
+      String name, {
+      String department = 'R&D',
+      String state = 'approved',
+    }) => {'id': id, 'name': name, 'department': department, 'state': state};
+
+    List<Next7Range> collapse(Map<String, List<Map<String, dynamic>>> byDay) =>
+        collapseNext7(
+          WhoOut.fromJson({
+            'today': [],
+            'next_7': [
+              for (final e in byDay.entries)
+                {'date': e.key, 'people': e.value},
+            ],
+          }).next7,
+        );
+
+    test('a single day', () {
+      final r = collapse({
+        '2026-10-23': [p(14, 'Priya Nair', department: 'Marketing')],
+      });
+      expect(r.map((x) => x.line), ['Priya Nair · Marketing · Fri 23']);
+      expect(r.single.pending, isFalse);
+    });
+
+    test('consecutive days become one line', () {
+      final r = collapse({
+        for (final d in ['26', '27', '28', '29', '30', '31'])
+          '2026-10-$d': [p(7, 'Vanessa Leonora')],
+        '2026-11-01': [p(7, 'Vanessa Leonora')],
+      });
+      expect(r.map((x) => x.line), ['Vanessa Leonora · R&D · Mon 26 – Sun 1']);
+      expect(r.single.from, DateTime(2026, 10, 26));
+      expect(r.single.to, DateTime(2026, 11, 1));
+    });
+
+    test('a month boundary does not split a run', () {
+      final r = collapse({
+        '2026-10-31': [p(7, 'Vanessa Leonora')],
+        '2026-11-01': [p(7, 'Vanessa Leonora')],
+        '2026-11-02': [p(7, 'Vanessa Leonora')],
+      });
+      expect(r.map((x) => x.line), ['Vanessa Leonora · R&D · Sat 31 – Mon 2']);
+    });
+
+    test('a gap splits the run', () {
+      final r = collapse({
+        '2026-10-26': [p(7, 'Vanessa Leonora')],
+        '2026-10-27': [p(7, 'Vanessa Leonora')],
+        '2026-10-29': [p(7, 'Vanessa Leonora')],
+      });
+      expect(r.map((x) => x.line), [
+        'Vanessa Leonora · R&D · Mon 26 – Tue 27',
+        'Vanessa Leonora · R&D · Thu 29',
+      ]);
+    });
+
+    test('a status change splits the run; the pending part keeps its flag', () {
+      final r = collapse({
+        '2026-10-26': [p(7, 'Vanessa Leonora')],
+        '2026-10-27': [p(7, 'Vanessa Leonora')],
+        '2026-10-28': [p(7, 'Vanessa Leonora', state: 'pending')],
+        '2026-10-29': [p(7, 'Vanessa Leonora', state: 'pending')],
+      });
+      expect(r.map((x) => x.toString()), [
+        'Vanessa Leonora · R&D · Mon 26 – Tue 27',
+        'Vanessa Leonora · R&D · Wed 28 – Thu 29 (pending)',
+      ]);
+    });
+
+    test('several people: ordered by first day, then name; no department '
+        'means no department part', () {
+      final r = collapse({
+        '2026-10-23': [
+          p(31, 'Lina Koh', department: 'Fabric', state: 'pending'),
+          p(14, 'Priya Nair', department: 'Marketing'),
+        ],
+        '2026-10-24': [p(14, 'Priya Nair', department: 'Marketing')],
+        '2026-10-26': [p(40, 'Daniel Tan', department: '')],
+        '2026-10-22': [p(41, 'Marcus Yeo', department: '')],
+      });
+      expect(r.map((x) => x.toString()), [
+        'Marcus Yeo · Thu 22',
+        'Lina Koh · Fabric · Fri 23 (pending)',
+        'Priya Nair · Marketing · Fri 23 – Sat 24',
+        'Daniel Tan · Mon 26',
+      ]);
+    });
+
+    test('unordered days and a person listed twice on one day', () {
+      final r = collapse({
+        '2026-10-24': [p(7, 'Vanessa Leonora')],
+        '2026-10-23': [p(7, 'Vanessa Leonora'), p(7, 'Vanessa Leonora')],
+      });
+      expect(r.map((x) => x.line), ['Vanessa Leonora · R&D · Fri 23 – Sat 24']);
+    });
+
+    test('nothing in the next 7 days: no lines', () {
+      expect(collapse({}), isEmpty);
+      expect(collapse({'2026-10-23': []}), isEmpty);
     });
   });
 }

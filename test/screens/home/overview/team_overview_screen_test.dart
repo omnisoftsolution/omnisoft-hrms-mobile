@@ -389,10 +389,22 @@ void main() {
     expect(find.text('Part day'), findsOneWidget);
     expect(find.text('Management · On leave · today'), findsOneWidget);
     expect(find.text('NEXT 7 DAYS'), findsOneWidget);
-    expect(find.text('Fri 23'), findsOneWidget);
+    // One line per person per run of days (1.34.1), pending as a chip.
+    expect(find.text('Priya Nair · Marketing · Fri 23'), findsOneWidget);
+    expect(find.text('Lina Koh · Fabric · Fri 23'), findsOneWidget);
     expect(
-      find.text('Priya Nair (Marketing), Lina Koh (Fabric, pending)'),
-      findsOneWidget,
+      find.descendant(
+        of: find.byKey(const ValueKey('ov-next-0')),
+        matching: find.text('Pending'),
+      ),
+      findsOneWidget, // Lina (sorted first by name on the same day)
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('ov-next-1')),
+        matching: find.text('Pending'),
+      ),
+      findsNothing,
     );
     expect(find.text('See 30 / 60 / 90 days'), findsOneWidget);
     expect(find.text('For you'), findsOneWidget);

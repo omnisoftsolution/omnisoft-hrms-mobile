@@ -42,16 +42,90 @@ String whoOutTodayLine(WhoOutToday p, {required DateTime today}) {
 /// "Fri 23".
 String next7DayLabel(DateTime d) => DateFormat('EEE d', 'en_US').format(d);
 
-/// "Priya Nair (Marketing), Lina Koh (Fabric, pending), Daniel Tan (pending)".
-String next7Names(List<WhoOutToday> people) => people
-    .map((p) {
-      final extra = [
-        if (p.department.isNotEmpty) p.department,
-        if (p.state == 'pending') 'pending',
-      ];
-      return extra.isEmpty ? p.name : '${p.name} (${extra.join(', ')})';
-    })
-    .join(', ');
+/// One person off over consecutive days of the next 7 days, with one
+/// status (1.34.1): what a NEXT 7 DAYS line shows.
+class Next7Range {
+  const Next7Range({
+    required this.person,
+    required this.from,
+    required this.to,
+    required this.pending,
+  });
+
+  /// The person as the first day of the range lists them.
+  final WhoOutToday person;
+  final DateTime from;
+  final DateTime to;
+  final bool pending;
+
+  /// "Mon 26" for one day, "Mon 26 – Sun 1" for several.
+  String get whenLabel => from == to
+      ? next7DayLabel(from)
+      : '${next7DayLabel(from)} – ${next7DayLabel(to)}';
+
+  /// "R&D · Mon 26 – Sun 1" (the department only when sent).
+  String get detail => [
+    if (person.department.isNotEmpty) person.department,
+    whenLabel,
+  ].join(' · ');
+
+  /// "Vanessa Leonora · R&D · Mon 26 – Sun 1".
+  String get line => '${person.name} · $detail';
+
+  @override
+  String toString() => '$line${pending ? ' (pending)' : ''}';
+}
+
+/// The NEXT 7 DAYS section as one line per person per run of consecutive
+/// days (1.34.1; the server lists every day): a run ends at a gap (a day
+/// the person is not listed, weekends included) or where the request's
+/// status changes between pending and approved. Ordered by first day, then
+/// name. A person is matched by id; one without an id (0) by name and
+/// department.
+List<Next7Range> collapseNext7(List<WhoOutDay> days) {
+  final sorted = [...days]
+    ..sort(
+      (a, b) =>
+          DateUtils.dateOnly(a.date).compareTo(DateUtils.dateOnly(b.date)),
+    );
+  final open = <String, Next7Range>{};
+  final out = <Next7Range>[];
+  for (final day in sorted) {
+    final date = DateUtils.dateOnly(day.date);
+    final seen = <String>{};
+    for (final p in day.people) {
+      final key = p.id > 0 ? 'id:${p.id}' : 'n:${p.name}|${p.department}';
+      if (!seen.add(key)) continue; // listed twice on one day
+      final pending = p.isPending;
+      final run = open[key];
+      final next = run == null ? null : DateUtils.addDaysToDate(run.to, 1);
+      if (run != null && next == date && run.pending == pending) {
+        open[key] = Next7Range(
+          person: run.person,
+          from: run.from,
+          to: date,
+          pending: pending,
+        );
+      } else {
+        if (run != null) out.add(run);
+        open[key] = Next7Range(
+          person: p,
+          from: date,
+          to: date,
+          pending: pending,
+        );
+      }
+    }
+  }
+  out.addAll(open.values);
+  out.sort((a, b) {
+    final byDay = a.from.compareTo(b.from);
+    if (byDay != 0) return byDay;
+    final byName = a.person.name.compareTo(b.person.name);
+    return byName != 0 ? byName : a.to.compareTo(b.to);
+  });
+  return out;
+}
 
 /// Who's out: everyone in scope off today (part-day flagged), the next 7
 /// days, and the way into the 30 / 60 / 90-day outlook. A today row opens
@@ -76,6 +150,7 @@ class WhoOutCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final next7 = collapseNext7(whoOut.next7);
     const caption = TextStyle(
       fontSize: 12,
       fontWeight: FontWeight.w700,
@@ -154,7 +229,7 @@ class WhoOutCard extends StatelessWidget {
                 padding: EdgeInsets.fromLTRB(16, 4, 16, 4),
                 child: Text(OverviewCopy.next7Caption, style: caption),
               ),
-              if (whoOut.next7.isEmpty)
+              if (next7.isEmpty)
                 const Padding(
                   padding: EdgeInsets.fromLTRB(16, 6, 16, 6),
                   child: Text(
@@ -165,7 +240,7 @@ class WhoOutCard extends StatelessWidget {
                     ),
                   ),
                 ),
-              for (var i = 0; i < whoOut.next7.length; i++)
+              for (var i = 0; i < next7.length; i++)
                 Padding(
                   key: ValueKey('ov-next-$i'),
                   padding: const EdgeInsets.symmetric(
@@ -173,29 +248,30 @@ class WhoOutCard extends StatelessWidget {
                     vertical: 6,
                   ),
                   child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      SizedBox(
-                        width: 64,
-                        child: Text(
-                          next7DayLabel(whoOut.next7[i].date),
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: AppTheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
                       Expanded(
-                        child: Text(
-                          next7Names(whoOut.next7[i].people),
+                        child: Text.rich(
+                          TextSpan(
+                            children: [
+                              TextSpan(
+                                text: next7[i].person.name,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              TextSpan(text: ' · ${next7[i].detail}'),
+                            ],
+                          ),
                           style: const TextStyle(
                             fontSize: 13,
                             color: AppTheme.onSurface,
                           ),
                         ),
                       ),
+                      if (next7[i].pending) ...[
+                        const SizedBox(width: 8),
+                        const TeamPendingChip(),
+                      ],
                     ],
                   ),
                 ),
