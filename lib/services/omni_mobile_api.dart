@@ -154,6 +154,28 @@ bool isAccessLost(Object e) =>
     const {'not_allowed', 'names_hidden', 'feature_unavailable'}
         .contains(e.errorCode);
 
+/// True for a failure that says nothing about what the user may see: no
+/// network, a timeout or a server error (1.34.1). A screen that reloads in
+/// the background keeps what it shows only for these; any other answer
+/// (access lost, session gone, employee unlinked, …) drops it.
+bool isTransientError(Object e) =>
+    e is ApiException &&
+    const {'network_error', 'timeout', 'server_error'}.contains(e.errorCode);
+
+/// True when the answer says the session, the employee or the app access
+/// is gone ([isAccessLost] plus `invalid_session`, `session_expired`,
+/// `no_employee_linked`, `mobile_not_enabled`): what was shown for this
+/// user must go.
+bool isSessionOrAccessLost(Object e) =>
+    isAccessLost(e) ||
+    (e is ApiException &&
+        const {
+          'invalid_session',
+          'session_expired',
+          'no_employee_linked',
+          'mobile_not_enabled',
+        }.contains(e.errorCode));
+
 class OmniMobileApi {
   final String baseUrl;
   final String db;

@@ -273,6 +273,36 @@ void main() {
     expect(find.byType(SnackBar), findsOneWidget);
   });
 
+  for (final code in [
+    'feature_unavailable',
+    'not_allowed',
+    'invalid_session',
+    'no_employee_linked',
+    'mobile_not_enabled',
+  ]) {
+    testWidgets('$code on a reload after a loaded list clears both lists and '
+        'shows the error state', (tester) async {
+      final api = FakeApi(
+        pending: [pendingItem(1)],
+        recent: [pendingItem(5)],
+      );
+      await tester.pumpWidget(host(api));
+      await tester.pumpAndSettle();
+      expect(find.text('Emp 1'), findsOneWidget);
+
+      api.listError = ApiException(code);
+      tester.state<RefreshIndicatorState>(find.byType(RefreshIndicator)).show();
+      await tester.pumpAndSettle();
+      expect(find.text('Emp 1'), findsNothing);
+      expect(find.text('Retry'), findsOneWidget);
+      expect(find.text('Pending · 1'), findsNothing);
+      // Recent is cleared too.
+      await tester.tap(find.text('Recent'));
+      await tester.pumpAndSettle();
+      expect(find.text('Emp 5'), findsNothing);
+    });
+  }
+
   testWidgets('Pending splits into Waiting for you and You can also approve', (
     tester,
   ) async {

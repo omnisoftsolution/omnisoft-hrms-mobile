@@ -55,16 +55,7 @@ class MyDayMemory {
 
   /// Answers after which the remembered body must go: the employee, the
   /// session or the app access is gone.
-  static bool dropsOn(Object e) =>
-      e is ApiException &&
-      const {
-        'no_employee_linked',
-        'invalid_session',
-        'session_expired',
-        'not_allowed',
-        'feature_unavailable',
-        'mobile_not_enabled',
-      }.contains(e.errorCode);
+  static bool dropsOn(Object e) => isSessionOrAccessLost(e);
 
   /// Forgets the body (sign-out, logout, lost employee or session).
   static void clear() {

@@ -64,8 +64,11 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
 
   /// Loads both lists. Once they have loaded, a reload (pull-down, back
   /// from a request) runs in the background (P1, 1.34.1): the lists stay
-  /// instead of the full spinner, and a failed reload keeps them and says
-  /// so in a snackbar. Only the newest call's answer is applied.
+  /// instead of the full spinner. A reload that fails for a transient
+  /// reason ([isTransientError]) keeps them and says so in a snackbar; any
+  /// other failure (access lost, session gone, …) clears both lists and
+  /// shows the error state — other people's requests never stay on screen
+  /// after the access went. Only the newest call's answer is applied.
   Future<void> _load() async {
     final quiet = _loaded;
     final seq = ++_seq;
@@ -90,13 +93,16 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
       });
     } catch (e) {
       if (!mounted || seq != _seq) return;
-      if (quiet) {
+      if (quiet && isTransientError(e)) {
         ScaffoldMessenger.maybeOf(
           context,
         )?.showSnackBar(SnackBar(content: Text(friendlyError(e))));
         return;
       }
       setState(() {
+        _pending = const [];
+        _recent = const [];
+        _loaded = false;
         _error = friendlyError(e);
         _loading = false;
       });
