@@ -265,8 +265,10 @@ Spec + plan live in the connector repo:
   only** (key = client URL + db + employee + `requestEpoch`; nothing without an employee). A new `MyDayScreen` (Home
   switch Team overview → My day) paints it at once under a thin `my-day-memory-progress` line and refetches; the
   controller (GPS timer, punch button) is still made only from the fresh answer. Cleared when a sign-out / logout
-  begins (`SessionService._clear` / `logout`) and on `MyDayMemory.dropsOn` answers (no_employee_linked,
-  invalid_session, not_allowed, …). Never keep MyDayScreen mounted offstage instead (its 60 s GPS timer).
+  begins (`SessionService._clear` / `logout`) and on `MyDayMemory.dropsOn` answers (= `isSessionOrAccessLost` in
+  omni_mobile_api.dart: access lost, invalid_session, session_expired, no_employee_linked, mobile_not_enabled). Such an
+  answer clears the shown day **whatever `_fromMemory` says** and drops the controller + GPS timer
+  (`_dropController`). Never keep MyDayScreen mounted offstage instead (its 60 s GPS timer).
 - For-you rows: `ForYouItem.id == 0` (server omitted it) means a `my_leave` / `my_expense`
   row does nothing on tap. `my_expense.state` shows `submitted` → "Waiting for approval",
   `approved` / `posted` / `in_payment` / `paid` → "Approved", `refused` → "Refused".
@@ -400,8 +402,15 @@ Spec + plan live in the connector repo:
   caps its own quality/liveness retries to it and reports `FaceCaptureResult.attempts`. Quality + liveness +
   identity re-run every try (same 0.70 threshold); not-enrolled, engine errors, quality/liveness errors, camera
   errors and cancels are never retried; nothing is posted before a match. The Face row shows
-  `faceRetryLabel` ("Not recognised · 2 tries left", `PunchStepState.retrying`); scores in debugPrint only. The
-  minimum pulse only precedes the first camera.
+  `faceRetryLabel` ("Not recognised · 2 tries left", `PunchStepState.retrying`). The minimum pulse only precedes
+  the first camera.
+- Face scores / distances are logged **only under `kDebugMode`** (`debugPrint` still prints in release builds):
+  controller, `FaceRecognitionService.verifyFace`, engine cosine + ML Kit quality, spoof detector. Keep new score logs
+  behind it.
+- A live embedding that cannot be extracted is an **error, not a mismatch** (so it is never retried as "Not
+  recognised"): the engine returns `FaceCompareResult.failed(reason)` (`failed: true`) and
+  `FaceVerifyResult.fromCompare` maps it — not implemented / failed → error, `!ok` → mismatch, else success.
+  Test: test/services/face_compare_mapping_test.dart (engine → service → controller).
 - `FaceCaptureScreen` is now only used by face enrolment.
 - Seams: `MyDayScreen.captureFace` (punch without the page, the older tests) and
   `MyDayScreen.signatureCaptureBuilder` / `CheckInOutScreen.captureBuilder` (fake camera).
@@ -553,14 +562,23 @@ Design: `session-assets/2026-10-22-team-leave-mgmt-day/proposal.md` (r3); plans:
   `openForYouItem`; `yesterday_incomplete` stays on My day). Missing route / any access-lost answer → My day for the run +
   `refreshMe()`. A Who's out row opens the person sheet only with `names` and `WhoOutToday.tracked`.
   Who's out NEXT 7 DAYS (1.34.1): `collapseNext7` (who_out_card.dart) folds the server's per-day lists into one
-  line per person per run of consecutive dates ("Vanessa Leonora · R&D · Mon 26 – Sun 1"), split at a gap (any day
-  not listed, weekends included) or a pending/approved change; pending = `TeamPendingChip`. Payload unchanged.
+  line per person per run of consecutive dates, split at a gap (any day not listed, weekends included) or a
+  pending/approved change; pending = `TeamPendingChip`. With connector 2.65.3's `until` (request's last day, may be
+  past the window) a run ends on `until` when later (`Next7Range.end`), and a later run of the same person and status
+  starting by then folds in (one leave split by a weekend). Months are shown when start and end months differ:
+  "Mon 26 – Thu 29", "Mon 26 Oct – Tue 3 Nov" (`dayTitle`). No `until` (older connector) = the window's days only.
 - Fewer spinners (1.34.1, P1): the overview paints its `TeamCache` answer (read under its own binding, For you
   stripped, never live) while the first fetch runs, under a thin `ov-progress` line. A Today/Yesterday or department
   switch keeps the shown sections (`_shownDay` / `_shownDepartment` say which selection they answer) under that line;
   a late answer for the previous selection is dropped, a failed switch drops the old numbers (chips stay), stale
   count tiles open nothing. The LEAVE tab (`LeaveScreen.refresh`, called on every tab visit) and `ApprovalsScreen`
-  reload in the background once loaded; a failed background reload keeps the content (pull-down: snackbar).
+  reload in the background once loaded; a failed background reload keeps the content (pull-down: snackbar) **only
+  for a transient error** (`isTransientError`: network_error, timeout, server_error). On `ApprovalsScreen` any other
+  answer (access or session lost, …) clears Pending / Recent and shows the error state. `LeaveScreen` keeps its
+  behaviour: it shows only the user's own leave types. A kept previous selection on the overview is dimmed
+  (`ov-kept`, `IgnorePointer`) and its Who's out rows, For-you cards and See 30 / 60 / 90 open nothing
+  (`_shownMatches` guard in each handler). The outlook's day sheet closes whenever the screen drops the answer it
+  shows (`_closeDaySheet`).
 - Errors on these screens: `friendlyError(e, context: ErrorContext.team)` (own branch: `not_allowed` / `not_found`
   wording, usual transport words otherwise); `names_hidden` / `invalid_department` have words in every context.
 - Cache: `TeamCache` (`team_v1|<db>|<employee>|…`, signature = `team_scope_sig`, else
