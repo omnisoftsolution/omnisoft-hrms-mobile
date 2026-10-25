@@ -491,10 +491,10 @@ class TeamLeaveScreenState extends State<TeamLeaveScreen> {
         semanticsLabel: 'How far ahead',
       ),
     );
-    if (o != null && !_isOverview && o.emptyReason == null) {
-      out.add(const SizedBox(height: 8));
-      out.add(_privacy(o));
-    }
+    // No privacy banner (1.34.1): it described the company defaults, while
+    // the server discloses type and pending per viewer (requester, approvers
+    // and Time Off officers always see both, L1/L28), so an officer saw
+    // "no type" above typed rows. The rows speak for themselves.
     final fatal = _fatalError;
     if (o == null) {
       add(
@@ -614,22 +614,6 @@ class TeamLeaveScreenState extends State<TeamLeaveScreen> {
         },
       ),
   ]);
-
-  Widget _privacy(TeamOutlook o) => Row(
-    children: [
-      const Icon(Icons.lock_outline, size: 14, color: TeamColors.muted),
-      const SizedBox(width: 6),
-      Expanded(
-        child: Text(
-          privacyLine(
-            showType: o.disclosure.showType,
-            showPending: o.disclosure.showPending,
-          ),
-          style: const TextStyle(fontSize: 12, color: TeamColors.muted),
-        ),
-      ),
-    ],
-  );
 
   BoxDecoration get _card => BoxDecoration(
     color: AppTheme.surfaceContainerLowest,

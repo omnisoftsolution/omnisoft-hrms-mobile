@@ -106,11 +106,6 @@ String heatDayLabel(DateTime d, int off, {String? holidayName}) {
       : '$base, public holiday $holidayName';
 }
 
-/// The privacy line under the range switch (team context only).
-String privacyLine({required bool showType, required bool showPending}) =>
-    (showType ? 'Leave type shown' : 'Shown as “On leave” — no type or reason') +
-    (showPending ? ' · includes pending requests' : ' · approved leave only');
-
 /// The line under the team name in the outlook header. With a department
 /// chip selected (overview context), the mockup shows that department:
 /// its name and its size from `departments[]` ("Fabric · 10 people").

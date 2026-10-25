@@ -161,17 +161,6 @@ void main() {
       );
     });
 
-    test('privacyLine combines type and pending', () {
-      expect(
-        privacyLine(showType: false, showPending: true),
-        'Shown as “On leave” — no type or reason · includes pending requests',
-      );
-      expect(
-        privacyLine(showType: true, showPending: false),
-        'Leave type shown · approved leave only',
-      );
-    });
-
     test('teamScopeSubLabel by team kind', () {
       expect(teamScopeSubLabel(outlook()), 'Your department · 12 people');
       expect(

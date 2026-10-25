@@ -111,7 +111,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
-  testWidgets('happy path: header, range, privacy line, heat map, today', (
+  testWidgets('happy path: header, range, heat map, today', (
     tester,
   ) async {
     _tall(tester);
@@ -128,12 +128,6 @@ void main() {
     expect(find.text('Your department · 12 people'), findsOneWidget);
     expect(find.text('30 days'), findsOneWidget);
     expect(find.text('90 days'), findsOneWidget);
-    expect(
-      find.text(
-        'Shown as “On leave” — no type or reason · includes pending requests',
-      ),
-      findsOneWidget,
-    );
     expect(find.text('October 2026'), findsOneWidget);
     // Someone is off today, so today is selected.
     expect(find.text('Thu 22 Oct · 2 off'), findsOneWidget);
@@ -158,22 +152,25 @@ void main() {
     expect(find.byKey(const ValueKey('team-strip')), findsNothing);
   });
 
-  testWidgets('pending off (the default, D3, A-L25): "approved leave only"', (
+  testWidgets('no privacy banner, whatever the disclosure (1.34.1): the '
+      'server discloses per viewer, the rows show what this viewer may see', (
     tester,
   ) async {
     _tall(tester);
-    // An answer without the disclosure block reads as off too.
     final body = outlookJson()..remove('disclosure');
-    for (final answer in [outlook(), TeamOutlook.fromJson(body)]) {
+    for (final answer in [
+      outlook(),
+      outlook(showPending: true),
+      TeamOutlook.fromJson(body),
+    ]) {
       await tester.pumpWidget(_host(_FakeApi([answer])));
       await tester.pumpAndSettle();
-      expect(
-        find.text(
-          'Shown as “On leave” — no type or reason · approved leave only',
-        ),
-        findsOneWidget,
-      );
+      expect(find.text('Mei Lin Ong'), findsWidgets);
+      expect(find.byIcon(Icons.lock_outline), findsNothing);
+      expect(find.textContaining('no type or reason'), findsNothing);
+      expect(find.textContaining('approved leave only'), findsNothing);
       expect(find.textContaining('includes pending requests'), findsNothing);
+      expect(find.textContaining('Leave type shown'), findsNothing);
       await tester.pumpWidget(const SizedBox.shrink());
     }
   });
@@ -604,9 +601,6 @@ void main() {
     });
     expect(find.text('All'), findsOneWidget);
     expect(find.text('Fabric'), findsOneWidget);
-    // No privacy line outside the team context (either wording).
-    expect(find.textContaining('no type or reason'), findsNothing);
-    expect(find.textContaining('approved leave only'), findsNothing);
 
     // A department chip: the header names that department and its size.
     expect(find.text('Marketing · 20 people'), findsOneWidget);
@@ -660,9 +654,6 @@ void main() {
       expect(find.text('No team to show yet'), findsOneWidget);
       expect(find.text(_emptyText[reason]!), findsOneWidget);
       expect(find.text('October 2026'), findsNothing);
-      // No privacy line on the empty card (either wording).
-      expect(find.textContaining('no type or reason'), findsNothing);
-      expect(find.textContaining('approved leave only'), findsNothing);
     });
   }
 
