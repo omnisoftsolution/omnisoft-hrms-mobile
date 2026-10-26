@@ -11,54 +11,44 @@ import 'omni_colors.dart';
 /// with `context.omni`. The Material 3 ColorScheme is mapped from the
 /// same tokens so dialogs, pickers, snackbars and sheets follow too.
 class AppTheme {
-  /// What the app follows. Held on light until every screen reads
-  /// `context.omni` (dark mode M1–M4); M5 flips it to
-  /// [ThemeMode.system] so the app follows the phone.
-  static const ThemeMode themeMode = ThemeMode.light;
+  /// What the app follows: the phone's light / dark setting (dark mode
+  /// M5, 2026-10-26). There is deliberately no in-app Appearance setting.
+  static const ThemeMode themeMode = ThemeMode.system;
 
-  // ---- Light colour constants (design.md) ------------------------------
-  // Light-only: they don't change with the phone's setting. New code uses
-  // `context.omni`; these go away in dark mode M5.
-  static const Color primary = Color(0xFF006971);
-  static const Color onPrimary = Color(0xFFFFFFFF);
+  // ---- Light colour scheme inputs (design.md) ---------------------------
+  // Private since dark mode M5: only [lightTheme]'s ColorScheme reads them.
+  // Screens take every colour from `context.omni`.
+  static const Color _primary = Color(0xFF006971);
+  static const Color _onPrimary = Color(0xFFFFFFFF);
   /// Lighter teal used for the primary call-to-action and focus accents.
-  static const Color primaryContainer = Color(0xFF2BB8C4);
-  static const Color onPrimaryContainer = Color(0xFF004449);
-  static const Color secondary = Color(0xFF395F97);
-  static const Color onSecondary = Color(0xFFFFFFFF);
-  static const Color surface = Color(0xFFF7F9FB);
-  static const Color surfaceContainerLowest = Color(0xFFFFFFFF);
-  static const Color onSurface = Color(0xFF191C1E);
-  static const Color onSurfaceVariant = Color(0xFF3D494A);
-  static const Color error = Color(0xFFBA1A1A);
-  static const Color outline = Color(0xFF6C797B);
-  static const Color outlineVariant = Color(0xFFBCC9CA);
-  static const Color surfaceContainer = Color(0xFFECEEF0);
-  static const Color inversePrimary = Color(0xFF58D8E4);
+  static const Color _primaryContainer = Color(0xFF2BB8C4);
+  static const Color _onPrimaryContainer = Color(0xFF004449);
+  static const Color _secondary = Color(0xFF395F97);
+  static const Color _onSecondary = Color(0xFFFFFFFF);
+  static const Color _surface = Color(0xFFF7F9FB);
+  static const Color _onSurface = Color(0xFF191C1E);
+  static const Color _onSurfaceVariant = Color(0xFF3D494A);
+  static const Color _error = Color(0xFFBA1A1A);
+  static const Color _outline = Color(0xFF6C797B);
+  static const Color _outlineVariant = Color(0xFFBCC9CA);
 
-  /// Soft blue-tinted ambient shadow used by cards and inputs (light).
-  /// Per DESIGN.md: 0px 4px 20px rgba(80, 117, 175, 0.08).
-  static List<BoxShadow> get glassShadow => OmniColors.light.cardShadow;
 
-  /// Stronger glow used by the primary CTA button (light).
-  /// Per DESIGN.md: 0px 10px 30px rgba(43, 184, 196, 0.30).
-  static List<BoxShadow> get primaryGlow => OmniColors.light.buttonGlow;
 
   static ThemeData get lightTheme => _build(
         OmniColors.light,
         const ColorScheme.light(
-          primary: primary,
-          onPrimary: onPrimary,
-          primaryContainer: primaryContainer,
-          onPrimaryContainer: onPrimaryContainer,
-          secondary: secondary,
-          onSecondary: onSecondary,
-          surface: surface,
-          onSurface: onSurface,
-          onSurfaceVariant: onSurfaceVariant,
-          error: error,
-          outline: outline,
-          outlineVariant: outlineVariant,
+          primary: _primary,
+          onPrimary: _onPrimary,
+          primaryContainer: _primaryContainer,
+          onPrimaryContainer: _onPrimaryContainer,
+          secondary: _secondary,
+          onSecondary: _onSecondary,
+          surface: _surface,
+          onSurface: _onSurface,
+          onSurfaceVariant: _onSurfaceVariant,
+          error: _error,
+          outline: _outline,
+          outlineVariant: _outlineVariant,
         ),
         // Dark status-bar icons on the white AppBar.
         const SystemUiOverlayStyle(

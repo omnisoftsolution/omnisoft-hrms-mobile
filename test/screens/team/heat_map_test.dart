@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:omni_hr/core/theme.dart';
+import 'package:omni_hr/core/omni_colors.dart';
 import 'package:omni_hr/models/team_outlook.dart';
 import 'package:omni_hr/screens/team/heat_map.dart';
 import 'package:omni_hr/screens/team/team_colors.dart';
@@ -132,7 +132,7 @@ void main() {
     );
     // White text on the darkest shade only.
     expect(_dayText(tester, '2026-10-27', '27').style!.color, TeamColors.light.onC3);
-    expect(_dayText(tester, '2026-10-26', '26').style!.color, AppTheme.onSurface);
+    expect(_dayText(tester, '2026-10-26', '26').style!.color, OmniColors.light.text);
   });
 
   testWidgets('a working day nobody is off: light surface with a hairline '
@@ -142,7 +142,7 @@ void main() {
     expect(_material(tester, '2026-10-23').color, TeamColors.light.cell0);
     expect(_side(tester, '2026-10-23').color, TeamColors.light.cellLine);
     expect(_side(tester, '2026-10-23').width, 1);
-    expect(_dayText(tester, '2026-10-23', '23').style!.color, AppTheme.onSurface);
+    expect(_dayText(tester, '2026-10-23', '23').style!.color, OmniColors.light.text);
     // The three colours are distinct now (no more three similar greys).
     expect(
       {TeamColors.light.cell0, TeamColors.light.cellOff, TeamColors.light.holCell}.length,
@@ -186,7 +186,7 @@ void main() {
     expect(_dayText(tester, '2026-10-25', '25').style!.color, TeamColors.light.sunday);
     expect(_material(tester, '2026-10-25').color, TeamColors.light.cell0);
     expect(_dayText(tester, '2026-11-01', '1').style!.color, TeamColors.light.sunday);
-    expect(_dayText(tester, '2026-11-08', '8').style!.color, AppTheme.onSurface);
+    expect(_dayText(tester, '2026-11-08', '8').style!.color, OmniColors.light.text);
     expect(_dayText(tester, '2026-11-15', '15').style!.color, TeamColors.light.onC3);
   });
 

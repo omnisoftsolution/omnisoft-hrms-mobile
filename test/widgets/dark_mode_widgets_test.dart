@@ -69,7 +69,7 @@ void main() {
       final style = tester
           .widget<ElevatedButton>(find.byType(ElevatedButton))
           .style!;
-      expect(style.backgroundColor!.resolve({}), AppTheme.primaryContainer);
+      expect(style.backgroundColor!.resolve({}), OmniColors.light.button);
       expect(style.foregroundColor!.resolve({}), Colors.white);
       final glow = _decorationAbove(
         tester,
@@ -77,7 +77,7 @@ void main() {
       ).boxShadow!;
       expect(
         glow.single.color,
-        AppTheme.primaryContainer.withValues(alpha: 0.30),
+        OmniColors.light.button.withValues(alpha: 0.30),
       );
     });
   });
@@ -130,7 +130,7 @@ void main() {
     );
     expect(
       tester.widget<Text>(find.text('EMAIL')).style!.color,
-      AppTheme.outline,
+      OmniColors.light.textMuted,
     );
     expect(
       _decorationAbove(tester, find.byType(TextField)).boxShadow,

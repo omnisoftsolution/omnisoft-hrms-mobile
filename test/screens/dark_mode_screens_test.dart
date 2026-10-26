@@ -76,10 +76,10 @@ void main() {
   final light = OmniColors.light;
 
   test('leaveStateColor: light default unchanged, dark from the palette', () {
-    expect(leaveStateColor('validate'), AppTheme.primary);
-    expect(leaveStateColor('refuse'), AppTheme.error);
-    expect(leaveStateColor('confirm'), AppTheme.secondary);
-    expect(leaveStateColor('draft'), AppTheme.outline);
+    expect(leaveStateColor('validate'), OmniColors.light.accent);
+    expect(leaveStateColor('refuse'), OmniColors.light.error);
+    expect(leaveStateColor('confirm'), OmniColors.light.secondary);
+    expect(leaveStateColor('draft'), OmniColors.light.textMuted);
     expect(leaveStateColor('validate', dark), dark.accent);
     expect(leaveStateColor('refuse', dark), dark.error);
     expect(leaveStateColor('validate1', dark), dark.secondary);

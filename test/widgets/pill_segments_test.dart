@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:omni_hr/core/theme.dart';
+import 'package:omni_hr/core/omni_colors.dart';
 import 'package:omni_hr/widgets/pill_segments.dart';
 
 const _labels = ['30 days', '60 days', '90 days'];
@@ -43,13 +43,13 @@ void main() {
     }
     expect(
       tester.widget<Text>(find.text('60 days')).style!.color,
-      AppTheme.primary,
+      OmniColors.light.accent,
     );
     expect(
       tester.widget<Text>(find.text('30 days')).style!.color,
-      AppTheme.onSurfaceVariant,
+      OmniColors.light.textSub,
     );
-    expect(_fill(tester, '60 days'), AppTheme.surfaceContainerLowest);
+    expect(_fill(tester, '60 days'), OmniColors.light.card);
     expect(_fill(tester, '30 days'), Colors.transparent);
   });
 

@@ -101,18 +101,18 @@ void main() {
     test('the dark tiles are the brand fill and the selected segment', () {
       expect(d.overviewTile, OmniColors.dark.brandFill);
       expect(d.overviewTileYesterday, OmniColors.dark.segmentOn);
-      expect(l.overviewTile, AppTheme.primary);
-      expect(l.overviewTileYesterday, AppTheme.secondary);
+      expect(l.overviewTile, OmniColors.light.accent);
+      expect(l.overviewTileYesterday, OmniColors.light.secondary);
     });
 
     test('light keeps the 1.34.1 values', () {
       expect(l.cell0, const Color(0xFFF5F7F9));
       expect(l.c3, const Color(0xFF395F97));
-      expect(l.onC1, AppTheme.onSurface);
-      expect(l.onC2, AppTheme.onSurface);
-      expect(l.sunday, AppTheme.error);
-      expect(l.chipBorder, AppTheme.outlineVariant);
-      expect(l.accent, AppTheme.primary);
+      expect(l.onC1, OmniColors.light.text);
+      expect(l.onC2, OmniColors.light.text);
+      expect(l.sunday, OmniColors.light.error);
+      expect(l.chipBorder, OmniColors.light.line);
+      expect(l.accent, OmniColors.light.accent);
     });
 
     testWidgets('TeamColors.of follows the theme', (tester) async {
@@ -186,7 +186,7 @@ void main() {
       ),
     );
     expect(_fill(tester, '2026-11-08'), l.c2);
-    expect(_digit(tester, '2026-11-08', '8'), AppTheme.onSurface);
+    expect(_digit(tester, '2026-11-08', '8'), OmniColors.light.text);
     expect(_digit(tester, '2026-11-01', '1'), l.sunday);
     expect(_digit(tester, '2026-11-15', '15'), l.onC3);
   });

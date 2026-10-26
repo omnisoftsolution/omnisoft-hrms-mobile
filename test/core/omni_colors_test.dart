@@ -98,19 +98,19 @@ void main() {
   group('tokens', () {
     test('light keeps the pre-dark-mode values', () {
       final c = OmniColors.light;
-      expect(c.background, AppTheme.surface);
-      expect(c.card, AppTheme.surfaceContainerLowest);
-      expect(c.text, AppTheme.onSurface);
-      expect(c.textSub, AppTheme.onSurfaceVariant);
-      expect(c.textMuted, AppTheme.outline);
-      expect(c.line, AppTheme.outlineVariant);
-      expect(c.soft, AppTheme.surfaceContainer);
-      expect(c.accent, AppTheme.primary);
-      expect(c.brandFill, AppTheme.primary);
-      expect(c.button, AppTheme.primaryContainer);
-      expect(c.secondary, AppTheme.secondary);
-      expect(c.error, AppTheme.error);
-      expect(c.lineSoft, AppTheme.outline.withValues(alpha: 0.12));
+      expect(c.background, const Color(0xFFF7F9FB));
+      expect(c.card, const Color(0xFFFFFFFF));
+      expect(c.text, const Color(0xFF191C1E));
+      expect(c.textSub, const Color(0xFF3D494A));
+      expect(c.textMuted, const Color(0xFF6C797B));
+      expect(c.line, const Color(0xFFBCC9CA));
+      expect(c.soft, const Color(0xFFECEEF0));
+      expect(c.accent, const Color(0xFF006971));
+      expect(c.brandFill, const Color(0xFF006971));
+      expect(c.button, const Color(0xFF2BB8C4));
+      expect(c.secondary, const Color(0xFF395F97));
+      expect(c.error, const Color(0xFFBA1A1A));
+      expect(c.lineSoft, const Color(0xFF6C797B).withValues(alpha: 0.12));
       expect(c.myDay.work.fill, const Color(0xFF006971));
     });
 
@@ -145,8 +145,8 @@ void main() {
       final t = AppTheme.lightTheme;
       expect(t.brightness, Brightness.light);
       expect(t.extension<OmniColors>(), same(OmniColors.light));
-      expect(t.scaffoldBackgroundColor, AppTheme.surface);
-      expect(t.colorScheme.primary, AppTheme.primary);
+      expect(t.scaffoldBackgroundColor, const Color(0xFFF7F9FB));
+      expect(t.colorScheme.primary, const Color(0xFF006971));
       expect(t.appBarTheme.backgroundColor, Colors.white);
       expect(t.appBarTheme.systemOverlayStyle?.statusBarIconBrightness,
           Brightness.dark);
@@ -181,8 +181,8 @@ void main() {
           greaterThan(4.5));
     });
 
-    test('the app stays light until every screen reads the tokens', () {
-      expect(AppTheme.themeMode, ThemeMode.light);
+    test('the app follows the phone (dark mode M5)', () {
+      expect(AppTheme.themeMode, ThemeMode.system);
     });
 
     testWidgets('context.omni follows the active theme', (tester) async {

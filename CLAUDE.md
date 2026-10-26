@@ -48,18 +48,26 @@ Android + iOS employee app for Omni HR (version in pubspec.yaml). Backend = Odoo
 - Device test caveat: check whether iPhone actually returns a BSSID (iOS 26 reality — Apple has
   progressively restricted this even with the entitlement).
 
-## Colours / dark mode (in progress, branch feat/dark-mode)
+## Colours / dark mode (follows the phone since M5, branch feat/dark-mode)
 - Tokens: `lib/core/omni_colors.dart` — `OmniColors` (ThemeExtension, `light` + `dark`) incl. the My day
   palette (`MyDayTone.kind`; compare tones by kind, never identity). Read them with `context.omni`.
   Both themes come from one builder in `lib/core/theme.dart`; `main.dart` wires `darkTheme`.
-- **New code uses `context.omni`**, never hex literals or the static `AppTheme.<colour>` constants (light-only,
-  removed in M5). Pick by job: `accent` = teal text/icons on a card, `brandFill` = teal behind white text;
+- **New code uses `context.omni`**, never hex literals (the old `AppTheme.<colour>` constants are private since
+  M5; `test/core/colour_guard_test.dart` fails on a raw `Color(0x…)` in `lib/screens` / `lib/widgets` unless it is
+  the light side of a dark switch or a light-only shadow). Team screens: `TeamColors.of(context)` (light + dark
+  palette in `team_colors.dart`). Pick by job: `accent` = teal text/icons on a card, `brandFill` = teal behind white text;
   `card` (not `Colors.white`) for surfaces.
 - My day's pure helpers (`toneOf`, `buildTimeline`, `daySummaryOf`) take a `MyDayPalette` (light by default, for
   tests); widgets pass `context.omni.myDay`. White text on fills (`brandFill`, `errorFill`, `successFill`,
   `checkInFill`, tone fills) — these are deeper in dark; never put white text on `accent` / `button` / `error`.
-- `AppTheme.themeMode` stays `ThemeMode.light` until every screen is migrated (M1–M4); M5 flips it to
-  `ThemeMode.system`. Plan + canvas: `session-assets/2026-10-22-dark-mode/plan.md` in the workspace.
+- `AppTheme.themeMode` = `ThemeMode.system` (M5, 2026-10-26); no in-app Appearance setting (Willy's call).
+  Plan + canvas: `session-assets/2026-10-22-dark-mode/plan.md` in the workspace.
+- **iPhone Duo** (foldable, iOS 27.1): closed, and open sideways, iOS puts the status bar + camera in an 84 pt
+  column on the right and reports it as a side inset. `sideColumnOf(viewPadding)` (`home/side_tab_column.dart`)
+  detects it (a wide, lopsided side inset); `HomeShell` then draws the tabs as a vertical pill in that column
+  (`SideTabColumn`) instead of the bottom bar and removes that inset from the tab screens. Open upright = normal
+  phone layout. Team overview reflows to 2 / 3 columns (`OverviewColumns`, 600 / 820 pt of content width).
+  The inner display ignores portrait lock. Canvas: https://claude.ai/artifact/LasbT6YAXiDs3dL6ETBDcM.
 - `test/core/omni_colors_test.dart` checks WCAG contrast of every token pair (dark: all pass; light: a fixed list
   of failures the app already had). Theme-building tests must be `testWidgets` (google_fonts fetches over HTTP).
 
