@@ -112,14 +112,14 @@ class _BigCheckButtonState extends State<BigCheckButton>
         CheckButtonState.enroll => 'SETUP NEEDED',
       };
 
-  Color _stateDotOf(OmniColors c) => switch (widget.state) {
-        CheckButtonState.ready => const Color(0xFF22C55E),
+  Color _stateDotOf(OmniColors c, bool dark) => switch (widget.state) {
+        CheckButtonState.ready => dark ? c.success : const Color(0xFF22C55E),
         CheckButtonState.scanning => Colors.white,
         // Out-of-range / disabled → red so the user immediately sees
         // why they can't check in. Pairs with the "NOT READY" label.
         CheckButtonState.disabled => c.error,
         // Amber for one-time setup — not an error, just a step.
-        CheckButtonState.enroll => const Color(0xFFF59E0B),
+        CheckButtonState.enroll => dark ? c.warning : const Color(0xFFF59E0B),
       };
 
   @override
@@ -213,7 +213,9 @@ class _BigCheckButtonState extends State<BigCheckButton>
                         ),
                       ),
                       const SizedBox(height: 8),
-                      _StatePill(label: _stateLabel, dotColor: _stateDotOf(c)),
+                      _StatePill(
+                          label: _stateLabel,
+                          dotColor: _stateDotOf(c, context.isDarkTheme)),
                     ],
                   ),
                 ),

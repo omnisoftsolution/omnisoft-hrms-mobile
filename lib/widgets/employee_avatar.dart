@@ -115,7 +115,9 @@ class EmployeeAvatar extends StatelessWidget {
             height: size * 0.28,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: const Color(0xFF22C55E),
+              color: context.isDarkTheme
+                  ? c.success
+                  : const Color(0xFF22C55E),
               border: Border.all(color: c.bar, width: 2),
             ),
           ),

@@ -14,7 +14,7 @@ import '../history/history_shell.dart';
 import '../leave/leave_screen.dart';
 import '../notifications/notification_tap.dart';
 import '../notifications/notifications_screen.dart';
-import '../../core/theme.dart';
+import '../../core/omni_colors.dart';
 import '../../models/notification_record.dart';
 import '../../services/face_recognition_service.dart';
 import '../../services/holiday_service.dart';
@@ -131,6 +131,8 @@ class HomeShellState extends State<HomeShell> {
     }
     final messenger = _scaffoldMessengerKey.currentState;
     if (messenger == null) return;
+    // Read before the builder: it may run again later (re-wrap).
+    final colors = context.omni;
     showArrivalSnack(
       messenger,
       _arrivalSnack,
@@ -139,6 +141,7 @@ class HomeShellState extends State<HomeShell> {
         fresh,
         onAction: () => _openArrival(fresh),
         wrapContent: wrap,
+        colors: colors,
       ),
     );
   }
@@ -188,6 +191,7 @@ class HomeShellState extends State<HomeShell> {
           pushArrivalSnackBar(
             arrivals.first,
             onOpen: () => unawaited(navigateToMyDay()),
+            colors: context.omni,
           ),
         );
     }
@@ -381,6 +385,7 @@ class HomeShellState extends State<HomeShell> {
   @override
   Widget build(BuildContext context) {
     final pending = context.watch<SessionService>().leaveApprovalsPendingCount;
+    final c = context.omni;
     return ScaffoldMessenger(
       key: _scaffoldMessengerKey,
       // PopScope intercepts the Android system back button so it pops
@@ -430,30 +435,30 @@ class HomeShellState extends State<HomeShell> {
             // behind the active item. Keeps a single source of truth
             // for both selected/unselected label color.
             data: NavigationBarThemeData(
-              backgroundColor: Colors.white,
+              backgroundColor: c.bar,
               elevation: 8,
               height: 72,
-              indicatorColor: AppTheme.primaryContainer.withValues(alpha: 0.18),
+              indicatorColor: c.navIndicator,
               labelTextStyle: WidgetStateProperty.resolveWith((states) {
                 if (states.contains(WidgetState.selected)) {
                   return TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 0.6,
-                    color: AppTheme.primary,
+                    color: c.accent,
                   );
                 }
                 return TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w500,
-                  color: AppTheme.outline,
+                  color: c.textMuted,
                 );
               }),
               iconTheme: WidgetStateProperty.resolveWith((states) {
                 if (states.contains(WidgetState.selected)) {
-                  return const IconThemeData(color: AppTheme.primary);
+                  return IconThemeData(color: c.accent);
                 }
-                return IconThemeData(color: AppTheme.outline);
+                return IconThemeData(color: c.textMuted);
               }),
             ),
             child: NavigationBar(
@@ -515,12 +520,14 @@ bool refreshesApprovals(Iterable<NotificationRecord> arrivals) =>
 
 /// The snackbar shown when a notification arrives while the app is open.
 /// [onAction] runs for its VIEW / Review action, when the kind has one.
+/// [colors] is the theme's tokens (light when omitted).
 SnackBar notificationArrivalSnackBar(
   NotificationRecord fresh, {
   required VoidCallback onAction,
   Widget Function(Widget content)? wrapContent,
+  OmniColors? colors,
 }) => SnackBar(
-  backgroundColor: AppTheme.primary,
+  backgroundColor: (colors ?? OmniColors.light).brandFill,
   // Flutter 3.44 keeps a bar with an action until it is tapped (persist
   // defaults to action != null); "Leave approved … VIEW" stayed for 6+
   // minutes on the Samsung (APP-8). It times out like any other.
@@ -576,12 +583,14 @@ SnackBar notificationArrivalSnackBar(
 
 /// The snackbar for a push-only notice (a check-in / check-out reminder)
 /// that arrives while the app is open (spec 2026-10-11 §6.4): the push's
-/// own title and body; "Open" goes to Home.
+/// own title and body; "Open" goes to Home. [colors] is the theme's
+/// tokens (light when omitted).
 SnackBar pushArrivalSnackBar(
   PushArrival arrival, {
   required VoidCallback onOpen,
+  OmniColors? colors,
 }) => SnackBar(
-  backgroundColor: AppTheme.primary,
+  backgroundColor: (colors ?? OmniColors.light).brandFill,
   // Same as the notice snackbar: a bar with an action must still time out.
   persist: false,
   duration: const Duration(seconds: 6),

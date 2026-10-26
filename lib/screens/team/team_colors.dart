@@ -86,36 +86,42 @@ class TeamColors {
   // fill = the bar segment on the overview tile, tint / onTint = the chip,
   // dot = the count tile's dot.
   static const onTime = MyDayTone(
+    kind: MyDayToneKind.work,
     fill: Color(0xFFFFFFFF),
     tint: Color(0xFFDCEFF1),
     onTint: Color(0xFF004F55),
     dot: Color(0xFF006971),
   );
   static const late = MyDayTone(
+    kind: MyDayToneKind.late,
     fill: Color(0xFFFFD58A),
     tint: Color(0xFFFFE4A8),
     onTint: Color(0xFF6B4400),
     dot: Color(0xFFD99A1C),
   );
   static const notInYet = MyDayTone(
+    kind: MyDayToneKind.waiting,
     fill: Color(0x73FFFFFF),
     tint: Color(0xFFECEEF0),
     onTint: Color(0xFF55666A),
     dot: Color(0xFF6C797B),
   );
   static const noCheckIn = MyDayTone(
+    kind: MyDayToneKind.missing,
     fill: Color(0xFFFFB4AB),
     tint: Color(0xFFFFDAD6),
     onTint: Color(0xFF93000A),
     dot: Color(0xFFBA1A1A),
   );
   static const onLeave = MyDayTone(
+    kind: MyDayToneKind.leave,
     fill: Color(0xFFA8C8FF),
     tint: Color(0xFFD6E3FF),
     onTint: Color(0xFF1D477E),
     dot: Color(0xFF395F97),
   );
   static const offToday = MyDayTone(
+    kind: MyDayToneKind.holiday,
     fill: Color(0x33FFFFFF),
     tint: Color(0xFFE0E3E5),
     onTint: Color(0xFF3D494A),

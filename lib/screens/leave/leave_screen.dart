@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../core/approvals_breakdown.dart';
-import '../../core/theme.dart';
+import '../../core/omni_colors.dart';
 import '../../core/error_messages.dart';
 import '../../core/leave_units.dart';
 import '../../models/leave_type.dart';
@@ -36,14 +36,15 @@ import '../../utils/leave_backdate.dart';
 /// hour-types, d otherwise). Color is muted for normal balances, red
 /// when depleted.
 ({String label, Color color})? _balanceVisual(
-  LeaveType t, {
+  LeaveType t,
+  OmniColors c, {
   required bool longForm,
 }) {
   final unitNoun = _unitNounLong(t.requestUnit);
   if (!t.requiresAllocation) {
     return (
       label: longForm ? 'Unlimited $unitNoun available' : 'Unlimited',
-      color: AppTheme.onSurfaceVariant,
+      color: c.textSub,
     );
   }
   final n = t.virtualRemainingLeaves;
@@ -52,7 +53,7 @@ import '../../utils/leave_backdate.dart';
   if (n <= 0) {
     return (
       label: longForm ? 'No $unitNoun remaining' : '0$suffix left',
-      color: AppTheme.error,
+      color: c.error,
     );
   }
   // Hour-unit types render hours-first with the day equivalent from
@@ -65,7 +66,7 @@ import '../../utils/leave_backdate.dart';
   );
   return (
     label: longForm ? '$amount remaining' : '$amount left',
-    color: AppTheme.onSurfaceVariant,
+    color: c.textSub,
   );
 }
 
@@ -520,6 +521,7 @@ class LeaveScreenState extends State<LeaveScreen> {
   }
 
   Widget _buildList() {
+    final c = context.omni;
     final session = context.watch<SessionService>();
     final lostAt = _teamLeaveLostAt;
     final lost = lostAt != null && lostAt == session.teamCacheSignature;
@@ -563,10 +565,10 @@ class LeaveScreenState extends State<LeaveScreen> {
           child: Card(
             child: ListTile(
               leading: CircleAvatar(
-                backgroundColor: AppTheme.primary.withValues(alpha: 0.1),
+                backgroundColor: c.accent.withValues(alpha: 0.1),
                 child: Icon(
                   _categoryIcon(type.mobileCategory),
-                  color: AppTheme.primary,
+                  color: c.accent,
                 ),
               ),
               title: Text(type.name),
@@ -595,7 +597,8 @@ class LeaveScreenState extends State<LeaveScreen> {
   /// note into a single subtitle widget. Returns null when neither
   /// applies — letting the ListTile collapse to single-line height.
   Widget? _tileSubtitle(LeaveType type) {
-    final balance = _balanceVisual(type, longForm: false);
+    final c = context.omni;
+    final balance = _balanceVisual(type, c, longForm: false);
     final hasDoc = type.mobileRequiresDocument;
     if (balance == null && !hasDoc) return null;
     return Column(
@@ -615,11 +618,11 @@ class LeaveScreenState extends State<LeaveScreen> {
             ),
           ),
         if (hasDoc)
-          const Padding(
-            padding: EdgeInsets.only(top: 2),
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
             child: Text(
               'Document required',
-              style: TextStyle(fontSize: 12, color: AppTheme.error),
+              style: TextStyle(fontSize: 12, color: c.error),
             ),
           ),
       ],
@@ -1064,18 +1067,19 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
     required TimeOfDay time,
     required VoidCallback onTap,
   }) {
+    final c = context.omni;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-          border: Border.all(color: AppTheme.outline),
+          border: Border.all(color: c.textMuted),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
           children: [
-            Icon(Icons.schedule, size: 18, color: AppTheme.primary),
+            Icon(Icons.schedule, size: 18, color: c.accent),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -1085,7 +1089,7 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
                     label,
                     style: TextStyle(
                       fontSize: 12,
-                      color: AppTheme.onSurfaceVariant,
+                      color: c.textSub,
                     ),
                   ),
                   const SizedBox(height: 2),
@@ -1130,7 +1134,8 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
     // They never double-pad: when keyboard rises, viewPadding.bottom
     // collapses to 0 (the keyboard consumes the bottom inset).
     final mq = MediaQuery.of(context);
-    final balance = _balanceVisual(widget.leaveType, longForm: true);
+    final c = context.omni;
+    final balance = _balanceVisual(widget.leaveType, c, longForm: true);
     // SingleChildScrollView (not Padding) so the form scrolls when
     // the keyboard rises and pushes available height below the
     // column's intrinsic size — otherwise the column would overflow.
@@ -1199,7 +1204,7 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
                   'Supporting document required.',
-                  style: TextStyle(fontSize: 12, color: AppTheme.error),
+                  style: TextStyle(fontSize: 12, color: c.error),
                 ),
               ),
             if (_isHourly) ...[
@@ -1231,7 +1236,7 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
                   vertical: 14,
                 ),
                 decoration: BoxDecoration(
-                  border: Border.all(color: AppTheme.outline),
+                  border: Border.all(color: c.textMuted),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Row(
@@ -1239,7 +1244,7 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
                     Icon(
                       Icons.calendar_today,
                       size: 18,
-                      color: AppTheme.primary,
+                      color: c.accent,
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -1250,7 +1255,7 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
                             _hourlyCustom ? 'Leave date' : 'Leave dates',
                             style: TextStyle(
                               fontSize: 12,
-                              color: AppTheme.onSurfaceVariant,
+                              color: c.textSub,
                             ),
                           ),
                           const SizedBox(height: 2),
@@ -1268,7 +1273,7 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
                         ],
                       ),
                     ),
-                    Icon(Icons.chevron_right, color: AppTheme.outline),
+                    Icon(Icons.chevron_right, color: c.textMuted),
                   ],
                 ),
               ),
@@ -1316,8 +1321,8 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
                     style: TextStyle(
                       fontSize: 12,
                       color: _customHoursOutsideSchedule
-                          ? AppTheme.error
-                          : AppTheme.onSurfaceVariant,
+                          ? c.error
+                          : c.textSub,
                     ),
                   ),
                 ),
@@ -1368,21 +1373,21 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: AppTheme.error.withValues(alpha: 0.1),
+                  color: c.error.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: AppTheme.error.withValues(alpha: 0.3),
+                    color: c.error.withValues(alpha: 0.3),
                   ),
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(Icons.error_outline, color: AppTheme.error, size: 18),
+                    Icon(Icons.error_outline, color: c.error, size: 18),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         _error!,
-                        style: TextStyle(color: AppTheme.error, fontSize: 13),
+                        style: TextStyle(color: c.error, fontSize: 13),
                       ),
                     ),
                   ],
@@ -1403,6 +1408,7 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
 
   Widget _buildSuccess(BuildContext context) {
     final mq = MediaQuery.of(context);
+    final c = context.omni;
     final fmt = DateFormat('dd MMM yyyy');
     // Build a one-line dates blurb that matches the form's math —
     // reuses _dayCountLabel / _hourLabel so the receipt agrees with
@@ -1449,11 +1455,11 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
               height: 56,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: AppTheme.primaryContainer.withValues(alpha: 0.15),
+                color: c.button.withValues(alpha: 0.15),
               ),
               child: Icon(
                 Icons.check_rounded,
-                color: AppTheme.primary,
+                color: c.accent,
                 size: 30,
               ),
             ),
@@ -1471,13 +1477,13 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
           Center(
             child: Text(
               _submittedStatus,
-              style: TextStyle(fontSize: 13, color: AppTheme.onSurfaceVariant),
+              style: TextStyle(fontSize: 13, color: c.textSub),
             ),
           ),
           const SizedBox(height: 24),
           Divider(
             height: 1,
-            color: AppTheme.outlineVariant.withValues(alpha: 0.6),
+            color: c.line.withValues(alpha: 0.6),
           ),
           const SizedBox(height: 16),
           _summaryRow('Type', widget.leaveType.name),
@@ -1498,8 +1504,8 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
             label: const Text('VIEW IN HISTORY'),
             style: OutlinedButton.styleFrom(
               minimumSize: const Size.fromHeight(48),
-              side: BorderSide(color: AppTheme.outline.withValues(alpha: 0.5)),
-              foregroundColor: AppTheme.primary,
+              side: BorderSide(color: c.textMuted.withValues(alpha: 0.5)),
+              foregroundColor: c.accent,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(100),
               ),
@@ -1512,6 +1518,7 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
   }
 
   Widget _summaryRow(String label, String value) {
+    final c = context.omni;
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Row(
@@ -1525,7 +1532,7 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
                 letterSpacing: 0.4,
-                color: AppTheme.onSurfaceVariant,
+                color: c.textSub,
               ),
             ),
           ),

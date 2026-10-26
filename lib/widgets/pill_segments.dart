@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../core/theme.dart';
+import '../core/omni_colors.dart';
 
 /// A pill switch of two or more equal-width options (Pending / Recent,
 /// 30 / 60 / 90 days, Today / Yesterday, Team overview / My day).
@@ -32,6 +32,7 @@ class PillSegments extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.omni;
     return Semantics(
       container: true,
       explicitChildNodes: true,
@@ -39,7 +40,7 @@ class PillSegments extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(4),
         decoration: BoxDecoration(
-          color: AppTheme.surfaceContainer,
+          color: c.soft,
           borderRadius: BorderRadius.circular(999),
         ),
         child: Row(
@@ -61,7 +62,7 @@ class PillSegments extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(vertical: 10),
                       decoration: BoxDecoration(
                         color: i == value
-                            ? AppTheme.surfaceContainerLowest
+                            ? c.card
                             : Colors.transparent,
                         borderRadius: BorderRadius.circular(999),
                       ),
@@ -72,8 +73,8 @@ class PillSegments extends StatelessWidget {
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
                           color: i == value
-                              ? AppTheme.primary
-                              : AppTheme.onSurfaceVariant,
+                              ? c.accent
+                              : c.textSub,
                         ),
                       ),
                     ),

@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../../core/theme.dart';
+import '../../core/omni_colors.dart';
 import '../../models/team_outlook.dart';
 import '../../services/session_service.dart';
 import '../team/team_colors.dart';
@@ -99,6 +99,7 @@ class _TeamLeaveTileState extends State<TeamLeaveTile> {
         ? summary.faces.take(2).toList()
         : const <TeamFace>[];
     final label = ['Team leave', if (_isNew) 'new', ?subtitle].join(', ');
+    final c = context.omni;
     return Semantics(
       button: true,
       label: label,
@@ -107,7 +108,7 @@ class _TeamLeaveTileState extends State<TeamLeaveTile> {
       child: Card(
         key: const ValueKey('team-leave-tile'),
         margin: EdgeInsets.zero,
-        color: AppTheme.surfaceContainerLowest,
+        color: c.card,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(24),
           side: BorderSide(color: TeamColors.leaveTint, width: 2),
@@ -140,13 +141,13 @@ class _TeamLeaveTileState extends State<TeamLeaveTile> {
                     children: [
                       Row(
                         children: [
-                          const Flexible(
+                          Flexible(
                             child: Text(
                               'Team leave',
                               style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600,
-                                color: AppTheme.onSurface,
+                                color: c.text,
                               ),
                             ),
                           ),
@@ -182,10 +183,10 @@ class _TeamLeaveTileState extends State<TeamLeaveTile> {
                             subtitle,
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
-                              color: AppTheme.onSurfaceVariant,
+                              color: c.textSub,
                             ),
                           ),
                         ),
@@ -197,9 +198,9 @@ class _TeamLeaveTileState extends State<TeamLeaveTile> {
                   _Faces(faces: faces),
                 ],
                 const SizedBox(width: 4),
-                const Icon(
+                Icon(
                   Icons.chevron_right,
-                  color: AppTheme.onSurfaceVariant,
+                  color: c.textSub,
                 ),
               ],
             ),
@@ -240,7 +241,7 @@ class _Faces extends StatelessWidget {
                   color: TeamColors.avatar(faces[i].id),
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: AppTheme.surfaceContainerLowest,
+                    color: context.omni.card,
                     width: 2,
                   ),
                 ),
