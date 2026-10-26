@@ -49,17 +49,18 @@ class AlsoOffLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final t = TeamColors.of(context);
     final body = TextStyle(
       fontSize: 13,
       height: 1.5,
-      color: TeamColors.leaveOn,
+      color: t.leaveOn,
     );
     return Container(
       key: const ValueKey('also-off-line'),
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 4),
       decoration: BoxDecoration(
-        color: TeamColors.leaveTint,
+        color: t.leaveTint,
         borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
@@ -67,7 +68,7 @@ class AlsoOffLine extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(Icons.groups_outlined, size: 18, color: TeamColors.leaveOn),
+              Icon(Icons.groups_outlined, size: 18, color: t.leaveOn),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -75,7 +76,7 @@ class AlsoOffLine extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
-                    color: TeamColors.leaveOn,
+                    color: t.leaveOn,
                   ),
                 ),
               ),
@@ -88,7 +89,7 @@ class AlsoOffLine extends StatelessWidget {
           Text(
             reassurance,
             style: body.copyWith(
-              color: TeamColors.leaveOn.withValues(alpha: 0.8),
+              color: t.leaveOn.withValues(alpha: 0.8),
             ),
           ),
           TextButton(
@@ -97,7 +98,7 @@ class AlsoOffLine extends StatelessWidget {
             style: TextButton.styleFrom(
               padding: EdgeInsets.zero,
               minimumSize: const Size(0, 40),
-              foregroundColor: TeamColors.leaveOn,
+              foregroundColor: t.leaveOn,
             ),
             child: const Text(
               'See team leave',

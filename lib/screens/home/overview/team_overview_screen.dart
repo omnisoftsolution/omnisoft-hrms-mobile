@@ -5,7 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/error_messages.dart';
-import '../../../core/theme.dart';
+import '../../../core/omni_colors.dart';
 import '../../../models/expense_record.dart';
 import '../../../models/my_day.dart';
 import '../../../models/team_outlook.dart';
@@ -606,10 +606,11 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
   Widget _strip(BuildContext context) {
     final at = _cachedAt;
     final text = friendlyError(myDayRefreshFailed);
+    final c = context.omni;
     return Container(
       key: const ValueKey('ov-refresh-strip'),
       width: double.infinity,
-      color: AppTheme.error.withValues(alpha: 0.08),
+      color: c.error.withValues(alpha: 0.08),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Text(
         at == null
@@ -617,7 +618,7 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
             : '$text\n${OverviewCopy.showingFrom(_savedWhen(at))}',
         style: Theme.of(
           context,
-        ).textTheme.bodySmall?.copyWith(color: AppTheme.error),
+        ).textTheme.bodySmall?.copyWith(color: c.error),
       ),
     );
   }
@@ -704,7 +705,7 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
 
   List<Widget> _sections(BuildContext context, TeamOverview o) {
     final sectionStyle = Theme.of(context).textTheme.labelLarge?.copyWith(
-      color: AppTheme.onSurfaceVariant,
+      color: context.omni.textSub,
       fontWeight: FontWeight.w700,
     );
     final scopeLabel = o.scope.label;
@@ -776,16 +777,18 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
   }
 
   Widget _departmentChips(List<TeamDepartment> departments) {
+    final c = context.omni;
+    final t = TeamColors.of(context);
     Widget chip(Key key, String label, bool on, VoidCallback onTap) {
       return Padding(
         padding: const EdgeInsets.only(right: 8),
         child: Semantics(
           selected: on,
           child: Material(
-            color: on ? TeamColors.accentTint : Colors.transparent,
+            color: on ? t.accentTint : Colors.transparent,
             shape: StadiumBorder(
               side: BorderSide(
-                color: on ? TeamColors.accentTint : TeamColors.chipBorder,
+                color: on ? t.accentTint : t.chipBorder,
                 width: 1.5,
               ),
             ),
@@ -802,9 +805,7 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
-                    color: on
-                        ? TeamColors.onAccentTint
-                        : AppTheme.onSurfaceVariant,
+                    color: on ? t.onAccentTint : c.textSub,
                   ),
                 ),
               ),
@@ -837,17 +838,18 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
   }
 
   Widget _countsOnlyLine() {
-    return const Padding(
-      key: ValueKey('ov-counts-only'),
-      padding: EdgeInsets.symmetric(horizontal: 4),
+    final muted = context.omni.textMuted;
+    return Padding(
+      key: const ValueKey('ov-counts-only'),
+      padding: const EdgeInsets.symmetric(horizontal: 4),
       child: Row(
         children: [
-          Icon(Icons.lock_outline, size: 14, color: AppTheme.outline),
-          SizedBox(width: 6),
+          Icon(Icons.lock_outline, size: 14, color: muted),
+          const SizedBox(width: 6),
           Expanded(
             child: Text(
               OverviewCopy.countsOnly,
-              style: TextStyle(fontSize: 12, color: AppTheme.outline),
+              style: TextStyle(fontSize: 12, color: muted),
             ),
           ),
         ],
@@ -865,9 +867,9 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
           reason == 'no_department'
               ? OverviewCopy.noDepartment
               : OverviewCopy.noPeople,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 14,
-            color: AppTheme.onSurfaceVariant,
+            color: context.omni.textSub,
           ),
         ),
       ),

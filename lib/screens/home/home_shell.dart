@@ -7,6 +7,7 @@ import 'arrival_snack_tracker.dart';
 import 'home_root.dart';
 import 'leave_tab_icon.dart';
 import 'my_day/my_day_screen.dart';
+import 'side_tab_column.dart';
 import 'overview/team_overview_screen.dart';
 import '../approvals/approval_detail_screen.dart';
 import '../expenses/expenses_screen.dart';
@@ -382,10 +383,74 @@ class HomeShellState extends State<HomeShell> {
     );
   }
 
+  /// On iPhone Duo (closed, or open sideways) the tabs go into the
+  /// system's side column as a vertical pill instead of the bottom bar;
+  /// the tab screens lose that side's inset because the pill owns it.
+  Widget _withSideColumn(
+    BuildContext context, {
+    required SideColumn side,
+    required List<SideTab> tabs,
+    required Widget child,
+  }) {
+    if (side == SideColumn.none) return child;
+    final pad = MediaQuery.viewPaddingOf(context);
+    final column = SideTabColumn(
+      width: side == SideColumn.right ? pad.right : pad.left,
+      bottomInset: pad.bottom,
+      tabs: tabs,
+      selectedIndex: _index,
+      onSelected: _onTabTap,
+    );
+    final content = Expanded(
+      child: MediaQuery.removePadding(
+        context: context,
+        removeLeft: side == SideColumn.left,
+        removeRight: side == SideColumn.right,
+        child: child,
+      ),
+    );
+    return Row(
+      children: side == SideColumn.right
+          ? [content, column]
+          : [column, content],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final pending = context.watch<SessionService>().leaveApprovalsPendingCount;
     final c = context.omni;
+    final side = sideColumnOf(MediaQuery.viewPaddingOf(context));
+    final tabs = [
+      const SideTab(
+        icon: Icon(Icons.home_outlined),
+        selectedIcon: Icon(Icons.home_rounded),
+        label: 'HOME',
+      ),
+      SideTab(
+        icon: LeaveTabIcon(
+          count: pending,
+          selected: _index == 1,
+          icon: const Icon(Icons.event_note_outlined),
+        ),
+        selectedIcon: LeaveTabIcon(
+          count: pending,
+          selected: _index == 1,
+          icon: const Icon(Icons.event_note_rounded),
+        ),
+        label: 'LEAVE',
+      ),
+      const SideTab(
+        icon: Icon(Icons.history_rounded),
+        selectedIcon: Icon(Icons.history_rounded),
+        label: 'HISTORY',
+      ),
+      const SideTab(
+        icon: Icon(Icons.receipt_long_outlined),
+        selectedIcon: Icon(Icons.receipt_long_rounded),
+        label: 'EXPENSES',
+      ),
+    ];
     return ScaffoldMessenger(
       key: _scaffoldMessengerKey,
       // PopScope intercepts the Android system back button so it pops
@@ -403,98 +468,84 @@ class HomeShellState extends State<HomeShell> {
           }
         },
         child: Scaffold(
-          body: IndexedStack(
-            index: _index,
-            children: [
-              _buildTabNavigator(
-                navKey: _homeNavKey,
-                root: HomeRoot(
-                  key: _homeRootKey,
-                  myDayKey: _myDayKey,
-                  overviewKey: _overviewKey,
-                  onOpenLeave: navigateToLeave,
-                  onOpenExpense: navigateToExpense,
-                ),
-              ),
-              _buildTabNavigator(
-                navKey: _leaveNavKey,
-                root: LeaveScreen(key: _leaveKey),
-              ),
-              _buildTabNavigator(
-                navKey: _historyNavKey,
-                root: HistoryShell(key: _historyKey),
-              ),
-              _buildTabNavigator(
-                navKey: _expensesNavKey,
-                root: ExpensesScreen(key: _expensesKey),
-              ),
-            ],
-          ),
-          bottomNavigationBar: NavigationBarTheme(
-            // Material 3 NavigationBar with a tinted indicator pill
-            // behind the active item. Keeps a single source of truth
-            // for both selected/unselected label color.
-            data: NavigationBarThemeData(
-              backgroundColor: c.bar,
-              elevation: 8,
-              height: 72,
-              indicatorColor: c.navIndicator,
-              labelTextStyle: WidgetStateProperty.resolveWith((states) {
-                if (states.contains(WidgetState.selected)) {
-                  return TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.6,
-                    color: c.accent,
-                  );
-                }
-                return TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w500,
-                  color: c.textMuted,
-                );
-              }),
-              iconTheme: WidgetStateProperty.resolveWith((states) {
-                if (states.contains(WidgetState.selected)) {
-                  return IconThemeData(color: c.accent);
-                }
-                return IconThemeData(color: c.textMuted);
-              }),
-            ),
-            child: NavigationBar(
-              selectedIndex: _index,
-              onDestinationSelected: _onTabTap,
-              destinations: [
-                const NavigationDestination(
-                  icon: Icon(Icons.home_outlined),
-                  selectedIcon: Icon(Icons.home_rounded),
-                  label: 'HOME',
-                ),
-                NavigationDestination(
-                  icon: LeaveTabIcon(
-                    count: pending,
-                    selected: _index == 1,
-                    icon: const Icon(Icons.event_note_outlined),
+          body: _withSideColumn(
+            context,
+            side: side,
+            tabs: tabs,
+            child: IndexedStack(
+              index: _index,
+              children: [
+                _buildTabNavigator(
+                  navKey: _homeNavKey,
+                  root: HomeRoot(
+                    key: _homeRootKey,
+                    myDayKey: _myDayKey,
+                    overviewKey: _overviewKey,
+                    onOpenLeave: navigateToLeave,
+                    onOpenExpense: navigateToExpense,
                   ),
-                  selectedIcon: LeaveTabIcon(
-                    count: pending,
-                    selected: _index == 1,
-                    icon: const Icon(Icons.event_note_rounded),
-                  ),
-                  label: 'LEAVE',
                 ),
-                const NavigationDestination(
-                  icon: Icon(Icons.history_rounded),
-                  label: 'HISTORY',
+                _buildTabNavigator(
+                  navKey: _leaveNavKey,
+                  root: LeaveScreen(key: _leaveKey),
                 ),
-                const NavigationDestination(
-                  icon: Icon(Icons.receipt_long_outlined),
-                  selectedIcon: Icon(Icons.receipt_long_rounded),
-                  label: 'EXPENSES',
+                _buildTabNavigator(
+                  navKey: _historyNavKey,
+                  root: HistoryShell(key: _historyKey),
+                ),
+                _buildTabNavigator(
+                  navKey: _expensesNavKey,
+                  root: ExpensesScreen(key: _expensesKey),
                 ),
               ],
             ),
           ),
+          bottomNavigationBar: side != SideColumn.none
+              ? null
+              : NavigationBarTheme(
+                  // Material 3 NavigationBar with a tinted indicator pill
+                  // behind the active item. Keeps a single source of truth
+                  // for both selected/unselected label color.
+                  data: NavigationBarThemeData(
+                    backgroundColor: c.bar,
+                    elevation: 8,
+                    height: 72,
+                    indicatorColor: c.navIndicator,
+                    labelTextStyle: WidgetStateProperty.resolveWith((states) {
+                      if (states.contains(WidgetState.selected)) {
+                        return TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.6,
+                          color: c.accent,
+                        );
+                      }
+                      return TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        color: c.textMuted,
+                      );
+                    }),
+                    iconTheme: WidgetStateProperty.resolveWith((states) {
+                      if (states.contains(WidgetState.selected)) {
+                        return IconThemeData(color: c.accent);
+                      }
+                      return IconThemeData(color: c.textMuted);
+                    }),
+                  ),
+                  child: NavigationBar(
+                    selectedIndex: _index,
+                    onDestinationSelected: _onTabTap,
+                    destinations: [
+                      for (final t in tabs)
+                        NavigationDestination(
+                          icon: t.icon,
+                          selectedIcon: t.selectedIcon,
+                          label: t.label,
+                        ),
+                    ],
+                  ),
+                ),
         ),
       ),
     );
@@ -536,42 +587,44 @@ SnackBar notificationArrivalSnackBar(
   behavior: SnackBarBehavior.floating,
   margin: const EdgeInsets.all(16),
   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-  content: (wrapContent ?? (Widget w) => w)(Row(
-    children: [
-      const Icon(
-        Icons.notifications_active_rounded,
-        color: Colors.white,
-        size: 20,
-      ),
-      const SizedBox(width: 12),
-      Expanded(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              fresh.title,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
-                fontSize: 14,
-              ),
-            ),
-            if (fresh.body.isNotEmpty)
+  content: (wrapContent ?? (Widget w) => w)(
+    Row(
+      children: [
+        const Icon(
+          Icons.notifications_active_rounded,
+          color: Colors.white,
+          size: 20,
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
               Text(
-                fresh.body,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.85),
-                  fontSize: 12,
+                fresh.title,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
                 ),
               ),
-          ],
+              if (fresh.body.isNotEmpty)
+                Text(
+                  fresh.body,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.85),
+                    fontSize: 12,
+                  ),
+                ),
+            ],
+          ),
         ),
-      ),
-    ],
-  )),
+      ],
+    ),
+  ),
   action: fresh.snackActionLabel != null
       ? SnackBarAction(
           label: fresh.snackActionLabel!,

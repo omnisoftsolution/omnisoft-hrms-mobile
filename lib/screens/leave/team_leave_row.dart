@@ -100,6 +100,7 @@ class _TeamLeaveTileState extends State<TeamLeaveTile> {
         : const <TeamFace>[];
     final label = ['Team leave', if (_isNew) 'new', ?subtitle].join(', ');
     final c = context.omni;
+    final t = TeamColors.of(context);
     return Semantics(
       button: true,
       label: label,
@@ -111,7 +112,7 @@ class _TeamLeaveTileState extends State<TeamLeaveTile> {
         color: c.card,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(24),
-          side: BorderSide(color: TeamColors.leaveTint, width: 2),
+          side: BorderSide(color: t.leaveTint, width: 2),
         ),
         child: InkWell(
           borderRadius: BorderRadius.circular(24),
@@ -124,13 +125,13 @@ class _TeamLeaveTileState extends State<TeamLeaveTile> {
                   width: 40,
                   height: 40,
                   decoration: BoxDecoration(
-                    color: TeamColors.leaveTint,
+                    color: t.leaveTint,
                     borderRadius: BorderRadius.circular(13),
                   ),
                   child: Icon(
                     Icons.groups_outlined,
                     size: 20,
-                    color: TeamColors.leaveOn,
+                    color: t.leaveOn,
                   ),
                 ),
                 const SizedBox(width: 14),
@@ -160,7 +161,7 @@ class _TeamLeaveTileState extends State<TeamLeaveTile> {
                                 vertical: 2,
                               ),
                               decoration: BoxDecoration(
-                                color: TeamColors.accentTint,
+                                color: t.accentTint,
                                 borderRadius: BorderRadius.circular(999),
                               ),
                               child: Text(
@@ -169,7 +170,7 @@ class _TeamLeaveTileState extends State<TeamLeaveTile> {
                                   fontSize: 10,
                                   fontWeight: FontWeight.w800,
                                   letterSpacing: 0.6,
-                                  color: TeamColors.onAccentTint,
+                                  color: t.onAccentTint,
                                 ),
                               ),
                             ),
@@ -223,6 +224,7 @@ class _Faces extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final t = TeamColors.of(context);
     return SizedBox(
       width: _size + _step * (faces.length - 1),
       height: _size,
@@ -238,7 +240,7 @@ class _Faces extends StatelessWidget {
                 height: _size,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: TeamColors.avatar(faces[i].id),
+                  color: t.avatar(faces[i].id),
                   shape: BoxShape.circle,
                   border: Border.all(
                     color: context.omni.card,
@@ -247,8 +249,8 @@ class _Faces extends StatelessWidget {
                 ),
                 child: Text(
                   faces[i].initials,
-                  style: const TextStyle(
-                    color: TeamColors.onC3,
+                  style: TextStyle(
+                    color: t.onAvatar,
                     fontSize: 10,
                     fontWeight: FontWeight.w700,
                   ),

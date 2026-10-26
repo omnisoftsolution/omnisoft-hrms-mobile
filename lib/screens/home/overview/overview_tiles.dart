@@ -1,15 +1,14 @@
 import 'package:flutter/material.dart';
 
-import '../../../core/theme.dart';
+import '../../../core/omni_colors.dart';
 import '../../../models/team_overview.dart';
 import '../../team/team_colors.dart';
-import '../my_day/my_day_colors.dart';
 import 'overview_copy.dart';
 
-/// The tone of a bucket: Task 5's [TeamColors.bucket] for the Today keys;
-/// Yesterday's `left_early`, `absent` and `off` borrow Late, No check-in
-/// and Off today (mockup `yTiles`).
-MyDayTone overviewTone(String id) => TeamColors.bucket(switch (id) {
+/// The tone of a bucket in palette [t]: Task 5's [TeamColors.bucket] for
+/// the Today keys; Yesterday's `left_early`, `absent` and `off` borrow Late,
+/// No check-in and Off today (mockup `yTiles`).
+MyDayTone overviewTone(TeamColors t, String id) => t.bucket(switch (id) {
   'left_early' => 'late',
   'absent' => 'no_check_in',
   'off' => 'off_today',
@@ -65,6 +64,7 @@ class OverviewTodayTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final t = TeamColors.of(context);
     final segments = <(String, int)>[
       for (final id in barBuckets)
         if (counts.countOf(id) > 0) (id, counts.countOf(id)),
@@ -73,7 +73,7 @@ class OverviewTodayTile extends StatelessWidget {
       key: const ValueKey('ov-today-tile'),
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: TeamColors.overviewTile,
+        color: t.overviewTile,
         borderRadius: BorderRadius.circular(24),
       ),
       child: Column(
@@ -85,12 +85,12 @@ class OverviewTodayTile extends StatelessWidget {
                 width: 56,
                 height: 56,
                 decoration: BoxDecoration(
-                  color: TeamColors.tileBadge,
+                  color: t.tileBadge,
                   borderRadius: BorderRadius.circular(18),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.groups_outlined,
-                  color: TeamColors.onTile,
+                  color: t.onTile,
                   size: 30,
                 ),
               ),
@@ -101,8 +101,8 @@ class OverviewTodayTile extends StatelessWidget {
                   children: [
                     Text(
                       OverviewCopy.checkedIn(counts.totalCheckedIn),
-                      style: const TextStyle(
-                        color: TeamColors.onTile,
+                      style: TextStyle(
+                        color: t.onTile,
                         fontSize: 24,
                         fontWeight: FontWeight.w700,
                         height: 1.15,
@@ -114,8 +114,8 @@ class OverviewTodayTile extends StatelessWidget {
                         counts.totalExpected,
                         scopeLabel,
                       ),
-                      style: const TextStyle(
-                        color: TeamColors.onTileSoft,
+                      style: TextStyle(
+                        color: t.onTileSoft,
                         fontSize: 13,
                       ),
                     ),
@@ -125,7 +125,7 @@ class OverviewTodayTile extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 14),
-          const Divider(height: 1, color: TeamColors.tileLine),
+          Divider(height: 1, color: t.tileLine),
           const SizedBox(height: 14),
           ExcludeSemantics(
             child: ClipRRect(
@@ -133,7 +133,7 @@ class OverviewTodayTile extends StatelessWidget {
               child: SizedBox(
                 height: 12,
                 child: ColoredBox(
-                  color: TeamColors.tileTrack,
+                  color: t.tileTrack,
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
@@ -141,7 +141,7 @@ class OverviewTodayTile extends StatelessWidget {
                         Expanded(
                           key: ValueKey('ov-bar-$id'),
                           flex: n,
-                          child: ColoredBox(color: overviewTone(id).fill),
+                          child: ColoredBox(color: overviewTone(t, id).fill),
                         ),
                     ],
                   ),
@@ -163,15 +163,15 @@ class OverviewTodayTile extends StatelessWidget {
                       width: 8,
                       height: 8,
                       decoration: BoxDecoration(
-                        color: overviewTone(id).fill,
+                        color: overviewTone(t, id).fill,
                         shape: BoxShape.circle,
                       ),
                     ),
                     const SizedBox(width: 5),
                     Text(
                       '${overviewBucketLabel(id)} $n',
-                      style: const TextStyle(
-                        color: TeamColors.onTileSoft,
+                      style: TextStyle(
+                        color: t.onTileSoft,
                         fontSize: 11,
                       ),
                     ),
@@ -183,8 +183,8 @@ class OverviewTodayTile extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               OverviewCopy.liveLine(asOf, counts.totalTracked),
-              style: const TextStyle(
-                color: TeamColors.onTileFaint,
+              style: TextStyle(
+                color: t.onTileFaint,
                 fontSize: 12,
               ),
             ),
@@ -209,11 +209,12 @@ class OverviewYesterdayTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final t = TeamColors.of(context);
     return Container(
       key: const ValueKey('ov-yesterday-tile'),
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: TeamColors.overviewTileYesterday,
+        color: t.overviewTileYesterday,
         borderRadius: BorderRadius.circular(24),
       ),
       child: Column(
@@ -221,8 +222,8 @@ class OverviewYesterdayTile extends StatelessWidget {
         children: [
           Text(
             OverviewCopy.worked(reviewed.totalWorked),
-            style: const TextStyle(
-              color: TeamColors.onTile,
+            style: TextStyle(
+              color: t.onTile,
               fontSize: 24,
               fontWeight: FontWeight.w700,
               height: 1.15,
@@ -235,16 +236,16 @@ class OverviewYesterdayTile extends StatelessWidget {
               reviewed.date,
               scopeLabel,
             ),
-            style: const TextStyle(color: TeamColors.onTileSoft, fontSize: 13),
+            style: TextStyle(color: t.onTileSoft, fontSize: 13),
           ),
           const SizedBox(height: 10),
-          const Divider(height: 1, color: TeamColors.tileLine),
+          Divider(height: 1, color: t.tileLine),
           const SizedBox(height: 10),
           Text(
             reviewed.provisional
                 ? OverviewCopy.reviewedProvisional
                 : OverviewCopy.reviewedFinal,
-            style: const TextStyle(color: TeamColors.onTileFaint, fontSize: 12),
+            style: TextStyle(color: t.onTileFaint, fontSize: 12),
           ),
         ],
       ),
@@ -293,6 +294,7 @@ class _CountTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.omni;
     final tap = onTap;
     final VoidCallback? handler = tap == null ? null : () => tap(cell.id);
     return Semantics(
@@ -302,7 +304,7 @@ class _CountTile extends StatelessWidget {
       excludeSemantics: true,
       child: Material(
         key: ValueKey('ov-tile-${cell.id}'),
-        color: AppTheme.surfaceContainerLowest,
+        color: c.card,
         borderRadius: BorderRadius.circular(20),
         child: InkWell(
           borderRadius: BorderRadius.circular(20),
@@ -321,17 +323,20 @@ class _CountTile extends StatelessWidget {
                         width: 8,
                         height: 8,
                         decoration: BoxDecoration(
-                          color: overviewTone(cell.id).dot,
+                          color: overviewTone(
+                            TeamColors.of(context),
+                            cell.id,
+                          ).dot,
                           shape: BoxShape.circle,
                         ),
                       ),
                       const SizedBox(width: 6),
                       Text(
                         '${cell.count}',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 24,
                           fontWeight: FontWeight.w700,
-                          color: AppTheme.onSurface,
+                          color: c.text,
                         ),
                       ),
                     ],
@@ -341,10 +346,10 @@ class _CountTile extends StatelessWidget {
                     cell.label,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
-                      color: AppTheme.onSurfaceVariant,
+                      color: c.textSub,
                     ),
                   ),
                 ],

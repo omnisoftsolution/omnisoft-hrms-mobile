@@ -102,7 +102,7 @@ void main() {
       ),
     );
     final deco = zero.decoration! as BoxDecoration;
-    expect(deco.color, TeamColors.cell0);
+    expect(deco.color, TeamColors.light.cell0);
     expect(deco.border, isNotNull);
     final ph = tester.widget<Container>(
       find.descendant(
@@ -110,17 +110,17 @@ void main() {
         matching: find.byType(Container),
       ),
     );
-    expect((ph.decoration! as BoxDecoration).color, TeamColors.holCell);
+    expect((ph.decoration! as BoxDecoration).color, TeamColors.light.holCell);
   });
 
   testWidgets('cells are shaded by the number of people off', (tester) async {
     _tall(tester);
     await tester.pumpWidget(_host(_counts));
-    expect(_material(tester, '2026-10-23').color, TeamColors.cell0);
-    expect(_material(tester, '2026-10-26').color, TeamColors.c1);
-    expect(_material(tester, '2026-10-22').color, TeamColors.c2);
-    expect(_material(tester, '2026-10-27').color, TeamColors.c3);
-    expect(_material(tester, '2026-10-28').color, TeamColors.c3);
+    expect(_material(tester, '2026-10-23').color, TeamColors.light.cell0);
+    expect(_material(tester, '2026-10-26').color, TeamColors.light.c1);
+    expect(_material(tester, '2026-10-22').color, TeamColors.light.c2);
+    expect(_material(tester, '2026-10-27').color, TeamColors.light.c3);
+    expect(_material(tester, '2026-10-28').color, TeamColors.light.c3);
     // Sub-labels.
     expect(
       find.descendant(of: _cell('2026-10-27'), matching: find.text('3 off')),
@@ -131,7 +131,7 @@ void main() {
       findsNothing,
     );
     // White text on the darkest shade only.
-    expect(_dayText(tester, '2026-10-27', '27').style!.color, TeamColors.onC3);
+    expect(_dayText(tester, '2026-10-27', '27').style!.color, TeamColors.light.onC3);
     expect(_dayText(tester, '2026-10-26', '26').style!.color, AppTheme.onSurface);
   });
 
@@ -139,13 +139,13 @@ void main() {
       '(1.34.1)', (tester) async {
     _tall(tester);
     await tester.pumpWidget(_host(_counts));
-    expect(_material(tester, '2026-10-23').color, TeamColors.cell0);
-    expect(_side(tester, '2026-10-23').color, TeamColors.cellLine);
+    expect(_material(tester, '2026-10-23').color, TeamColors.light.cell0);
+    expect(_side(tester, '2026-10-23').color, TeamColors.light.cellLine);
     expect(_side(tester, '2026-10-23').width, 1);
     expect(_dayText(tester, '2026-10-23', '23').style!.color, AppTheme.onSurface);
     // The three colours are distinct now (no more three similar greys).
     expect(
-      {TeamColors.cell0, TeamColors.cellOff, TeamColors.holCell}.length,
+      {TeamColors.light.cell0, TeamColors.light.cellOff, TeamColors.light.holCell}.length,
       3,
     );
   });
@@ -155,20 +155,20 @@ void main() {
     _tall(tester);
     await tester.pumpWidget(_host(_counts));
     // Sat 24 Oct: not a workday in the fixture.
-    expect(_material(tester, '2026-10-24').color, TeamColors.cellOff);
-    expect(TeamColors.cellOff.a, 0);
+    expect(_material(tester, '2026-10-24').color, TeamColors.light.cellOff);
+    expect(TeamColors.light.cellOff.a, 0);
     expect(_side(tester, '2026-10-24').style, BorderStyle.none);
-    expect(_dayText(tester, '2026-10-24', '24').style!.color, TeamColors.offDigit);
+    expect(_dayText(tester, '2026-10-24', '24').style!.color, TeamColors.light.offDigit);
     // Sun 25 Oct: no fill, red digit (calendar convention).
-    expect(_material(tester, '2026-10-25').color, TeamColors.cellOff);
-    expect(_dayText(tester, '2026-10-25', '25').style!.color, TeamColors.sunday);
+    expect(_material(tester, '2026-10-25').color, TeamColors.light.cellOff);
+    expect(_dayText(tester, '2026-10-25', '25').style!.color, TeamColors.light.sunday);
     // The weekday header's S of Sunday is red too.
     expect(
       tester
           .widget<Text>(find.byKey(const ValueKey('heat-head-sun')).first)
           .style!
           .color,
-      TeamColors.sunday,
+      TeamColors.light.sunday,
     );
   });
 
@@ -183,25 +183,25 @@ void main() {
       (d as Map)['workday'] = true;
     }
     await tester.pumpWidget(_host(TeamOutlook.fromJson(body)));
-    expect(_dayText(tester, '2026-10-25', '25').style!.color, TeamColors.sunday);
-    expect(_material(tester, '2026-10-25').color, TeamColors.cell0);
-    expect(_dayText(tester, '2026-11-01', '1').style!.color, TeamColors.sunday);
+    expect(_dayText(tester, '2026-10-25', '25').style!.color, TeamColors.light.sunday);
+    expect(_material(tester, '2026-10-25').color, TeamColors.light.cell0);
+    expect(_dayText(tester, '2026-11-01', '1').style!.color, TeamColors.light.sunday);
     expect(_dayText(tester, '2026-11-08', '8').style!.color, AppTheme.onSurface);
-    expect(_dayText(tester, '2026-11-15', '15').style!.color, TeamColors.onC3);
+    expect(_dayText(tester, '2026-11-15', '15').style!.color, TeamColors.light.onC3);
   });
 
   testWidgets('a holiday for everyone is a light red tint with a red "PH"; '
       'for some, a red dot', (tester) async {
     _tall(tester);
     await tester.pumpWidget(_host(_counts));
-    expect(_material(tester, '2026-11-09').color, TeamColors.holCell);
-    expect(TeamColors.holCell, const Color(0xFFFFDAD6));
+    expect(_material(tester, '2026-11-09').color, TeamColors.light.holCell);
+    expect(TeamColors.light.holCell, const Color(0xFFFFDAD6));
     final ph = tester.widget<Text>(
       find.descendant(of: _cell('2026-11-09'), matching: find.text('PH')),
     );
-    expect(ph.style!.color, TeamColors.holText);
+    expect(ph.style!.color, TeamColors.light.holText);
     expect(find.byKey(const ValueKey('heat-hol-dot-2026-11-09')), findsNothing);
-    expect(_material(tester, '2026-11-10').color, TeamColors.c1);
+    expect(_material(tester, '2026-11-10').color, TeamColors.light.c1);
     expect(find.byKey(const ValueKey('heat-hol-dot-2026-11-10')), findsOneWidget);
   });
 
@@ -211,7 +211,7 @@ void main() {
     _tall(tester);
     await tester.pumpWidget(_host(_counts));
     expect(_side(tester, '2026-10-22').width, 1.5);
-    expect(_side(tester, '2026-10-22').color, TeamColors.accent);
+    expect(_side(tester, '2026-10-22').color, TeamColors.light.accent);
     expect(_side(tester, '2026-10-26').style, BorderStyle.none);
 
     await tester.pumpWidget(_host(_counts, selected: DateTime(2026, 10, 26)));
