@@ -616,9 +616,7 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
         at == null
             ? text
             : '$text\n${OverviewCopy.showingFrom(_savedWhen(at))}',
-        style: Theme.of(
-          context,
-        ).textTheme.bodySmall?.copyWith(color: c.error),
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(color: c.error),
       ),
     );
   }
@@ -717,11 +715,8 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
     // The day the shown answer is for (a switch keeps the previous one on
     // screen until the new one lands).
     final shownDay = _shownDay ?? _day;
-    return [
-      if (empty != null) ...[
-        _emptyCard(empty),
-        const SizedBox(height: 16),
-      ] else ...[
+    final attendance = <Widget>[
+      if (empty == null) ...[
         if (shownDay == 'today' && counts != null) ...[
           OverviewTodayTile(
             counts: counts,
@@ -748,6 +743,10 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
           _countsOnlyLine(),
           const SizedBox(height: 14),
         ],
+      ],
+    ];
+    final whoOutBlock = <Widget>[
+      if (empty == null)
         if (o.sections.leave && whoOut != null) ...[
           WhoOutCard(
             whoOut: whoOut,
@@ -759,7 +758,8 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
           ),
           const SizedBox(height: 16),
         ],
-      ],
+    ];
+    final forYouBlock = <Widget>[
       // For you comes from a live answer only (A-X2): a cached answer
       // shows no For you section at all, not even its empty state.
       if (_cachedAt == null) ...[
@@ -773,6 +773,12 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
           onTap: _onForYouTap,
         ),
       ],
+    ];
+    if (empty != null) {
+      return [_emptyCard(empty), const SizedBox(height: 16), ...forYouBlock];
+    }
+    return [
+      OverviewColumns(blocks: [attendance, whoOutBlock, forYouBlock]),
     ];
   }
 
@@ -867,12 +873,59 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
           reason == 'no_department'
               ? OverviewCopy.noDepartment
               : OverviewCopy.noPeople,
-          style: TextStyle(
-            fontSize: 14,
-            color: context.omni.textSub,
-          ),
+          style: TextStyle(fontSize: 14, color: context.omni.textSub),
         ),
       ),
     );
   }
+}
+
+/// Lays the overview's blocks (today's tile and counts, Who's out, For you)
+/// side by side when the screen is wide — iPhone Duo open: two columns
+/// upright, three sideways — and stacked on a phone. With two columns,
+/// Who's out and For you share the second.
+class OverviewColumns extends StatelessWidget {
+  const OverviewColumns({super.key, required this.blocks});
+
+  /// Width (content, between the side paddings) from which a second and a
+  /// third column are used.
+  static const twoColumnWidth = 600.0;
+  static const threeColumnWidth = 820.0;
+
+  final List<List<Widget>> blocks;
+
+  @override
+  Widget build(BuildContext context) {
+    final groups = blocks.where((b) => b.isNotEmpty).toList();
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final w = constraints.maxWidth;
+        final cols = w >= threeColumnWidth
+            ? 3
+            : w >= twoColumnWidth
+            ? 2
+            : 1;
+        if (cols == 1 || groups.length < 2) {
+          return _stack([for (final g in groups) ...g]);
+        }
+        final columns = cols == 2 && groups.length == 3
+            ? [groups[0], groups[1] + groups[2]]
+            : groups;
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (var i = 0; i < columns.length; i++) ...[
+              if (i > 0) const SizedBox(width: 16),
+              Expanded(child: _stack(columns[i])),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  static Widget _stack(List<Widget> children) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: children,
+  );
 }
