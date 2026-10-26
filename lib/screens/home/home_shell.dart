@@ -87,6 +87,7 @@ class HomeShellState extends State<HomeShell> {
     _notifSvc?.removeListener(_onNotificationChange);
     _notifSvc?.stop();
     _push?.removeListener(_onPushChange);
+    _sideHost?.withdraw(this);
     super.dispose();
   }
 
@@ -383,44 +384,23 @@ class HomeShellState extends State<HomeShell> {
     );
   }
 
-  /// On iPhone Duo (closed, or open sideways) the tabs go into the
-  /// system's side column as a vertical pill instead of the bottom bar;
-  /// the tab screens lose that side's inset because the pill owns it.
-  Widget _withSideColumn(
-    BuildContext context, {
-    required SideColumn side,
-    required List<SideTab> tabs,
-    required Widget child,
-  }) {
-    if (side == SideColumn.none) return child;
-    final pad = MediaQuery.viewPaddingOf(context);
-    final column = SideTabColumn(
-      width: side == SideColumn.right ? pad.right : pad.left,
-      bottomInset: pad.bottom,
-      tabs: tabs,
-      selectedIndex: _index,
-      onSelected: _onTabTap,
-    );
-    final content = Expanded(
-      child: MediaQuery.removePadding(
-        context: context,
-        removeLeft: side == SideColumn.left,
-        removeRight: side == SideColumn.right,
-        child: child,
-      ),
-    );
-    return Row(
-      children: side == SideColumn.right
-          ? [content, column]
-          : [column, content],
-    );
+  /// The app-level host that draws the tabs in iPhone Duo's side column
+  /// (kept here: [dispose] can't look it up).
+  SideColumnHostState? _sideHost;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _sideHost = SideColumnHost.maybeOf(context);
   }
 
   @override
   Widget build(BuildContext context) {
     final pending = context.watch<SessionService>().leaveApprovalsPendingCount;
     final c = context.omni;
-    final side = sideColumnOf(MediaQuery.viewPaddingOf(context));
+    // iPhone Duo, closed or open sideways: the tabs go into the system's
+    // side column (drawn by SideColumnHost) instead of the bottom bar.
+    final side = SideColumnHost.sideOf(context);
     final tabs = [
       const SideTab(
         icon: Icon(Icons.home_outlined),
@@ -451,6 +431,14 @@ class HomeShellState extends State<HomeShell> {
         label: 'EXPENSES',
       ),
     ];
+    if (side != SideColumn.none) {
+      _sideHost?.offer(
+        this,
+        SideTabsSpec(tabs: tabs, selectedIndex: _index, onSelected: _onTabTap),
+      );
+    } else {
+      _sideHost?.withdraw(this);
+    }
     return ScaffoldMessenger(
       key: _scaffoldMessengerKey,
       // PopScope intercepts the Android system back button so it pops
@@ -468,37 +456,32 @@ class HomeShellState extends State<HomeShell> {
           }
         },
         child: Scaffold(
-          body: _withSideColumn(
-            context,
-            side: side,
-            tabs: tabs,
-            child: IndexedStack(
-              index: _index,
-              children: [
-                _buildTabNavigator(
-                  navKey: _homeNavKey,
-                  root: HomeRoot(
-                    key: _homeRootKey,
-                    myDayKey: _myDayKey,
-                    overviewKey: _overviewKey,
-                    onOpenLeave: navigateToLeave,
-                    onOpenExpense: navigateToExpense,
-                  ),
+          body: IndexedStack(
+            index: _index,
+            children: [
+              _buildTabNavigator(
+                navKey: _homeNavKey,
+                root: HomeRoot(
+                  key: _homeRootKey,
+                  myDayKey: _myDayKey,
+                  overviewKey: _overviewKey,
+                  onOpenLeave: navigateToLeave,
+                  onOpenExpense: navigateToExpense,
                 ),
-                _buildTabNavigator(
-                  navKey: _leaveNavKey,
-                  root: LeaveScreen(key: _leaveKey),
-                ),
-                _buildTabNavigator(
-                  navKey: _historyNavKey,
-                  root: HistoryShell(key: _historyKey),
-                ),
-                _buildTabNavigator(
-                  navKey: _expensesNavKey,
-                  root: ExpensesScreen(key: _expensesKey),
-                ),
-              ],
-            ),
+              ),
+              _buildTabNavigator(
+                navKey: _leaveNavKey,
+                root: LeaveScreen(key: _leaveKey),
+              ),
+              _buildTabNavigator(
+                navKey: _historyNavKey,
+                root: HistoryShell(key: _historyKey),
+              ),
+              _buildTabNavigator(
+                navKey: _expensesNavKey,
+                root: ExpensesScreen(key: _expensesKey),
+              ),
+            ],
           ),
           bottomNavigationBar: side != SideColumn.none
               ? null

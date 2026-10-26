@@ -97,9 +97,181 @@ void main() {
     expect(find.byIcon(Icons.home_outlined), findsOneWidget);
   });
 
+  main2();
+
   testWidgets('renders under the dark theme', (tester) async {
     await tester.pumpWidget(_host(theme: AppTheme.darkTheme));
     expect(tester.takeException(), isNull);
     expect(find.bySemanticsLabel('HOME'), findsOneWidget);
+  });
+}
+
+/// Stands in for HomeShell: offers tabs to the host and records what it sees.
+class _Probe extends StatefulWidget {
+  const _Probe({this.offerTabs = true});
+
+  final bool offerTabs;
+
+  @override
+  State<_Probe> createState() => _ProbeState();
+}
+
+class _ProbeState extends State<_Probe> {
+  int taps = 0;
+  int selected = 0;
+  late EdgeInsets seenPadding;
+  late double seenWidth;
+  late SideColumn seenSide;
+  SideColumnHostState? host;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    host = SideColumnHost.maybeOf(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    seenPadding = MediaQuery.viewPaddingOf(context);
+    seenSide = SideColumnHost.sideOf(context);
+    if (widget.offerTabs && seenSide != SideColumn.none) {
+      host?.offer(
+        this,
+        SideTabsSpec(
+          tabs: _tabs,
+          selectedIndex: selected,
+          onSelected: (i) => setState(() => selected = i),
+        ),
+      );
+    }
+    return Scaffold(
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          seenWidth = constraints.maxWidth;
+          return Center(
+            child: TextButton(
+              onPressed: () => setState(() => taps++),
+              child: Text('taps $taps'),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+void _duo(WidgetTester tester, {required double right, Size? size}) {
+  tester.view.devicePixelRatio = 1;
+  tester.view.physicalSize = size ?? const Size(466, 678);
+  tester.view.viewPadding = FakeViewPadding(right: right, bottom: 20);
+  tester.view.padding = FakeViewPadding(right: right, bottom: 20);
+}
+
+Widget _app({bool offerTabs = true}) => MaterialApp(
+  theme: AppTheme.lightTheme,
+  builder: (context, child) => SideColumnHost(child: child!),
+  home: _Probe(offerTabs: offerTabs),
+);
+
+_ProbeState _probe(WidgetTester tester) =>
+    tester.state<_ProbeState>(find.byType(_Probe));
+
+void main2() {
+  group('SideColumnHost', () {
+    testWidgets('iPhone Duo closed: the app sits left of the 84 pt column, '
+        'which shows the tabs', (tester) async {
+      addTearDown(tester.view.reset);
+      _duo(tester, right: 84);
+      await tester.pumpWidget(_app());
+      await tester.pump();
+      final p = _probe(tester);
+      expect(p.seenSide, SideColumn.right);
+      expect(p.seenWidth, 466 - 84);
+      expect(p.seenPadding.right, 0);
+      expect(find.bySemanticsLabel('HOME'), findsOneWidget);
+      expect(
+        tester.getTopLeft(find.bySemanticsLabel('LEAVE')).dx,
+        greaterThan(466 - 84),
+      );
+      await tester.tap(find.bySemanticsLabel('HISTORY'));
+      await tester.pump();
+      await tester.pump();
+      expect(p.selected, 2);
+    });
+
+    testWidgets('open sideways (951×669) works the same way', (tester) async {
+      addTearDown(tester.view.reset);
+      _duo(tester, right: 84, size: const Size(951, 669));
+      await tester.pumpWidget(_app());
+      await tester.pump();
+      expect(_probe(tester).seenWidth, 951 - 84);
+      expect(find.bySemanticsLabel('HOME'), findsOneWidget);
+    });
+
+    testWidgets('a plain phone: full width, no column, no side tabs', (
+      tester,
+    ) async {
+      addTearDown(tester.view.reset);
+      _duo(tester, right: 0, size: const Size(390, 844));
+      await tester.pumpWidget(_app());
+      await tester.pump();
+      final p = _probe(tester);
+      expect(p.seenSide, SideColumn.none);
+      expect(p.seenWidth, 390);
+      expect(find.bySemanticsLabel('HOME'), findsNothing);
+    });
+
+    testWidgets('before sign-in (no tabs offered) the column stays empty', (
+      tester,
+    ) async {
+      addTearDown(tester.view.reset);
+      _duo(tester, right: 84);
+      await tester.pumpWidget(_app(offerTabs: false));
+      await tester.pump();
+      expect(_probe(tester).seenWidth, 466 - 84);
+      expect(find.bySemanticsLabel('HOME'), findsNothing);
+    });
+
+    testWidgets('folding and unfolding keeps the app state', (tester) async {
+      addTearDown(tester.view.reset);
+      _duo(tester, right: 0, size: const Size(669, 951));
+      await tester.pumpWidget(_app());
+      await tester.tap(find.text('taps 0'));
+      await tester.pump();
+      expect(find.text('taps 1'), findsOneWidget);
+      // Close the phone: the cover display has the side column.
+      _duo(tester, right: 84);
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('taps 1'), findsOneWidget);
+      expect(find.bySemanticsLabel('HOME'), findsOneWidget);
+      // Open it again.
+      _duo(tester, right: 0, size: const Size(669, 951));
+      await tester.pump();
+      expect(find.text('taps 1'), findsOneWidget);
+    });
+
+    testWidgets('a page pushed over everything also stays left of the column', (
+      tester,
+    ) async {
+      addTearDown(tester.view.reset);
+      _duo(tester, right: 84);
+      late double pushedWidth;
+      await tester.pumpWidget(_app());
+      final nav = tester.state<NavigatorState>(find.byType(Navigator).first);
+      nav.push(
+        MaterialPageRoute<void>(
+          fullscreenDialog: true,
+          builder: (context) => LayoutBuilder(
+            builder: (context, c) {
+              pushedWidth = c.maxWidth;
+              return const SizedBox.expand();
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(pushedWidth, 466 - 84);
+    });
   });
 }

@@ -8,7 +8,8 @@ import '../../core/omni_colors.dart';
 /// column along the camera side, on the closed cover display and when the
 /// open phone is held sideways; the safe area reports that column as a
 /// side inset. Native tab bars move into it on their own — the app's own
-/// bottom bar does not, so [HomeShell] draws its tabs there instead.
+/// bottom bar does not, so [SideColumnHost] keeps the whole app left of the
+/// column and draws [HomeShell]'s tabs in it.
 ///
 /// A plain iPhone held sideways has insets on both sides (the notch or
 /// island on one, a mirror on the other); only a wide, lopsided inset
@@ -25,6 +26,137 @@ SideColumn sideColumnOf(EdgeInsets viewPadding) {
   if (r >= kSideColumnMinInset && r > l) return SideColumn.right;
   if (l >= kSideColumnMinInset && l > r) return SideColumn.left;
   return SideColumn.none;
+}
+
+/// What [HomeShell] wants in the column: its tabs and the selected one.
+class SideTabsSpec {
+  const SideTabsSpec({
+    required this.tabs,
+    required this.selectedIndex,
+    required this.onSelected,
+  });
+
+  final List<SideTab> tabs;
+  final int selectedIndex;
+  final ValueChanged<int> onSelected;
+}
+
+/// Sits right under [MaterialApp] (its `builder`). On iPhone Duo, closed or
+/// open sideways, the app gets the space left of the system column, as iOS
+/// gives it to native apps: every route — tab screens, full-screen pages,
+/// sheets, sign-in — is laid out there with that side's inset removed, so
+/// nothing lands under the status bar or the camera. The column itself
+/// shows the tabs [HomeShell] offers (none before sign-in).
+///
+/// The tree has the same shape with and without the column, so folding or
+/// unfolding the phone never rebuilds the app's Navigator (state, tabs and
+/// pushed pages survive).
+class SideColumnHost extends StatefulWidget {
+  const SideColumnHost({super.key, required this.child});
+
+  final Widget child;
+
+  /// The column side below this host ([SideColumn.none] without a host).
+  static SideColumn sideOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_SideColumnScope>()?.side ??
+      SideColumn.none;
+
+  static SideColumnHostState? maybeOf(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<_SideColumnScope>()?.host;
+
+  @override
+  State<SideColumnHost> createState() => SideColumnHostState();
+}
+
+class SideColumnHostState extends State<SideColumnHost> {
+  final ValueNotifier<SideTabsSpec?> _tabs = ValueNotifier(null);
+  Object? _owner;
+
+  @visibleForTesting
+  SideTabsSpec? get offered => _tabs.value;
+
+  /// [owner] shows [spec] in the column. Called from a build, so the
+  /// change lands after the frame.
+  void offer(Object owner, SideTabsSpec spec) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _owner = owner;
+      _tabs.value = spec;
+    });
+  }
+
+  /// [owner] is gone; its tabs leave the column.
+  void withdraw(Object owner) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !identical(_owner, owner)) return;
+      _owner = null;
+      _tabs.value = null;
+    });
+  }
+
+  @override
+  void dispose() {
+    _tabs.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final side = sideColumnOf(media.viewPadding);
+    final width = switch (side) {
+      SideColumn.right => media.viewPadding.right,
+      SideColumn.left => media.viewPadding.left,
+      SideColumn.none => 0.0,
+    };
+    final column = SizedBox(
+      key: const ValueKey('side-column'),
+      width: width,
+      child: side == SideColumn.none
+          ? null
+          : ColoredBox(
+              color: context.omni.background,
+              child: ValueListenableBuilder<SideTabsSpec?>(
+                valueListenable: _tabs,
+                builder: (context, spec, _) => spec == null
+                    ? const SizedBox.expand()
+                    : SideTabColumn(
+                        width: width,
+                        bottomInset: media.viewPadding.bottom,
+                        tabs: spec.tabs,
+                        selectedIndex: spec.selectedIndex,
+                        onSelected: spec.onSelected,
+                      ),
+              ),
+            ),
+    );
+    final app = Expanded(
+      child: MediaQuery.removePadding(
+        context: context,
+        removeLeft: side == SideColumn.left,
+        removeRight: side == SideColumn.right,
+        child: _SideColumnScope(host: this, side: side, child: widget.child),
+      ),
+    );
+    return Row(
+      textDirection: TextDirection.ltr,
+      children: side == SideColumn.left ? [column, app] : [app, column],
+    );
+  }
+}
+
+class _SideColumnScope extends InheritedWidget {
+  const _SideColumnScope({
+    required this.host,
+    required this.side,
+    required super.child,
+  });
+
+  final SideColumnHostState host;
+  final SideColumn side;
+
+  @override
+  bool updateShouldNotify(_SideColumnScope old) => old.side != side;
 }
 
 /// One tab of the side pill: the same icons and label as the bottom bar.
@@ -117,21 +249,20 @@ class _SideTabButton extends StatelessWidget {
       selected: selected,
       label: tab.label,
       excludeSemantics: true,
-      child: Tooltip(
-        message: tab.label,
-        child: Material(
-          color: selected ? c.navIndicator : Colors.transparent,
-          shape: const CircleBorder(),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: onTap,
-            child: SizedBox(
-              width: 48,
-              height: 48,
-              child: IconTheme.merge(
-                data: IconThemeData(color: selected ? c.accent : c.textMuted),
-                child: Center(child: selected ? tab.selectedIcon : tab.icon),
-              ),
+      // No Tooltip: the column sits above the app's Navigator, so there is
+      // no Overlay to show one in.
+      child: Material(
+        color: selected ? c.navIndicator : Colors.transparent,
+        shape: const CircleBorder(),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: SizedBox(
+            width: 48,
+            height: 48,
+            child: IconTheme.merge(
+              data: IconThemeData(color: selected ? c.accent : c.textMuted),
+              child: Center(child: selected ? tab.selectedIcon : tab.icon),
             ),
           ),
         ),

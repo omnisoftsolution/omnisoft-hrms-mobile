@@ -14,6 +14,7 @@ import 'services/push_service.dart';
 import 'services/session_service.dart';
 import 'services/biometric_auth_service.dart';
 import 'services/deep_link_service.dart';
+import 'screens/home/side_tab_column.dart';
 import 'screens/activation/link_route.dart';
 import 'screens/session_gate.dart';
 
@@ -125,8 +126,7 @@ class _OmniHrAppState extends State<OmniHrApp> with WidgetsBindingObserver {
     final nav = _navigatorKey.currentState;
     if (nav == null) {
       // Link arrived before the first frame built the navigator.
-      WidgetsBinding.instance
-          .addPostFrameCallback((_) => _openActivation(a));
+      WidgetsBinding.instance.addPostFrameCallback((_) => _openActivation(a));
       return;
     }
     pushActivationLink(nav, a);
@@ -194,6 +194,10 @@ class _OmniHrAppState extends State<OmniHrApp> with WidgetsBindingObserver {
         // Reactive routing: rebuilds when session state changes
         // (company code → sign-in → Home; see SessionGate).
         home: const SessionGate(),
+        // iPhone Duo: keeps every screen left of the system's side column
+        // and shows the tabs in it (home/side_tab_column.dart).
+        builder: (context, child) =>
+            SideColumnHost(child: child ?? const SizedBox.shrink()),
       ),
     );
   }
