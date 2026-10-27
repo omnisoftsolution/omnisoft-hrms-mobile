@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 
+import '../../../core/duo_fold.dart';
 import '../../../core/error_messages.dart';
 import '../../../core/omni_colors.dart';
 import '../../../models/face_capture_result.dart';
@@ -270,6 +271,89 @@ class _CheckInOutScreenState extends State<CheckInOutScreen> {
     final failed = _phase == _Phase.failed;
     final c = context.omni;
     final muted = TextStyle(fontSize: 13, color: c.textSub);
+    final header = _Header(
+      name: widget.employeeName,
+      subtitle: [
+        DateFormat('EEE d MMM').format(now),
+        if (widget.shiftLabel.isNotEmpty) 'Shift ${widget.shiftLabel}',
+      ].join(' · '),
+      time: DateFormat('HH:mm').format(now),
+      note: widget.headerNote,
+    );
+    final circle = Expanded(
+      child: Center(
+        child: FittedBox(fit: BoxFit.scaleDown, child: _circle()),
+      ),
+    );
+    final steps = _steps(muted, failed);
+    // iPhone Duo half-folded: nothing may sit in the fold (Apple). The
+    // body starts inside SafeArea plus the padding below.
+    final media = MediaQuery.of(context);
+    final fold = foldSplitOf(media);
+    // Room before the fold, in the body's coordinates. Too little (an odd
+    // fold position) keeps the one-column page.
+    final left = (fold?.bounds.left ?? 0) - media.padding.left - 20;
+    final top = (fold?.bounds.top ?? 0) - media.padding.top - 12;
+    const minPane = 200.0;
+    final Widget body;
+    if (fold?.axis == FoldAxis.vertical && left >= minPane) {
+      // Like a book: who and the circle on the left page, the checklist
+      // on the right page.
+      body = Row(
+        key: const ValueKey('check-fold-vertical'),
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            width: left,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [header, circle],
+            ),
+          ),
+          SizedBox(width: fold!.bounds.width),
+          Expanded(
+            child: Center(
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: steps,
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    } else if (fold?.axis == FoldAxis.horizontal && top >= minPane) {
+      // On a desk: who and the circle (the camera) on the raised top half,
+      // the checklist and Close on the stable bottom half.
+      body = Column(
+        key: const ValueKey('check-fold-horizontal'),
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            height: top,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [header, circle],
+            ),
+          ),
+          SizedBox(height: fold!.bounds.height),
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: steps,
+              ),
+            ),
+          ),
+        ],
+      );
+    } else {
+      body = Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [header, circle, ...steps],
+      );
+    }
     // While the punch runs the camera's ✕ is the only way out.
     return PopScope(
       canPop: failed,
@@ -278,98 +362,64 @@ class _CheckInOutScreenState extends State<CheckInOutScreen> {
         body: SafeArea(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+            child: body,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The checklist card, the hours line and (after a failure) Close.
+  List<Widget> _steps(TextStyle muted, bool failed) {
+    final c = context.omni;
+    return [
+      _Card(
+        child: Column(
+          children: [
+            for (final s in PunchStep.values)
+              _StepRow(
+                key: ValueKey('step-${s.name}-${_rows[s]!.name}'),
+                title: _title(s),
+                detail: _details[s] ?? 'Waiting',
+                row: _rows[s]!,
+                last: s == PunchStep.record,
+              ),
+          ],
+        ),
+      ),
+      if (widget.hoursToday.isNotEmpty || widget.lastLabel.isNotEmpty) ...[
+        const SizedBox(height: 12),
+        // "Hours today" takes all the room the last-punch label
+        // leaves; that label is sized to its text, capped at half
+        // the row. Both ellipsize only when they really do not
+        // fit (equal flex thirds cut "Hours today …" on 360 dp).
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: LayoutBuilder(
+            builder: (context, constraints) => Row(
               children: [
-                _Header(
-                  name: widget.employeeName,
-                  subtitle: [
-                    DateFormat('EEE d MMM').format(now),
-                    if (widget.shiftLabel.isNotEmpty)
-                      'Shift ${widget.shiftLabel}',
-                  ].join(' · '),
-                  time: DateFormat('HH:mm').format(now),
-                  note: widget.headerNote,
-                ),
                 Expanded(
-                  child: Center(
-                    child: FittedBox(fit: BoxFit.scaleDown, child: _circle()),
+                  child: Text(
+                    widget.hoursToday.isEmpty
+                        ? ''
+                        : 'Hours today ${widget.hoursToday}',
+                    style: muted,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                _Card(
-                  child: Column(
-                    children: [
-                      for (final s in PunchStep.values)
-                        _StepRow(
-                          key: ValueKey('step-${s.name}-${_rows[s]!.name}'),
-                          title: _title(s),
-                          detail: _details[s] ?? 'Waiting',
-                          row: _rows[s]!,
-                          last: s == PunchStep.record,
-                        ),
-                    ],
-                  ),
-                ),
-                if (widget.hoursToday.isNotEmpty ||
-                    widget.lastLabel.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  // "Hours today" takes all the room the last-punch label
-                  // leaves; that label is sized to its text, capped at half
-                  // the row. Both ellipsize only when they really do not
-                  // fit (equal flex thirds cut "Hours today …" on 360 dp).
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: LayoutBuilder(
-                      builder: (context, constraints) => Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              widget.hoursToday.isEmpty
-                                  ? ''
-                                  : 'Hours today ${widget.hoursToday}',
-                              style: muted,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          if (widget.lastLabel.isNotEmpty) ...[
-                            const SizedBox(width: 12),
-                            ConstrainedBox(
-                              constraints: BoxConstraints(
-                                maxWidth: constraints.maxWidth / 2,
-                              ),
-                              child: Text(
-                                widget.lastLabel,
-                                style: muted,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                textAlign: TextAlign.end,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
+                if (widget.lastLabel.isNotEmpty) ...[
+                  const SizedBox(width: 12),
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: constraints.maxWidth / 2,
                     ),
-                  ),
-                ],
-                if (failed) ...[
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    height: 52,
-                    child: FilledButton(
-                      onPressed: () => _close(const CheckInOutResult()),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: c.brandFill,
-                        foregroundColor: c.onBrandFill,
-                        shape: const StadiumBorder(),
-                      ),
-                      child: const Text(
-                        'Close',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
+                    child: Text(
+                      widget.lastLabel,
+                      style: muted,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.end,
                     ),
                   ),
                 ],
@@ -377,8 +427,26 @@ class _CheckInOutScreenState extends State<CheckInOutScreen> {
             ),
           ),
         ),
-      ),
-    );
+      ],
+      if (failed) ...[
+        const SizedBox(height: 16),
+        SizedBox(
+          height: 52,
+          child: FilledButton(
+            onPressed: () => _close(const CheckInOutResult()),
+            style: FilledButton.styleFrom(
+              backgroundColor: c.brandFill,
+              foregroundColor: c.onBrandFill,
+              shape: const StadiumBorder(),
+            ),
+            child: const Text(
+              'Close',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ),
+      ],
+    ];
   }
 }
 

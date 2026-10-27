@@ -14,6 +14,7 @@ import 'services/push_service.dart';
 import 'services/session_service.dart';
 import 'services/biometric_auth_service.dart';
 import 'services/deep_link_service.dart';
+import 'services/duo_service.dart';
 import 'screens/home/side_tab_column.dart';
 import 'screens/activation/link_route.dart';
 import 'screens/session_gate.dart';
@@ -68,6 +69,11 @@ void main() async {
       push: push,
       notifications: notifications,
     ),
+  );
+  // iPhone Duo fold / camera / hinge (ios/Runner/DuoPlugin.swift): the
+  // native observer needs the Flutter view, so start after the first frame.
+  WidgetsBinding.instance.addPostFrameCallback(
+    (_) => unawaited(DuoService.instance.start()),
   );
 }
 
@@ -195,9 +201,11 @@ class _OmniHrAppState extends State<OmniHrApp> with WidgetsBindingObserver {
         // (company code → sign-in → Home; see SessionGate).
         home: const SessionGate(),
         // iPhone Duo: keeps every screen left of the system's side column
-        // and shows the tabs in it (home/side_tab_column.dart).
-        builder: (context, child) =>
-            SideColumnHost(child: child ?? const SizedBox.shrink()),
+        // and shows the tabs in it (home/side_tab_column.dart); DuoFeatures
+        // reports the fold to Flutter (services/duo_service.dart).
+        builder: (context, child) => DuoFeatures(
+          child: SideColumnHost(child: child ?? const SizedBox.shrink()),
+        ),
       ),
     );
   }

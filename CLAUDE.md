@@ -68,6 +68,17 @@ Android + iOS employee app for Omni HR (version in pubspec.yaml). Backend = Odoo
   (`SideTabColumn`) instead of the bottom bar and removes that inset from the tab screens. Open upright = normal
   phone layout. Team overview reflows to 2 / 3 columns (`OverviewColumns`, 600 / 820 pt of content width).
   The inner display ignores portrait lock. Canvas: https://claude.ai/artifact/LasbT6YAXiDs3dL6ETBDcM.
+  `SideColumnHost` (MaterialApp `builder`) does this for every route; in split view the column can be on the LEFT.
+- **Duo v3 (Apple's rules, iOS 27.1 SDK):** icon toolbar buttons go to the TOP of the side column under the status
+  (`SideTool`s, `SideColumnHostState.offerTools` / `withdrawTools`, start at `kSideStatusHeight` = 120 pt — a guess
+  until checked on the 27.1 simulator); titles, text buttons and segmented controls stay in the screen. `OmniAppBar`
+  hands over Back / bell / avatar only while it is on top (`TickerMode` on + `ModalRoute.isCurrent`); plain
+  `AppBar` screens still keep their back arrow in the bar. Flutter fills `MediaQuery.displayFeatures` only on
+  Android, so `ios/Runner/DuoPlugin.swift` ('omnihr/duo': `UIView.reservedRegions(kind: .division/.occlusion)`,
+  `UIHingeInteraction`) → `DuoService` → `DuoFeatures` (outside `SideColumnHost`, which shifts the bounds for a left
+  column) adds the active fold as a half-opened `DisplayFeature`; Flutter's dialogs then avoid it by themselves.
+  `foldSplitOf(media)` (`core/duo_fold.dart`) = vertical (book) / horizontal (desk) split; `CheckInOutScreen` puts
+  header + circle before the fold and the checklist after it. The camera (occlusion) is reported, not used yet.
 - `test/core/omni_colors_test.dart` checks WCAG contrast of every token pair (dark: all pass; light: a fixed list
   of failures the app already had). Theme-building tests must be `testWidgets` (google_fonts fetches over HTTP).
 

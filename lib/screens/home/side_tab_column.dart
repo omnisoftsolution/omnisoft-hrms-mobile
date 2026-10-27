@@ -1,3 +1,5 @@
+import 'dart:ui' show DisplayFeature;
+
 import 'package:flutter/material.dart';
 
 import '../../core/omni_colors.dart';
@@ -41,6 +43,40 @@ class SideTabsSpec {
   final ValueChanged<int> onSelected;
 }
 
+/// One icon button a screen's app bar moves into the column (Apple, iPhone
+/// Duo: toolbar buttons with an icon — back, close, bell, profile — sit at
+/// the top of the side column under the status; titles, text buttons and
+/// segmented controls stay in the screen).
+class SideTool {
+  const SideTool({
+    required this.label,
+    required this.onTap,
+    this.icon,
+    this.child,
+    this.badge = 0,
+  }) : assert(icon != null || child != null);
+
+  /// The screen-reader label (the column has no Overlay for a Tooltip).
+  final String label;
+  final VoidCallback onTap;
+
+  /// A glyph drawn on the column's glass button…
+  final Widget? icon;
+
+  /// …or a widget drawn as is (the profile avatar).
+  final Widget? child;
+
+  /// Unread count on the button's corner; 0 = none.
+  final int badge;
+}
+
+/// Room left at the top of the column for the system's camera, clock and
+/// status icons before the first [SideTool]. iOS gives custom bars no
+/// exact figure for this (only native bars avoid it by themselves); 120 pt
+/// clears the camera + clock + icons stack in Apple's iPhone Duo
+/// renderings. Check on the iOS 27.1 simulator.
+const kSideStatusHeight = 120.0;
+
 /// Sits right under [MaterialApp] (its `builder`). On iPhone Duo, closed or
 /// open sideways, the app gets the space left of the system column, as iOS
 /// gives it to native apps: every route — tab screens, full-screen pages,
@@ -71,9 +107,33 @@ class SideColumnHost extends StatefulWidget {
 class SideColumnHostState extends State<SideColumnHost> {
   final ValueNotifier<SideTabsSpec?> _tabs = ValueNotifier(null);
   Object? _owner;
+  final ValueNotifier<List<SideTool>?> _tools = ValueNotifier(null);
+  Object? _toolsOwner;
 
   @visibleForTesting
   SideTabsSpec? get offered => _tabs.value;
+
+  @visibleForTesting
+  List<SideTool>? get offeredTools => _tools.value;
+
+  /// [owner] (the screen on top) shows [tools] at the top of the column.
+  /// Called from a build, so the change lands after the frame.
+  void offerTools(Object owner, List<SideTool> tools) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _toolsOwner = owner;
+      _tools.value = tools;
+    });
+  }
+
+  /// [owner] is gone or covered; its buttons leave the column.
+  void withdrawTools(Object owner) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !identical(_toolsOwner, owner)) return;
+      _toolsOwner = null;
+      _tools.value = null;
+    });
+  }
 
   /// [owner] shows [spec] in the column. Called from a build, so the
   /// change lands after the frame.
@@ -97,6 +157,7 @@ class SideColumnHostState extends State<SideColumnHost> {
   @override
   void dispose() {
     _tabs.dispose();
+    _tools.dispose();
     super.dispose();
   }
 
@@ -116,25 +177,52 @@ class SideColumnHostState extends State<SideColumnHost> {
           ? null
           : ColoredBox(
               color: context.omni.background,
-              child: ValueListenableBuilder<SideTabsSpec?>(
-                valueListenable: _tabs,
-                builder: (context, spec, _) => spec == null
-                    ? const SizedBox.expand()
-                    : SideTabColumn(
-                        width: width,
-                        bottomInset: media.viewPadding.bottom,
-                        tabs: spec.tabs,
-                        selectedIndex: spec.selectedIndex,
-                        onSelected: spec.onSelected,
-                      ),
+              child: Column(
+                children: [
+                  ValueListenableBuilder<List<SideTool>?>(
+                    valueListenable: _tools,
+                    builder: (context, tools, _) =>
+                        SideToolColumn(tools: tools ?? const []),
+                  ),
+                  Expanded(
+                    child: ValueListenableBuilder<SideTabsSpec?>(
+                      valueListenable: _tabs,
+                      builder: (context, spec, _) => spec == null
+                          ? const SizedBox.expand()
+                          : SideTabColumn(
+                              width: width,
+                              bottomInset: media.viewPadding.bottom,
+                              tabs: spec.tabs,
+                              selectedIndex: spec.selectedIndex,
+                              onSelected: spec.onSelected,
+                            ),
+                    ),
+                  ),
+                ],
               ),
             ),
     );
+    // The app's frame starts right of a left column: move the display
+    // features (the iPhone Duo fold) into its coordinates.
+    final shifted = side == SideColumn.left
+        ? [
+            for (final f in media.displayFeatures)
+              if (f.bounds.right > width)
+                DisplayFeature(
+                  bounds: f.bounds.shift(Offset(-width, 0)),
+                  type: f.type,
+                  state: f.state,
+                ),
+          ]
+        : media.displayFeatures;
     final app = Expanded(
-      child: MediaQuery.removePadding(
-        context: context,
-        removeLeft: side == SideColumn.left,
-        removeRight: side == SideColumn.right,
+      child: MediaQuery(
+        data: media
+            .removePadding(
+              removeLeft: side == SideColumn.left,
+              removeRight: side == SideColumn.right,
+            )
+            .copyWith(displayFeatures: shifted),
         child: _SideColumnScope(host: this, side: side, child: widget.child),
       ),
     );
@@ -225,6 +313,121 @@ class SideTabColumn extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// The top of the column: the screen's [SideTool]s, one under the other,
+/// below the system's status stack ([kSideStatusHeight]). Nothing (no
+/// height) without tools.
+class SideToolColumn extends StatelessWidget {
+  const SideToolColumn({super.key, required this.tools});
+
+  final List<SideTool> tools;
+
+  @override
+  Widget build(BuildContext context) {
+    if (tools.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: kSideStatusHeight),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (var i = 0; i < tools.length; i++) ...[
+            if (i > 0) const SizedBox(height: 8),
+            _SideToolButton(key: ValueKey('side-tool-$i'), tool: tools[i]),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _SideToolButton extends StatelessWidget {
+  const _SideToolButton({super.key, required this.tool});
+
+  final SideTool tool;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.omni;
+    final custom = tool.child;
+    final button = custom != null
+        ? Material(
+            type: MaterialType.transparency,
+            shape: const CircleBorder(),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: tool.onTap,
+              child: SizedBox(
+                width: 48,
+                height: 48,
+                child: Center(child: custom),
+              ),
+            ),
+          )
+        : Container(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: c.lineSoft),
+              boxShadow: c.cardShadow,
+            ),
+            child: Material(
+              color: c.bar,
+              shape: const CircleBorder(),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: tool.onTap,
+                child: SizedBox(
+                  width: 48,
+                  height: 48,
+                  child: IconTheme.merge(
+                    data: IconThemeData(color: c.text, size: 22),
+                    child: Center(child: tool.icon),
+                  ),
+                ),
+              ),
+            ),
+          );
+    return Semantics(
+      button: true,
+      label: tool.label,
+      excludeSemantics: true,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          button,
+          if (tool.badge > 0)
+            Positioned(
+              top: 0,
+              right: -2,
+              child: IgnorePointer(
+                child: Container(
+                  key: const ValueKey('side-tool-badge'),
+                  constraints: const BoxConstraints(
+                    minWidth: 18,
+                    minHeight: 18,
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  decoration: BoxDecoration(
+                    color: c.badge,
+                    borderRadius: BorderRadius.circular(100),
+                    border: Border.all(color: c.bar, width: 1.5),
+                  ),
+                  child: Text(
+                    tool.badge > 9 ? '9+' : '${tool.badge}',
+                    style: TextStyle(
+                      color: c.onBadge,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

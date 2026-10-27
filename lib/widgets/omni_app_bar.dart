@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../core/omni_colors.dart';
 import '../screens/home/home_shell.dart';
+import '../screens/home/side_tab_column.dart';
 import '../screens/notifications/notifications_screen.dart';
 import '../screens/profile/profile_screen.dart';
 import '../services/notification_service.dart';
@@ -20,7 +21,13 @@ import 'employee_avatar.dart';
 /// - Bell tap → push NotificationsScreen with the leave-tap
 ///   callback wired to the ancestor HomeShell.
 /// - Avatar tap → push ProfileScreen as a new route.
-class OmniAppBar extends StatelessWidget implements PreferredSizeWidget {
+///
+/// iPhone Duo (closed, or open sideways): the back arrow, the bell and the
+/// avatar move to the top of the system's side column, as iOS does with
+/// native toolbar buttons; the logo, the title and [extraActions] stay.
+/// Only the bar on top offers them — the visible tab, the current route
+/// (`TickerMode` is off in hidden tabs and under a covering route).
+class OmniAppBar extends StatefulWidget implements PreferredSizeWidget {
   final String title;
   final List<Widget> extraActions;
 
@@ -34,6 +41,26 @@ class OmniAppBar extends StatelessWidget implements PreferredSizeWidget {
   Size get preferredSize => const Size.fromHeight(kToolbarHeight);
 
   @override
+  State<OmniAppBar> createState() => _OmniAppBarState();
+}
+
+class _OmniAppBarState extends State<OmniAppBar> {
+  /// Kept for [dispose], which can't look it up.
+  SideColumnHostState? _sideHost;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _sideHost = SideColumnHost.maybeOf(context);
+  }
+
+  @override
+  void dispose() {
+    _sideHost?.withdrawTools(this);
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final session = context.watch<SessionService>();
     // When this AppBar is used on a pushed route (Profile, Payslips,
@@ -42,6 +69,64 @@ class OmniAppBar extends StatelessWidget implements PreferredSizeWidget {
     // (canPop is false there because the tabs live inside IndexedStack
     // on the HomeShell root, not a deeper navigator stack).
     final canPop = Navigator.of(context).canPop();
+    final inColumn = SideColumnHost.sideOf(context) != SideColumn.none;
+    final onTop =
+        TickerMode.valuesOf(context).enabled &&
+        (ModalRoute.of(context)?.isCurrent ?? true);
+    final name = session.employeeName.isNotEmpty
+        ? session.employeeName
+        : session.userName;
+    if (inColumn && onTop) {
+      final unread = context.watch<NotificationService>().unreadCount;
+      _sideHost?.offerTools(this, [
+        if (canPop)
+          SideTool(
+            label: 'Back',
+            icon: const BackButtonIcon(),
+            onTap: () => Navigator.of(context).maybePop(),
+          ),
+        SideTool(
+          label: unread > 0
+              ? '$unread unread notification${unread == 1 ? '' : 's'}'
+              : 'Notifications',
+          icon: Icon(
+            unread > 0
+                ? Icons.notifications_rounded
+                : Icons.notifications_outlined,
+          ),
+          badge: unread,
+          onTap: () => _openNotifications(context),
+        ),
+        SideTool(
+          label: 'Profile',
+          onTap: () => _openProfile(context),
+          child: EmployeeAvatar(
+            avatarB64: session.employeeAvatarB64,
+            name: name,
+            size: 40,
+            online: true,
+          ),
+        ),
+      ]);
+    } else {
+      _sideHost?.withdrawTools(this);
+    }
+    if (inColumn) {
+      return AppBar(
+        titleSpacing: canPop ? 16 : 12,
+        centerTitle: false,
+        automaticallyImplyLeading: false,
+        leadingWidth: canPop ? null : 56,
+        leading: canPop
+            ? null
+            : const Padding(
+                padding: EdgeInsets.only(left: 16),
+                child: Center(child: BrandLogo.small()),
+              ),
+        title: _title(context),
+        actions: [...widget.extraActions, const SizedBox(width: 8)],
+      );
+    }
     return AppBar(
       titleSpacing: 12,
       centerTitle: false,
@@ -52,17 +137,9 @@ class OmniAppBar extends StatelessWidget implements PreferredSizeWidget {
               padding: EdgeInsets.only(left: 16),
               child: Center(child: BrandLogo.small()),
             ),
-      title: Text(
-        title,
-        style: GoogleFonts.inter(
-          fontSize: 20,
-          fontWeight: FontWeight.w800,
-          color: context.omni.text,
-          letterSpacing: -0.3,
-        ),
-      ),
+      title: _title(context),
       actions: [
-        ...extraActions,
+        ...widget.extraActions,
         Consumer<NotificationService>(
           builder: (_, notif, _) => OmniBellButton(
             unreadCount: notif.unreadCount,
@@ -73,22 +150,12 @@ class OmniAppBar extends StatelessWidget implements PreferredSizeWidget {
           padding: const EdgeInsets.only(right: 16, left: 4),
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
-            // rootNavigator: true so Profile renders above HomeShell's
-            // per-tab Navigators. Without it, Profile gets pushed into
-            // the currently-active tab's stack — the bottom nav stays
-            // highlighted on that tab while viewing Profile, and the
-            // tab's back history diverges per tab.
-            onTap: () => Navigator.of(
-              context,
-              rootNavigator: true,
-            ).push(MaterialPageRoute(builder: (_) => const ProfileScreen())),
+            onTap: () => _openProfile(context),
             child: Tooltip(
               message: 'Profile',
               child: EmployeeAvatar(
                 avatarB64: session.employeeAvatarB64,
-                name: session.employeeName.isNotEmpty
-                    ? session.employeeName
-                    : session.userName,
+                name: name,
                 size: 36,
                 online: true,
               ),
@@ -98,6 +165,25 @@ class OmniAppBar extends StatelessWidget implements PreferredSizeWidget {
       ],
     );
   }
+
+  Widget _title(BuildContext context) => Text(
+    widget.title,
+    style: GoogleFonts.inter(
+      fontSize: 20,
+      fontWeight: FontWeight.w800,
+      color: context.omni.text,
+      letterSpacing: -0.3,
+    ),
+  );
+
+  // rootNavigator: true so Profile renders above HomeShell's per-tab
+  // Navigators. Without it, Profile gets pushed into the currently-active
+  // tab's stack — the bottom nav stays highlighted on that tab while
+  // viewing Profile, and the tab's back history diverges per tab.
+  void _openProfile(BuildContext context) => Navigator.of(
+    context,
+    rootNavigator: true,
+  ).push(MaterialPageRoute(builder: (_) => const ProfileScreen()));
 
   void _openNotifications(BuildContext context) {
     final shell = context.findAncestorStateOfType<HomeShellState>();
@@ -153,9 +239,7 @@ class OmniBellButton extends StatelessWidget {
             hasUnread
                 ? Icons.notifications_rounded
                 : Icons.notifications_outlined,
-            color: hasUnread
-                ? c.accent
-                : c.textMuted.withValues(alpha: 0.7),
+            color: hasUnread ? c.accent : c.textMuted.withValues(alpha: 0.7),
           ),
           onPressed: onPressed,
         ),
