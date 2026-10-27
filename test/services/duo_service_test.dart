@@ -135,6 +135,49 @@ void main() {
     expect(seen.single.bounds, const Rect.fromLTWH(455, 0, 41, 669));
   });
 
+  test('fromMap reads the bar frames iOS gives either edge', () {
+    final g = DuoGeometry.fromMap({
+      ..._snap(hinge: 'closed'),
+      // Measured on the iOS 27.1 simulator, closed (466 × 678).
+      'barLeft': [24, 17.3, 48, 626.7],
+      'barRight': [394, 170, 48, 474],
+    });
+    expect(g.barRight, const Rect.fromLTWH(394, 170, 48, 474));
+    expect(g.barLeft, const Rect.fromLTWH(24, 17.3, 48, 626.7));
+    final bad = DuoGeometry.fromMap({
+      ..._snap(),
+      'barLeft': [1, 2, 3],
+      'barRight': [394, 170, 0, 474],
+    });
+    expect(bad.barLeft, isNull);
+    expect(bad.barRight, isNull);
+  });
+
+  testWidgets('a fold appearing keeps the app below (same tree shape)', (
+    tester,
+  ) async {
+    final service = DuoService.instance;
+    addTearDown(() => service.debugGeometry = DuoGeometry.none);
+    final key = GlobalKey<_KeepState>();
+    await tester.pumpWidget(
+      MediaQuery(
+        data: const MediaQueryData(size: Size(951, 669)),
+        child: DuoFeatures(child: _Keep(key: key)),
+      ),
+    );
+    final before = key.currentState;
+    service.debugGeometry = DuoGeometry.fromMap(
+      _snap(
+        divisions: [
+          [455, 0, 41, 669, 1],
+        ],
+      ),
+    );
+    await tester.pump();
+    expect(key.currentState, same(before));
+    expect(DuoFeatures.geometryOf(key.currentContext!).hasFold, isTrue);
+  });
+
   test('start on iOS reads the snapshot and follows "changed"', () async {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
     addTearDown(() => debugDefaultTargetPlatformOverride = null);
@@ -174,4 +217,19 @@ void main() {
     await service.refresh();
     expect(calls, ['start', 'get']);
   });
+}
+
+class _Keep extends StatefulWidget {
+  const _Keep({super.key});
+
+  @override
+  State<_Keep> createState() => _KeepState();
+}
+
+class _KeepState extends State<_Keep> {
+  @override
+  Widget build(BuildContext context) {
+    DuoFeatures.geometryOf(context);
+    return const SizedBox();
+  }
 }

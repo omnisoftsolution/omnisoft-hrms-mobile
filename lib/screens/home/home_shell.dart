@@ -431,7 +431,11 @@ class HomeShellState extends State<HomeShell> {
         label: 'EXPENSES',
       ),
     ];
-    if (side != SideColumn.none) {
+    // A full-screen page on the root navigator (check-in, Profile, a root
+    // sheet) covers the shell: on a phone it hides the bottom bar, so the
+    // column drops the tabs too.
+    final covered = !(ModalRoute.of(context)?.isCurrent ?? true);
+    if (side != SideColumn.none && !covered) {
       _sideHost?.offer(
         this,
         SideTabsSpec(tabs: tabs, selectedIndex: _index, onSelected: _onTabTap),

@@ -27,13 +27,16 @@ class DuoRegion {
 }
 
 /// What `ios/Runner/DuoPlugin.swift` reports: the fold ([divisions]), the
-/// inner FaceTime camera ([occlusions]) and the hinge.
+/// inner FaceTime camera ([occlusions]), the hinge and where iOS puts a
+/// vertical bar on either edge ([barLeft], [barRight]).
 @immutable
 class DuoGeometry {
   const DuoGeometry({
     this.hinge = DuoHinge.none,
     this.divisions = const [],
     this.occlusions = const [],
+    this.barLeft,
+    this.barRight,
   });
 
   static const none = DuoGeometry();
@@ -48,12 +51,21 @@ class DuoGeometry {
       ),
       divisions: _regions(map['divisions']),
       occlusions: _regions(map['occlusions']),
+      barLeft: _rect(map['barLeft']),
+      barRight: _rect(map['barRight']),
     );
   }
 
   final DuoHinge hinge;
   final List<DuoRegion> divisions;
   final List<DuoRegion> occlusions;
+
+  /// Where iOS places a 48 pt vertical bar on the left / right edge
+  /// (`edgeInsets(for: .bar(onEdge:extent:))`): below the clock, status
+  /// icons and camera, centred on the camera, above the home indicator.
+  /// Closed: right = (394, 170, 48, 474) in a 466 × 678 view.
+  final Rect? barLeft;
+  final Rect? barRight;
 
   /// The screen has a fold at all, folded or flat (Apple: prefer an even
   /// number of columns then, whatever the fold's state).
@@ -77,6 +89,13 @@ class DuoGeometry {
       ),
   ];
 
+  static Rect? _rect(Object? raw) {
+    if (raw is! List || raw.length < 4) return null;
+    final n = [for (final v in raw.take(4)) v is num ? v.toDouble() : null];
+    if (n.contains(null) || n[2]! <= 0 || n[3]! <= 0) return null;
+    return Rect.fromLTWH(n[0]!, n[1]!, n[2]!, n[3]!);
+  }
+
   static List<DuoRegion> _regions(Object? raw) {
     if (raw is! List) return const [];
     final out = <DuoRegion>[];
@@ -99,11 +118,18 @@ class DuoGeometry {
       other is DuoGeometry &&
       other.hinge == hinge &&
       listEquals(other.divisions, divisions) &&
-      listEquals(other.occlusions, occlusions);
+      listEquals(other.occlusions, occlusions) &&
+      other.barLeft == barLeft &&
+      other.barRight == barRight;
 
   @override
-  int get hashCode =>
-      Object.hash(hinge, Object.hashAll(divisions), Object.hashAll(occlusions));
+  int get hashCode => Object.hash(
+    hinge,
+    Object.hashAll(divisions),
+    Object.hashAll(occlusions),
+    barLeft,
+    barRight,
+  );
 }
 
 /// iPhone Duo geometry over the 'omnihr/duo' channel. Flutter fills
@@ -153,7 +179,8 @@ class DuoService extends ValueNotifier<DuoGeometry> {
 
 /// Adds the iPhone Duo fold to `MediaQuery.displayFeatures` for
 /// everything below (sits outside `SideColumnHost`, so the bounds are in
-/// whole-view coordinates).
+/// whole-view coordinates), and hands the whole [DuoGeometry] down
+/// ([geometryOf]).
 class DuoFeatures extends StatelessWidget {
   const DuoFeatures({super.key, required this.child, this.service});
 
@@ -162,22 +189,40 @@ class DuoFeatures extends StatelessWidget {
   /// Test seam; defaults to [DuoService.instance].
   final DuoService? service;
 
+  /// The geometry above [context]; [DuoGeometry.none] without a
+  /// [DuoFeatures].
+  static DuoGeometry geometryOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_DuoScope>()?.geometry ??
+      DuoGeometry.none;
+
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<DuoGeometry>(
       valueListenable: service ?? DuoService.instance,
       child: child,
       builder: (context, geometry, child) {
+        // Same tree shape folded or not: a fold appearing must not rebuild
+        // the app (its Navigator, pushed pages and state).
         final extra = geometry.displayFeatures;
-        if (extra.isEmpty) return child!;
         final media = MediaQuery.of(context);
         return MediaQuery(
-          data: media.copyWith(
-            displayFeatures: [...media.displayFeatures, ...extra],
-          ),
-          child: child!,
+          data: extra.isEmpty
+              ? media
+              : media.copyWith(
+                  displayFeatures: [...media.displayFeatures, ...extra],
+                ),
+          child: _DuoScope(geometry: geometry, child: child!),
         );
       },
     );
   }
+}
+
+class _DuoScope extends InheritedWidget {
+  const _DuoScope({required this.geometry, required super.child});
+
+  final DuoGeometry geometry;
+
+  @override
+  bool updateShouldNotify(_DuoScope old) => old.geometry != geometry;
 }

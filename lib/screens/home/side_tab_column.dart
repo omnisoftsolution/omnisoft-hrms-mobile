@@ -1,8 +1,10 @@
+import 'dart:math' as math;
 import 'dart:ui' show DisplayFeature;
 
 import 'package:flutter/material.dart';
 
 import '../../core/omni_colors.dart';
+import '../../services/duo_service.dart';
 
 /// Which side of the screen holds the system's vertical bar column, if any.
 ///
@@ -71,11 +73,15 @@ class SideTool {
 }
 
 /// Room left at the top of the column for the system's camera, clock and
-/// status icons before the first [SideTool]. iOS gives custom bars no
-/// exact figure for this (only native bars avoid it by themselves); 120 pt
-/// clears the camera + clock + icons stack in Apple's iPhone Duo
-/// renderings. Check on the iOS 27.1 simulator.
-const kSideStatusHeight = 120.0;
+/// status icons when iOS gives no bar frame (`DuoGeometry.barLeft` /
+/// `barRight`, which the column normally follows). On the iOS 27.1
+/// simulator the bar starts at 170 pt closed and 120 pt open sideways; the
+/// larger one is the safe default.
+const kSideStatusHeight = 170.0;
+
+/// Width of the column's buttons; the bar frame iOS reports is asked for
+/// this extent.
+const kSideButtonSize = 48.0;
 
 /// Sits right under [MaterialApp] (its `builder`). On iPhone Duo, closed or
 /// open sideways, the app gets the space left of the system column, as iOS
@@ -170,6 +176,7 @@ class SideColumnHostState extends State<SideColumnHost> {
       SideColumn.left => media.viewPadding.left,
       SideColumn.none => 0.0,
     };
+    final bar = _barIn(DuoFeatures.geometryOf(context), side, width, media);
     final column = SizedBox(
       key: const ValueKey('side-column'),
       width: width,
@@ -181,8 +188,11 @@ class SideColumnHostState extends State<SideColumnHost> {
                 children: [
                   ValueListenableBuilder<List<SideTool>?>(
                     valueListenable: _tools,
-                    builder: (context, tools, _) =>
-                        SideToolColumn(tools: tools ?? const []),
+                    builder: (context, tools, _) => SideToolColumn(
+                      tools: tools ?? const [],
+                      width: width,
+                      bar: bar,
+                    ),
                   ),
                   Expanded(
                     child: ValueListenableBuilder<SideTabsSpec?>(
@@ -192,6 +202,8 @@ class SideColumnHostState extends State<SideColumnHost> {
                           : SideTabColumn(
                               width: width,
                               bottomInset: media.viewPadding.bottom,
+                              bar: bar,
+                              columnHeight: media.size.height,
                               tabs: spec.tabs,
                               selectedIndex: spec.selectedIndex,
                               onSelected: spec.onSelected,
@@ -231,6 +243,37 @@ class SideColumnHostState extends State<SideColumnHost> {
       children: side == SideColumn.left ? [column, app] : [app, column],
     );
   }
+
+  /// iOS's bar frame for [side], in the column's own coordinates; null
+  /// when iOS gave none or it does not fall inside the column.
+  static Rect? _barIn(
+    DuoGeometry geometry,
+    SideColumn side,
+    double width,
+    MediaQueryData media,
+  ) {
+    final raw = switch (side) {
+      SideColumn.right => geometry.barRight,
+      SideColumn.left => geometry.barLeft,
+      SideColumn.none => null,
+    };
+    if (raw == null) return null;
+    final originX = side == SideColumn.right ? media.size.width - width : 0.0;
+    final bar = raw.shift(Offset(-originX, 0));
+    if (bar.left < -1 || bar.right > width + 1) return null;
+    return bar;
+  }
+}
+
+/// Moves [child], laid out centred in a [width] column, onto [centreX]
+/// (iOS's bar centre line, the camera's axis); as is without one. Taps
+/// follow the move.
+Widget _onAxis(double? centreX, double width, Widget child) {
+  if (centreX == null) return child;
+  return Transform.translate(
+    offset: Offset(centreX - width / 2, 0),
+    child: child,
+  );
 }
 
 class _SideColumnScope extends InheritedWidget {
@@ -262,8 +305,9 @@ class SideTab {
 
 /// The tabs as a vertical pill inside the system column, under the status
 /// bar and near the thumb (bottom of the column), as iOS lays out its own
-/// tab bars on iPhone Duo. [width] is the column's inset; [bottomInset]
-/// keeps the pill above the home indicator.
+/// tab bars on iPhone Duo. [width] is the column's inset. With iOS's [bar]
+/// frame the pill ends where the bar does and sits on its centre line;
+/// without one [bottomInset] keeps it above the home indicator.
 class SideTabColumn extends StatelessWidget {
   const SideTabColumn({
     super.key,
@@ -272,10 +316,16 @@ class SideTabColumn extends StatelessWidget {
     required this.tabs,
     required this.selectedIndex,
     required this.onSelected,
+    this.bar,
+    this.columnHeight,
   });
 
   final double width;
   final double bottomInset;
+  final Rect? bar;
+
+  /// The column's height, to turn [bar]'s bottom into a margin.
+  final double? columnHeight;
   final List<SideTab> tabs;
   final int selectedIndex;
   final ValueChanged<int> onSelected;
@@ -283,33 +333,42 @@ class SideTabColumn extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.omni;
+    final b = bar;
+    final h = columnHeight;
+    final bottom = b != null && h != null
+        ? math.max(0.0, h - b.bottom)
+        : bottomInset + 16;
     return SizedBox(
       width: width,
       child: Align(
         alignment: Alignment.bottomCenter,
         child: Padding(
-          padding: EdgeInsets.only(bottom: bottomInset + 16),
-          child: Container(
-            width: 60,
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: c.bar,
-              borderRadius: BorderRadius.circular(30),
-              border: Border.all(color: c.lineSoft),
-              boxShadow: c.cardShadow,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (var i = 0; i < tabs.length; i++) ...[
-                  if (i > 0) const SizedBox(height: 4),
-                  _SideTabButton(
-                    tab: tabs[i],
-                    selected: i == selectedIndex,
-                    onTap: () => onSelected(i),
-                  ),
+          padding: EdgeInsets.only(bottom: bottom),
+          child: _onAxis(
+            b?.center.dx,
+            width,
+            Container(
+              width: 60,
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: c.bar,
+                borderRadius: BorderRadius.circular(30),
+                border: Border.all(color: c.lineSoft),
+                boxShadow: c.cardShadow,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (var i = 0; i < tabs.length; i++) ...[
+                    if (i > 0) const SizedBox(height: 4),
+                    _SideTabButton(
+                      tab: tabs[i],
+                      selected: i == selectedIndex,
+                      onTap: () => onSelected(i),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         ),
@@ -319,27 +378,35 @@ class SideTabColumn extends StatelessWidget {
 }
 
 /// The top of the column: the screen's [SideTool]s, one under the other,
-/// below the system's status stack ([kSideStatusHeight]). Nothing (no
-/// height) without tools.
+/// from the top of iOS's [bar] frame (under the clock, status icons and
+/// camera) on its centre line; [kSideStatusHeight] down and centred
+/// without one. Nothing (no height) without tools.
 class SideToolColumn extends StatelessWidget {
-  const SideToolColumn({super.key, required this.tools});
+  const SideToolColumn({super.key, required this.tools, this.width, this.bar});
 
   final List<SideTool> tools;
+  final double? width;
+  final Rect? bar;
 
   @override
   Widget build(BuildContext context) {
     if (tools.isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(top: kSideStatusHeight),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (var i = 0; i < tools.length; i++) ...[
-            if (i > 0) const SizedBox(height: 8),
-            _SideToolButton(key: ValueKey('side-tool-$i'), tool: tools[i]),
-          ],
+    final b = bar;
+    final w = width;
+    final column = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var i = 0; i < tools.length; i++) ...[
+          if (i > 0) const SizedBox(height: 8),
+          _SideToolButton(key: ValueKey('side-tool-$i'), tool: tools[i]),
         ],
-      ),
+      ],
+    );
+    return Padding(
+      padding: EdgeInsets.only(top: b?.top ?? kSideStatusHeight),
+      child: w == null
+          ? column
+          : SizedBox(width: w, child: _onAxis(b?.center.dx, w, column)),
     );
   }
 }

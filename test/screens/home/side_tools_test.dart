@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omni_hr/core/theme.dart';
 import 'package:omni_hr/screens/home/side_tab_column.dart';
+import 'package:omni_hr/services/duo_service.dart';
 import 'package:omni_hr/services/notification_service.dart';
 import 'package:omni_hr/services/session_service.dart';
 import 'package:omni_hr/widgets/omni_app_bar.dart';
@@ -147,5 +148,31 @@ void main() {
       ),
     );
     expect(seen.single.bounds, const Rect.fromLTWH(116, 0, 40, 678));
+  });
+
+  testWidgets('closed Duo: buttons start where iOS says the bar does and '
+      'sit on its centre line (the camera)', (tester) async {
+    addTearDown(tester.view.reset);
+    final service = DuoService.instance;
+    addTearDown(() => service.debugGeometry = DuoGeometry.none);
+    _duo(tester, right: 84);
+    // Measured on the iOS 27.1 simulator, closed (466 × 678).
+    service.debugGeometry = DuoGeometry.fromMap(const {
+      'available': true,
+      'hinge': 'closed',
+      'divisions': [],
+      'occlusions': [],
+      'barRight': [394, 170, 48, 474],
+    });
+    await tester.pumpWidget(
+      DuoFeatures(
+        child: _app(const Scaffold(appBar: OmniAppBar(title: 'Leave'))),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    final bell = tester.getRect(find.byKey(const ValueKey('side-tool-0')));
+    expect(bell.top, 170);
+    expect(bell.center.dx, 418);
   });
 }

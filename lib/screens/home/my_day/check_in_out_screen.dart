@@ -292,8 +292,10 @@ class _CheckInOutScreenState extends State<CheckInOutScreen> {
     final fold = foldSplitOf(media);
     // Room before the fold, in the body's coordinates. Too little (an odd
     // fold position) keeps the one-column page.
-    final left = (fold?.bounds.left ?? 0) - media.padding.left - 20;
-    final top = (fold?.bounds.top ?? 0) - media.padding.top - 12;
+    // [gap] keeps the circle's glow off the fold (iOS 27.1 simulator).
+    const gap = 12.0;
+    final left = (fold?.bounds.left ?? 0) - media.padding.left - 20 - gap;
+    final top = (fold?.bounds.top ?? 0) - media.padding.top - 12 - gap;
     const minPane = 200.0;
     final Widget body;
     if (fold?.axis == FoldAxis.vertical && left >= minPane) {
@@ -310,7 +312,7 @@ class _CheckInOutScreenState extends State<CheckInOutScreen> {
               children: [header, circle],
             ),
           ),
-          SizedBox(width: fold!.bounds.width),
+          SizedBox(width: fold!.bounds.width + gap),
           Expanded(
             child: Center(
               child: SingleChildScrollView(
@@ -337,7 +339,7 @@ class _CheckInOutScreenState extends State<CheckInOutScreen> {
               children: [header, circle],
             ),
           ),
-          SizedBox(height: fold!.bounds.height),
+          SizedBox(height: fold!.bounds.height + gap),
           Expanded(
             child: SingleChildScrollView(
               child: Column(

@@ -70,15 +70,22 @@ Android + iOS employee app for Omni HR (version in pubspec.yaml). Backend = Odoo
   The inner display ignores portrait lock. Canvas: https://claude.ai/artifact/LasbT6YAXiDs3dL6ETBDcM.
   `SideColumnHost` (MaterialApp `builder`) does this for every route; in split view the column can be on the LEFT.
 - **Duo v3 (Apple's rules, iOS 27.1 SDK):** icon toolbar buttons go to the TOP of the side column under the status
-  (`SideTool`s, `SideColumnHostState.offerTools` / `withdrawTools`, start at `kSideStatusHeight` = 120 pt — a guess
-  until checked on the 27.1 simulator); titles, text buttons and segmented controls stay in the screen. `OmniAppBar`
+  (`SideTool`s, `SideColumnHostState.offerTools` / `withdrawTools`); titles, text buttons and segmented controls
+  stay in the screen. Buttons and tabs follow iOS's own bar frame (`DuoGeometry.barLeft` / `barRight` from
+  `edgeInsets(for: .bar(onEdge:extent: 48))`: top under status + camera, centre line = camera axis, bottom above
+  the home indicator); `kSideStatusHeight` (170) is only the fallback. Simulator-measured: closed bar starts at
+  170 pt, open sideways at 120 pt. `HomeShell` withdraws the tabs while a root-navigator page covers it
+  (`ModalRoute.isCurrent`), like a phone's bottom bar. `DuoFeatures` keeps one tree shape folded or not (a fold must
+  not rebuild the app). `OmniAppBar`
   hands over Back / bell / avatar only while it is on top (`TickerMode` on + `ModalRoute.isCurrent`); plain
   `AppBar` screens still keep their back arrow in the bar. Flutter fills `MediaQuery.displayFeatures` only on
   Android, so `ios/Runner/DuoPlugin.swift` ('omnihr/duo': `UIView.reservedRegions(kind: .division/.occlusion)`,
   `UIHingeInteraction`) → `DuoService` → `DuoFeatures` (outside `SideColumnHost`, which shifts the bounds for a left
   column) adds the active fold as a half-opened `DisplayFeature`; Flutter's dialogs then avoid it by themselves.
   `foldSplitOf(media)` (`core/duo_fold.dart`) = vertical (book) / horizontal (desk) split; `CheckInOutScreen` puts
-  header + circle before the fold and the checklist after it. The camera (occlusion) is reported, not used yet.
+  header + circle before the fold and the checklist after it (12 pt gap so the glow stays off the fold). The camera
+  (occlusion) is reported, not used yet. Testing on the 27.1 simulator: see `docs/iphone-duo-handover.md` (arm64
+  scratch build without ML Kit, mock-server preview, Device Hub hinge buttons).
 - `test/core/omni_colors_test.dart` checks WCAG contrast of every token pair (dark: all pass; light: a fixed list
   of failures the app already had). Theme-building tests must be `testWidgets` (google_fonts fetches over HTTP).
 

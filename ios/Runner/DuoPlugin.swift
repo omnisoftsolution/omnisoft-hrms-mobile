@@ -15,6 +15,11 @@
 //     the inner FaceTime camera; active while that camera is in use.
 //   - UIHingeInteraction: hinge status (closed / partiallyOpen / fullyOpen)
 //     and angle.
+//   - UIView.edgeInsets(for: .bar(onEdge:extent:)): where a 48 pt vertical
+//     bar may sit on the left / right edge, below the status stack and
+//     camera, centred on the camera. Measured on the 27.1 simulator: closed
+//     (466 × 678) right bar = (394, 170, 48, 474); open sideways (951 × 669)
+//     = (879, 120, 48, 515). Our column buttons and tabs follow it.
 // Frames are in the Flutter view's coordinates (points = Flutter logical
 // pixels) and include the system's margins for interactive content.
 //
@@ -29,7 +34,8 @@
 //     rotation, split view) and on every hinge update.
 // Snapshot: { available: Bool, hinge: 'none'|'unknown'|'closed'|
 //   'partiallyOpen'|'fullyOpen', angle: Double (radians, -1 when none),
-//   divisions: [[x, y, w, h, active(0|1)]], occlusions: [[…same…]] }.
+//   divisions: [[x, y, w, h, active(0|1)]], occlusions: [[…same…]],
+//   barLeft: [x, y, w, h], barRight: [x, y, w, h] }.
 // Before iOS 27.1 every call answers { available: false, … } and nothing
 // is observed.
 
@@ -131,7 +137,18 @@ class DuoPlugin: NSObject, FlutterPlugin {
             view.reservedRegions(kind: .division, options: .includeInactive))
         snap["occlusions"] = DuoPlugin.encode(
             view.reservedRegions(kind: .occlusion, options: .includeInactive))
+        snap["barLeft"] = DuoPlugin.bar(in: view, edge: .left)
+        snap["barRight"] = DuoPlugin.bar(in: view, edge: .right)
         return snap
+    }
+
+    /// The frame a vertical bar of our button size (48 pt) gets on [edge].
+    @available(iOS 27.1, *)
+    private static func bar(in view: UIView, edge: UIRectEdge) -> [Double] {
+        let f = view.bounds.inset(
+            by: view.edgeInsets(for: .bar(onEdge: edge, extent: 48)))
+        return [Double(f.origin.x), Double(f.origin.y),
+                Double(f.size.width), Double(f.size.height)]
     }
 
     @available(iOS 27.1, *)
