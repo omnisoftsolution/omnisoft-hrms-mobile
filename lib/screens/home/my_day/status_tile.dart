@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/omni_colors.dart';
 import '../../../models/my_day.dart';
 import 'my_day_display.dart';
 
@@ -128,7 +129,8 @@ class StatusTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final display = displayOf(day);
-    final tone = toneOf(display);
+    final c = context.omni;
+    final tone = toneOf(display, c.myDay);
     final text = Theme.of(context).textTheme;
     const white = Colors.white;
     final shift = day.shift;
@@ -181,13 +183,16 @@ class StatusTile extends StatelessWidget {
       decoration: BoxDecoration(
         color: tone.fill,
         borderRadius: BorderRadius.circular(24),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x2E5075AF),
-            blurRadius: 30,
-            offset: Offset(0, 8),
-          ),
-        ],
+        // No shadow in dark: the tile separates by tone.
+        boxShadow: c.cardShadow.isEmpty
+            ? null
+            : const [
+                BoxShadow(
+                  color: Color(0x2E5075AF),
+                  blurRadius: 30,
+                  offset: Offset(0, 8),
+                ),
+              ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -325,6 +330,7 @@ class _ActionButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const white = Colors.white;
+    final pill = context.omni.tilePill;
     final icon = Icon(
       action.icon == TileActionIcon.faceSetup
           ? Icons.face_retouching_natural
@@ -355,9 +361,9 @@ class _ActionButton extends StatelessWidget {
         key: const ValueKey('status-action'),
         onPressed: onPressed,
         style: FilledButton.styleFrom(
-          backgroundColor: white,
+          backgroundColor: pill,
           foregroundColor: fill,
-          disabledBackgroundColor: white,
+          disabledBackgroundColor: pill,
           disabledForegroundColor: fill,
           shape: const StadiumBorder(),
         ),

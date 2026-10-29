@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/error_messages.dart';
-import '../../core/theme.dart';
+import '../../core/omni_colors.dart';
 import '../../widgets/busy_button_label.dart';
 
 /// Limits the connector enforces on a refusal reason (after trimming).
@@ -19,6 +19,7 @@ Future<bool> showRefuseReasonSheet(
   required String employeeName,
   required Future<String?> Function(String reason) onSubmit,
 }) async {
+  final c = context.omni;
   final submitted = await showModalBottomSheet<bool>(
     context: context,
     isScrollControlled: true,
@@ -28,7 +29,7 @@ Future<bool> showRefuseReasonSheet(
     useRootNavigator: true,
     // No drag-to-dismiss: a drag would bypass the in-flight lock below.
     enableDrag: false,
-    backgroundColor: AppTheme.surfaceContainerLowest,
+    backgroundColor: c.sheet,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
     ),
@@ -93,6 +94,7 @@ class _RefuseReasonSheetState extends State<RefuseReasonSheet> {
   @override
   Widget build(BuildContext context) {
     final mq = MediaQuery.of(context);
+    final c = context.omni;
     // While the refusal is in flight the sheet cannot be closed (back
     // button, barrier tap), so the result always reaches the caller.
     return PopScope(
@@ -106,19 +108,18 @@ class _RefuseReasonSheetState extends State<RefuseReasonSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'Refuse this request',
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
-                color: AppTheme.onSurface,
+                color: c.text,
               ),
             ),
             const SizedBox(height: 4),
             Text(
               '${widget.employeeName} will see your reason in the app and in Odoo.',
-              style: const TextStyle(
-                  fontSize: 13, color: AppTheme.onSurfaceVariant),
+              style: TextStyle(fontSize: 13, color: c.textSub),
             ),
             const SizedBox(height: 16),
             TextField(
@@ -142,9 +143,8 @@ class _RefuseReasonSheetState extends State<RefuseReasonSheet> {
                 Expanded(
                   child: OutlinedButton(
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: AppTheme.onSurfaceVariant,
-                      side: const BorderSide(
-                          color: AppTheme.outlineVariant, width: 1.5),
+                      foregroundColor: c.textSub,
+                      side: BorderSide(color: c.line, width: 1.5),
                       shape: const StadiumBorder(),
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
@@ -157,12 +157,11 @@ class _RefuseReasonSheetState extends State<RefuseReasonSheet> {
                 Expanded(
                   child: FilledButton(
                     style: FilledButton.styleFrom(
-                      backgroundColor: AppTheme.error,
-                      foregroundColor: AppTheme.onPrimary,
+                      backgroundColor: c.errorFill,
+                      foregroundColor: Colors.white,
                       // In flight: keep the colours (see BusyButtonLabel).
-                      disabledBackgroundColor: _busy ? AppTheme.error : null,
-                      disabledForegroundColor:
-                          _busy ? AppTheme.onPrimary : null,
+                      disabledBackgroundColor: _busy ? c.errorFill : null,
+                      disabledForegroundColor: _busy ? Colors.white : null,
                       shape: const StadiumBorder(),
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),

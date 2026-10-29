@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/datetime_utils.dart';
 import '../../core/error_messages.dart';
-import '../../core/theme.dart';
+import '../../core/omni_colors.dart';
 import '../../services/omni_mobile_api.dart';
 import '../../services/session_service.dart';
 import '../../widgets/error_state_view.dart';
@@ -82,6 +82,7 @@ class _DevicesScreenState extends State<DevicesScreen> {
     );
     if (confirmed != true || !mounted) return;
     final messenger = ScaffoldMessenger.of(context);
+    final errorFill = context.omni.errorFill;
     setState(() => _revoking = true);
     try {
       await _api.deviceRevoke('${device['device_id'] ?? ''}');
@@ -92,7 +93,7 @@ class _DevicesScreenState extends State<DevicesScreen> {
       if (!mounted) return;
       setState(() => _revoking = false);
       messenger.showSnackBar(SnackBar(
-          content: Text(friendlyError(e)), backgroundColor: AppTheme.error));
+          content: Text(friendlyError(e)), backgroundColor: errorFill));
     }
   }
 
@@ -112,6 +113,7 @@ class _DevicesScreenState extends State<DevicesScreen> {
   }
 
   Widget _body() {
+    final c = context.omni;
     if (_loading) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -145,7 +147,7 @@ class _DevicesScreenState extends State<DevicesScreen> {
               padding: const EdgeInsets.all(24),
               child: Text('No other phones are signed in.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: AppTheme.onSurfaceVariant)),
+                  style: TextStyle(color: c.textSub)),
             ),
         ],
       ),

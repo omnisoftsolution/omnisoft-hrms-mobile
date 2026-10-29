@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/error_messages.dart';
-import '../../core/theme.dart';
+import '../../core/omni_colors.dart';
 import '../../models/approval_detail.dart';
 import '../../models/leave_record.dart' show LeaveAttachment;
 import '../../services/omni_mobile_api.dart';
@@ -86,12 +86,13 @@ class _ApprovalDetailScreenState extends State<ApprovalDetailScreen> {
   }
 
   void _toast(String message, {bool error = false}) {
+    final c = context.omni;
     ScaffoldMessenger.of(context)
       ..removeCurrentSnackBar()
       ..showSnackBar(SnackBar(
         content: Text(message),
         behavior: SnackBarBehavior.floating,
-        backgroundColor: error ? AppTheme.error : AppTheme.primary,
+        backgroundColor: error ? c.errorFill : c.brandFill,
       ));
   }
 
@@ -226,7 +227,7 @@ class _ApprovalDetailScreenState extends State<ApprovalDetailScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppTheme.surface,
+      backgroundColor: context.omni.background,
       appBar: AppBar(title: const Text('Request')),
       body: _body(context),
     );
@@ -240,6 +241,7 @@ class _ApprovalDetailScreenState extends State<ApprovalDetailScreen> {
         children: [ErrorStateView(message: _error!, onRetry: _load)],
       );
     }
+    final c = context.omni;
     final d = _detail!;
     final item = d.item;
     final showApprove = item.isPending && item.canApprove;
@@ -259,7 +261,7 @@ class _ApprovalDetailScreenState extends State<ApprovalDetailScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _card([
+            _card(c, [
               Row(
                 children: [
                   EmployeeAvatar(
@@ -271,17 +273,16 @@ class _ApprovalDetailScreenState extends State<ApprovalDetailScreen> {
                       children: [
                         Text(
                           item.employeeName,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w700,
-                            color: AppTheme.onSurface,
+                            color: c.text,
                           ),
                         ),
                         if (subtitle.isNotEmpty)
                           Text(
                             subtitle,
-                            style: const TextStyle(
-                                fontSize: 12, color: AppTheme.onSurfaceVariant),
+                            style: TextStyle(fontSize: 12, color: c.textSub),
                           ),
                       ],
                     ),
@@ -289,27 +290,27 @@ class _ApprovalDetailScreenState extends State<ApprovalDetailScreen> {
                 ],
               ),
               const SizedBox(height: 14),
-              _kv('Type', item.leaveTypeName),
-              _kv('Dates', item.datesLabel),
-              _kv('Duration', item.durationLong),
+              _kv(c, 'Type', item.leaveTypeName),
+              _kv(c, 'Dates', item.datesLabel),
+              _kv(c, 'Duration', item.durationLong),
               if (d.balanceAfter != null)
-                _kv('Balance after', d.balanceAfter!.label),
-              if (d.note.isNotEmpty) _kv('Note', d.note),
+                _kv(c, 'Balance after', d.balanceAfter!.label),
+              if (d.note.isNotEmpty) _kv(c, 'Note', d.note),
             ]),
             if (d.steps.isNotEmpty) ...[
               const SizedBox(height: 12),
-              _card([
-                _sectionLabel('Approval steps'),
+              _card(c, [
+                _sectionLabel(c, 'Approval steps'),
                 const SizedBox(height: 8),
-                for (final s in d.steps) _stepRow(s),
+                for (final s in d.steps) _stepRow(c, s),
               ]),
             ],
             if (d.attachments.isNotEmpty) ...[
               const SizedBox(height: 12),
-              _card([
-                _sectionLabel('Attachments'),
+              _card(c, [
+                _sectionLabel(c, 'Attachments'),
                 const SizedBox(height: 4),
-                for (final a in d.attachments) _attachmentRow(a),
+                for (final a in d.attachments) _attachmentRow(c, a),
               ]),
             ],
             if (showApprove || showRefuse) ...[
@@ -320,9 +321,8 @@ class _ApprovalDetailScreenState extends State<ApprovalDetailScreen> {
                     Expanded(
                       child: OutlinedButton(
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: AppTheme.error,
-                          side: const BorderSide(
-                              color: AppTheme.error, width: 1.5),
+                          foregroundColor: c.error,
+                          side: BorderSide(color: c.error, width: 1.5),
                           shape: const StadiumBorder(),
                           padding: const EdgeInsets.symmetric(vertical: 16),
                         ),
@@ -335,14 +335,12 @@ class _ApprovalDetailScreenState extends State<ApprovalDetailScreen> {
                     Expanded(
                       child: FilledButton(
                         style: FilledButton.styleFrom(
-                          backgroundColor: AppTheme.primary,
-                          foregroundColor: AppTheme.onPrimary,
+                          backgroundColor: c.brandFill,
+                          foregroundColor: Colors.white,
                           // In flight: keep the button's colours so the
                           // spinner reads as "working", not "disabled".
-                          disabledBackgroundColor:
-                              _busy ? AppTheme.primary : null,
-                          disabledForegroundColor:
-                              _busy ? AppTheme.onPrimary : null,
+                          disabledBackgroundColor: _busy ? c.brandFill : null,
+                          disabledForegroundColor: _busy ? Colors.white : null,
                           shape: const StadiumBorder(),
                           padding: const EdgeInsets.symmetric(vertical: 16),
                         ),
@@ -362,12 +360,12 @@ class _ApprovalDetailScreenState extends State<ApprovalDetailScreen> {
     );
   }
 
-  Widget _card(List<Widget> children) => Container(
+  Widget _card(OmniColors c, List<Widget> children) => Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: AppTheme.surfaceContainerLowest,
+          color: c.card,
           borderRadius: BorderRadius.circular(24),
-          boxShadow: AppTheme.glassShadow,
+          boxShadow: c.cardShadow,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -375,17 +373,17 @@ class _ApprovalDetailScreenState extends State<ApprovalDetailScreen> {
         ),
       );
 
-  Widget _sectionLabel(String text) => Text(
+  Widget _sectionLabel(OmniColors c, String text) => Text(
         text.toUpperCase(),
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w700,
           letterSpacing: 1.2,
-          color: AppTheme.onSurfaceVariant,
+          color: c.textSub,
         ),
       );
 
-  Widget _kv(String key, String value) => Padding(
+  Widget _kv(OmniColors c, String key, String value) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -394,28 +392,27 @@ class _ApprovalDetailScreenState extends State<ApprovalDetailScreen> {
               width: 104,
               child: Text(
                 key,
-                style: const TextStyle(
-                    fontSize: 13, color: AppTheme.onSurfaceVariant),
+                style: TextStyle(fontSize: 13, color: c.textSub),
               ),
             ),
             Expanded(
               child: Text(
                 value,
-                style: const TextStyle(fontSize: 13, color: AppTheme.onSurface),
+                style: TextStyle(fontSize: 13, color: c.text),
               ),
             ),
           ],
         ),
       );
 
-  Widget _stepRow(ApprovalStep s) {
+  Widget _stepRow(OmniColors c, ApprovalStep s) {
     final Color dot = s.isRefused
-        ? AppTheme.error
+        ? c.error
         : s.isDone
-            ? AppTheme.primary
+            ? c.accent
             : s.isCurrent
-                ? AppTheme.secondary
-                : AppTheme.outlineVariant;
+                ? c.secondary
+                : c.line;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
@@ -439,17 +436,16 @@ class _ApprovalDetailScreenState extends State<ApprovalDetailScreen> {
               children: [
                 Text(
                   s.title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
-                    color: AppTheme.onSurface,
+                    color: c.text,
                   ),
                 ),
                 if (s.subtitle.isNotEmpty)
                   Text(
                     s.subtitle,
-                    style: const TextStyle(
-                        fontSize: 13, color: AppTheme.onSurfaceVariant),
+                    style: TextStyle(fontSize: 13, color: c.textSub),
                   ),
               ],
             ),
@@ -459,21 +455,20 @@ class _ApprovalDetailScreenState extends State<ApprovalDetailScreen> {
     );
   }
 
-  Widget _attachmentRow(LeaveAttachment a) => InkWell(
+  Widget _attachmentRow(OmniColors c, LeaveAttachment a) => InkWell(
         onTap: () => _openAttachment(a),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 8),
           child: Row(
             children: [
-              const Icon(Icons.description_outlined,
-                  size: 18, color: AppTheme.primary),
+              Icon(Icons.description_outlined, size: 18, color: c.accent),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   '${a.name} · ${a.sizeLabel}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 13, color: AppTheme.primary),
+                  style: TextStyle(fontSize: 13, color: c.accent),
                 ),
               ),
             ],

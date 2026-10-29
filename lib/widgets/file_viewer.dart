@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
-import '../core/theme.dart';
+import '../core/omni_colors.dart';
 
 /// Decode a base64 payload to a temp file and open it with the system viewer.
 /// Returns null on success, or an error message string.
@@ -32,7 +32,7 @@ void showFileViewError(BuildContext context, String msg) {
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
       content: Text('Could not open file: $msg'),
-      backgroundColor: AppTheme.error,
+      backgroundColor: context.omni.errorFill,
     ),
   );
 }

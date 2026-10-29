@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../core/theme.dart';
+import '../../core/omni_colors.dart';
 import '../../services/session_service.dart';
 
 /// The approver's way into the Approvals screen from the Leave tab (spec
@@ -22,18 +22,18 @@ class LeaveApprovalsRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.omni;
     final session = context.watch<SessionService>();
     if (!session.leaveApprovalsEnabled) return const SizedBox.shrink();
     final count = session.leaveApprovalsPendingCount;
     final waiting = count > 0;
-    final fg = waiting ? Colors.white : AppTheme.onSurface;
-    final muted = waiting
-        ? Colors.white.withValues(alpha: 0.85)
-        : AppTheme.onSurfaceVariant;
+    final fg = waiting ? Colors.white : c.text;
+    final muted =
+        waiting ? Colors.white.withValues(alpha: 0.85) : c.textSub;
     return Card(
       key: const ValueKey('leave-approvals-row'),
       margin: EdgeInsets.zero,
-      color: waiting ? AppTheme.primary : Colors.white,
+      color: waiting ? c.brandFill : c.card,
       child: ListTile(
         onTap: onTap,
         leading: Container(
@@ -42,12 +42,12 @@ class LeaveApprovalsRow extends StatelessWidget {
           decoration: BoxDecoration(
             color: waiting
                 ? Colors.white.withValues(alpha: 0.18)
-                : AppTheme.primary.withValues(alpha: 0.1),
+                : c.accent.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(13),
           ),
           child: Icon(
             Icons.fact_check_outlined,
-            color: waiting ? Colors.white : AppTheme.primary,
+            color: waiting ? Colors.white : c.accent,
           ),
         ),
         title: Text(
@@ -66,7 +66,11 @@ class LeaveApprovalsRow extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (waiting)
-              Badge(backgroundColor: AppTheme.error, label: Text('$count')),
+              Badge(
+                backgroundColor: c.badge,
+                textColor: c.onBadge,
+                label: Text('$count'),
+              ),
             const SizedBox(width: 8),
             Icon(Icons.chevron_right, color: muted),
           ],

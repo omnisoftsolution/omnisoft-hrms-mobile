@@ -24,5 +24,10 @@ import UIKit
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "PushPlugin") {
       PushPlugin.register(with: registrar)
     }
+    // 'omnihr/duo': iPhone Duo fold, inner camera and hinge, which
+    // Flutter does not report on iOS. See DuoPlugin.swift.
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "DuoPlugin") {
+      DuoPlugin.register(with: registrar)
+    }
   }
 }

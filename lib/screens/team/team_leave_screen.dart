@@ -5,7 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/error_messages.dart';
-import '../../core/theme.dart';
+import '../../core/omni_colors.dart';
 import '../../models/team_outlook.dart';
 import '../../services/omni_mobile_api.dart';
 import '../../services/session_service.dart';
@@ -416,11 +416,16 @@ class TeamLeaveScreenState extends State<TeamLeaveScreen> {
     return refresh();
   }
 
+  /// The theme's colours and the team palette (read in the helpers below).
+  OmniColors get _c => context.omni;
+  TeamColors get _t => TeamColors.of(context);
+
   @override
   Widget build(BuildContext context) {
     final strip = _stripError;
+    final c = _c;
     return Scaffold(
-      backgroundColor: AppTheme.surface,
+      backgroundColor: c.background,
       appBar:
           widget.appBar ??
           OmniAppBar(title: _isOverview ? 'Leave outlook' : 'Team leave'),
@@ -430,21 +435,21 @@ class TeamLeaveScreenState extends State<TeamLeaveScreen> {
             Container(
               key: const ValueKey('team-strip'),
               width: double.infinity,
-              color: AppTheme.error.withValues(alpha: 0.08),
+              color: c.error.withValues(alpha: 0.08),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     strip,
-                    style: const TextStyle(fontSize: 12, color: AppTheme.error),
+                    style: TextStyle(fontSize: 12, color: c.error),
                   ),
                   if (_shownAt != null)
                     Text(
                       'Showing what you saw at ${clockLabel(_shownAt!)}',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
-                        color: AppTheme.error,
+                        color: c.error,
                       ),
                     ),
                 ],
@@ -531,10 +536,10 @@ class TeamLeaveScreenState extends State<TeamLeaveScreen> {
         // names are missing from the day card (A-L17).
         out.add(const SizedBox(height: 8));
         out.add(
-          const Text(
+          Text(
             teamRowsNotShown,
-            key: ValueKey('team-truncated'),
-            style: TextStyle(fontSize: 12, color: TeamColors.muted),
+            key: const ValueKey('team-truncated'),
+            style: TextStyle(fontSize: 12, color: _t.muted),
           ),
         );
       }
@@ -550,13 +555,13 @@ class TeamLeaveScreenState extends State<TeamLeaveScreen> {
         width: 40,
         height: 40,
         decoration: BoxDecoration(
-          color: TeamColors.leaveTint,
+          color: _t.leaveTint,
           borderRadius: BorderRadius.circular(13),
         ),
-        child: const Icon(
+        child: Icon(
           Icons.people_alt_outlined,
           size: 20,
-          color: TeamColors.leaveOn,
+          color: _t.leaveOn,
         ),
       ),
       const SizedBox(width: 12),
@@ -566,16 +571,16 @@ class TeamLeaveScreenState extends State<TeamLeaveScreen> {
           children: [
             Text(
               o.team?.label ?? '',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w700,
-                color: AppTheme.onSurface,
+                color: _c.text,
               ),
             ),
             const SizedBox(height: 1),
             Text(
               teamScopeSubLabel(o, departmentId: _departmentId),
-              style: const TextStyle(fontSize: 12, color: TeamColors.muted),
+              style: TextStyle(fontSize: 12, color: _t.muted),
             ),
           ],
         ),
@@ -628,9 +633,9 @@ class TeamLeaveScreenState extends State<TeamLeaveScreen> {
   ]);
 
   BoxDecoration get _card => BoxDecoration(
-    color: AppTheme.surfaceContainerLowest,
+    color: _c.card,
     borderRadius: BorderRadius.circular(24),
-    boxShadow: AppTheme.glassShadow,
+    boxShadow: _c.cardShadow,
   );
 
   Widget _stateCard({
@@ -658,19 +663,19 @@ class TeamLeaveScreenState extends State<TeamLeaveScreen> {
         Text(
           title,
           textAlign: TextAlign.center,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w700,
-            color: AppTheme.onSurface,
+            color: _c.text,
           ),
         ),
         const SizedBox(height: 10),
         Text(
           body,
           textAlign: TextAlign.center,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 14,
-            color: AppTheme.onSurfaceVariant,
+            color: _c.textSub,
           ),
         ),
         if (action != null) ...[const SizedBox(height: 16), action],
@@ -680,8 +685,8 @@ class TeamLeaveScreenState extends State<TeamLeaveScreen> {
 
   Widget _everyoneIn() => _stateCard(
     icon: Icons.event_available_outlined,
-    iconBg: TeamColors.accentTint,
-    iconFg: TeamColors.accent,
+    iconBg: _t.accentTint,
+    iconFg: _t.accent,
     title: "Everyone's in",
     // The overview context (HR, a company or a department) is not "your
     // team" (A-L9).
@@ -698,8 +703,8 @@ class TeamLeaveScreenState extends State<TeamLeaveScreen> {
 
   Widget _noTeam(String reason) => _stateCard(
     icon: Icons.person_outline,
-    iconBg: AppTheme.surfaceContainer,
-    iconFg: AppTheme.onSurfaceVariant,
+    iconBg: _c.soft,
+    iconFg: _c.textSub,
     title: 'No team to show yet',
     body: teamEmptyReasonText(reason),
   );
@@ -746,25 +751,25 @@ class TeamLeaveScreenState extends State<TeamLeaveScreen> {
 class _Skeleton extends StatelessWidget {
   const _Skeleton();
 
-  Widget _bar(double widthFactor, double height) => FractionallySizedBox(
+  Widget _bar(Color fill, double w, double h) => FractionallySizedBox(
     alignment: Alignment.centerLeft,
-    widthFactor: widthFactor,
+    widthFactor: w,
     child: Container(
-      height: height,
+      height: h,
       decoration: BoxDecoration(
-        color: TeamColors.skeleton,
+        color: fill,
         borderRadius: BorderRadius.circular(6),
       ),
     ),
   );
 
-  BoxDecoration get _card => BoxDecoration(
-    color: AppTheme.surfaceContainerLowest,
-    borderRadius: BorderRadius.circular(24),
-  );
-
   @override
   Widget build(BuildContext context) {
+    final skel = TeamColors.of(context).skeleton;
+    final card = BoxDecoration(
+      color: context.omni.card,
+      borderRadius: BorderRadius.circular(24),
+    );
     return Semantics(
       key: const ValueKey('team-skeleton'),
       container: true,
@@ -775,18 +780,18 @@ class _Skeleton extends StatelessWidget {
           children: [
             Container(
               padding: const EdgeInsets.all(16),
-              decoration: _card,
+              decoration: card,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _bar(0.45, 12),
+                  _bar(skel, 0.45, 12),
                   const SizedBox(height: 12),
-                  _bar(1, 26),
+                  _bar(skel, 1, 26),
                 ],
               ),
             ),
             const SizedBox(height: 18),
-            _bar(0.35, 12),
+            _bar(skel, 0.35, 12),
             for (var i = 0; i < 4; i++) ...[
               const SizedBox(height: 12),
               Container(
@@ -794,15 +799,15 @@ class _Skeleton extends StatelessWidget {
                   horizontal: 16,
                   vertical: 14,
                 ),
-                decoration: _card,
+                decoration: card,
                 child: Row(
                   children: [
                     Container(
                       width: 36,
                       height: 36,
-                      decoration: const BoxDecoration(
+                      decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: TeamColors.skeleton,
+                        color: skel,
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -810,9 +815,9 @@ class _Skeleton extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          _bar(0.55, 11),
+                          _bar(skel, 0.55, 11),
                           const SizedBox(height: 8),
-                          _bar(0.75, 10),
+                          _bar(skel, 0.75, 10),
                         ],
                       ),
                     ),

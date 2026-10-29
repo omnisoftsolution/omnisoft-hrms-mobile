@@ -48,6 +48,47 @@ Android + iOS employee app for Omni HR (version in pubspec.yaml). Backend = Odoo
 - Device test caveat: check whether iPhone actually returns a BSSID (iOS 26 reality — Apple has
   progressively restricted this even with the entitlement).
 
+## Colours / dark mode (follows the phone since M5, branch feat/dark-mode)
+- Tokens: `lib/core/omni_colors.dart` — `OmniColors` (ThemeExtension, `light` + `dark`) incl. the My day
+  palette (`MyDayTone.kind`; compare tones by kind, never identity). Read them with `context.omni`.
+  Both themes come from one builder in `lib/core/theme.dart`; `main.dart` wires `darkTheme`.
+- **New code uses `context.omni`**, never hex literals (the old `AppTheme.<colour>` constants are private since
+  M5; `test/core/colour_guard_test.dart` fails on a raw `Color(0x…)` in `lib/screens` / `lib/widgets` unless it is
+  the light side of a dark switch or a light-only shadow). Team screens: `TeamColors.of(context)` (light + dark
+  palette in `team_colors.dart`). Pick by job: `accent` = teal text/icons on a card, `brandFill` = teal behind white text;
+  `card` (not `Colors.white`) for surfaces.
+- My day's pure helpers (`toneOf`, `buildTimeline`, `daySummaryOf`) take a `MyDayPalette` (light by default, for
+  tests); widgets pass `context.omni.myDay`. White text on fills (`brandFill`, `errorFill`, `successFill`,
+  `checkInFill`, tone fills) — these are deeper in dark; never put white text on `accent` / `button` / `error`.
+- `AppTheme.themeMode` = `ThemeMode.system` (M5, 2026-10-26); no in-app Appearance setting (Willy's call).
+  Plan + canvas: `session-assets/2026-10-22-dark-mode/plan.md` in the workspace.
+- **iPhone Duo** (foldable, iOS 27.1): closed, and open sideways, iOS puts the status bar + camera in an 84 pt
+  column on the right and reports it as a side inset. `sideColumnOf(viewPadding)` (`home/side_tab_column.dart`)
+  detects it (a wide, lopsided side inset); `HomeShell` then draws the tabs as a vertical pill in that column
+  (`SideTabColumn`) instead of the bottom bar and removes that inset from the tab screens. Open upright = normal
+  phone layout. Team overview reflows to 2 / 3 columns (`OverviewColumns`, 600 / 820 pt of content width).
+  The inner display ignores portrait lock. Canvas: https://claude.ai/artifact/LasbT6YAXiDs3dL6ETBDcM.
+  `SideColumnHost` (MaterialApp `builder`) does this for every route; in split view the column can be on the LEFT.
+- **Duo v3 (Apple's rules, iOS 27.1 SDK):** icon toolbar buttons go to the TOP of the side column under the status
+  (`SideTool`s, `SideColumnHostState.offerTools` / `withdrawTools`); titles, text buttons and segmented controls
+  stay in the screen. Buttons and tabs follow iOS's own bar frame (`DuoGeometry.barLeft` / `barRight` from
+  `edgeInsets(for: .bar(onEdge:extent: 48))`: top under status + camera, centre line = camera axis, bottom above
+  the home indicator); `kSideStatusHeight` (170) is only the fallback. Simulator-measured: closed bar starts at
+  170 pt, open sideways at 120 pt. `HomeShell` withdraws the tabs while a root-navigator page covers it
+  (`ModalRoute.isCurrent`), like a phone's bottom bar. `DuoFeatures` keeps one tree shape folded or not (a fold must
+  not rebuild the app). `OmniAppBar`
+  hands over Back / bell / avatar only while it is on top (`TickerMode` on + `ModalRoute.isCurrent`); plain
+  `AppBar` screens still keep their back arrow in the bar. Flutter fills `MediaQuery.displayFeatures` only on
+  Android, so `ios/Runner/DuoPlugin.swift` ('omnihr/duo': `UIView.reservedRegions(kind: .division/.occlusion)`,
+  `UIHingeInteraction`) → `DuoService` → `DuoFeatures` (outside `SideColumnHost`, which shifts the bounds for a left
+  column) adds the active fold as a half-opened `DisplayFeature`; Flutter's dialogs then avoid it by themselves.
+  `foldSplitOf(media)` (`core/duo_fold.dart`) = vertical (book) / horizontal (desk) split; `CheckInOutScreen` puts
+  header + circle before the fold and the checklist after it (12 pt gap so the glow stays off the fold). The camera
+  (occlusion) is reported, not used yet. Testing on the 27.1 simulator: see `docs/iphone-duo-handover.md` (arm64
+  scratch build without ML Kit, mock-server preview, Device Hub hinge buttons).
+- `test/core/omni_colors_test.dart` checks WCAG contrast of every token pair (dark: all pass; light: a fixed list
+  of failures the app already had). Theme-building tests must be `testWidgets` (google_fonts fetches over HTTP).
+
 ## Build footgun — ALREADY FIXED, do not remove
 Flutter 3.44 + tflite_flutter "Inconsistent JVM Target" (`:tflite_flutter:compileReleaseKotlin`) is fixed on
 master (f82a8db): android/gradle.properties sets `kotlin.jvm.target.validation.mode=warning`, and the JDK is

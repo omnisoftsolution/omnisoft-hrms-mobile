@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-import '../../../core/theme.dart';
+import '../../../core/omni_colors.dart';
 import '../../../models/my_day.dart';
 import 'day_sheet.dart';
-import 'my_day_colors.dart';
 import 'my_day_display.dart';
 
 enum _Mark { dot, calendar, star }
@@ -75,7 +74,7 @@ class WeekStrip extends StatelessWidget {
     return '$count day${count == 1 ? '' : 's'} worked so far';
   }
 
-  _Cell _cell(MyDayWeekDay d, MyDayTone today) {
+  _Cell _cell(MyDayWeekDay d, MyDayTone today, OmniColors c) {
     switch (d.kind) {
       case 'today':
         return _Cell(
@@ -90,47 +89,47 @@ class WeekStrip extends StatelessWidget {
         final late = d.verdict == 'late' || d.verdict == 'early_leave';
         return _Cell(
           day: d,
-          fill: MyDayColors.work.tint,
+          fill: c.myDay.work.tint,
           ring: Colors.transparent,
-          text: MyDayColors.work.onTint,
+          text: c.myDay.work.onTint,
           mark: _Mark.dot,
-          markColor: late ? MyDayColors.late.dot : MyDayColors.work.dot,
+          markColor: late ? c.myDay.late.dot : c.myDay.work.dot,
         );
       case 'absent':
         return _Cell(
           day: d,
-          fill: MyDayColors.missing.tint,
+          fill: c.myDay.missing.tint,
           ring: Colors.transparent,
-          text: MyDayColors.missing.onTint,
+          text: c.myDay.missing.onTint,
           mark: _Mark.dot,
-          markColor: MyDayColors.missing.dot,
+          markColor: c.myDay.missing.dot,
         );
       case 'public_holiday':
         return _Cell(
           day: d,
-          fill: MyDayColors.holiday.tint,
+          fill: c.myDay.holiday.tint,
           ring: Colors.transparent,
-          text: MyDayColors.holiday.onTint,
+          text: c.myDay.holiday.onTint,
           mark: _Mark.star,
-          markColor: MyDayColors.holiday.dot,
+          markColor: c.myDay.holiday.dot,
         );
       case 'leave':
         return _Cell(
           day: d,
-          fill: MyDayColors.leave.tint,
+          fill: c.myDay.leave.tint,
           ring: Colors.transparent,
-          text: MyDayColors.leave.onTint,
+          text: c.myDay.leave.onTint,
           mark: _Mark.calendar,
-          markColor: MyDayColors.leave.dot,
+          markColor: c.myDay.leave.dot,
         );
       case 'scheduled':
         return _Cell(
           day: d,
-          fill: Colors.white,
-          ring: AppTheme.outlineVariant,
-          text: AppTheme.onSurfaceVariant,
+          fill: c.card,
+          ring: c.line,
+          text: c.textSub,
           mark: _Mark.dot,
-          markColor: MyDayColors.waiting.dot,
+          markColor: c.myDay.waiting.dot,
           hollow: true,
           ringWidth: 1,
         );
@@ -139,9 +138,9 @@ class WeekStrip extends StatelessWidget {
           day: d,
           fill: Colors.transparent,
           ring: Colors.transparent,
-          text: AppTheme.outline,
+          text: c.textMuted,
           mark: _Mark.dot,
-          markColor: AppTheme.outlineVariant,
+          markColor: c.line,
           hollow: true,
         );
     }
@@ -151,8 +150,9 @@ class WeekStrip extends StatelessWidget {
   Widget build(BuildContext context) {
     if (day.week.isEmpty) return const SizedBox.shrink();
     final text = Theme.of(context).textTheme;
-    final today = toneOf(displayOf(day));
-    final cells = day.week.map((d) => _cell(d, today)).toList();
+    final c = context.omni;
+    final today = toneOf(displayOf(day), c.myDay);
+    final cells = day.week.map((d) => _cell(d, today, c)).toList();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -162,14 +162,14 @@ class WeekStrip extends StatelessWidget {
               child: Text(
                 'This week',
                 style: text.labelLarge?.copyWith(
-                  color: AppTheme.onSurfaceVariant,
+                  color: c.textSub,
                   fontWeight: FontWeight.w700,
                 ),
               ),
             ),
             Text(
               workedSoFar(day),
-              style: text.bodySmall?.copyWith(color: AppTheme.outline),
+              style: text.bodySmall?.copyWith(color: c.textMuted),
             ),
           ],
         ),

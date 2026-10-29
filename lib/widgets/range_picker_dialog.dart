@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
-import '../core/theme.dart';
+import '../core/omni_colors.dart';
 
 const double _weekdayFontSize = 13;
 
@@ -115,22 +115,23 @@ class _RangePickerDialogState extends State<RangePickerDialog> {
       }
     }
     if (names.isEmpty) return const SizedBox.shrink();
+    final c = context.omni;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: AppTheme.error.withValues(alpha: 0.08),
+        color: c.error.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         children: [
-          Icon(Icons.event_busy, size: 16, color: AppTheme.error),
+          Icon(Icons.event_busy, size: 16, color: c.error),
           const SizedBox(width: 6),
           Expanded(
             child: Text(
               names.length == 1
                   ? 'Public holiday: ${names.first}'
                   : 'Public holidays: ${names.join(', ')}',
-              style: TextStyle(fontSize: 12, color: AppTheme.error),
+              style: TextStyle(fontSize: 12, color: c.error),
             ),
           ),
         ],
@@ -165,6 +166,10 @@ class _RangePickerDialogState extends State<RangePickerDialog> {
   @override
   Widget build(BuildContext context) {
     final fmt = DateFormat('dd MMM');
+    final c = context.omni;
+    // table_calendar's own greys are kept exactly in light; dark uses
+    // the tokens (its defaults are dark greys meant for white).
+    final dark = Theme.of(context).brightness == Brightness.dark;
     final int dayCount;
     if (_start != null && _end != null) {
       dayCount = widget.dayCount?.call(_start!, _end!) ??
@@ -229,9 +234,11 @@ class _RangePickerDialogState extends State<RangePickerDialog> {
                         softWrap: false,
                         style: TextStyle(
                           fontSize: _weekdayFontSize,
-                          color: weekend
-                              ? const Color(0xFF6A6A6A)
-                              : const Color(0xFF4F4F4F),
+                          color: dark
+                              ? (weekend ? c.textMuted : c.textSub)
+                              : weekend
+                                  ? const Color(0xFF6A6A6A)
+                                  : const Color(0xFF4F4F4F),
                         ),
                       ),
                     ),
@@ -249,14 +256,14 @@ class _RangePickerDialogState extends State<RangePickerDialog> {
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
                         color: inRange
-                            ? AppTheme.primary.withValues(alpha: 0.15)
+                            ? c.accent.withValues(alpha: 0.15)
                             : null,
                       ),
                       child: Text(
                         '${day.day}',
                         style: TextStyle(
                           color:
-                              AppTheme.onSurfaceVariant.withValues(alpha: 0.5),
+                              c.textSub.withValues(alpha: 0.5),
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -283,7 +290,7 @@ class _RangePickerDialogState extends State<RangePickerDialog> {
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
                       color: inRange
-                          ? AppTheme.primary.withValues(alpha: 0.15)
+                          ? c.accent.withValues(alpha: 0.15)
                           : null,
                       shape: BoxShape.rectangle,
                     ),
@@ -292,13 +299,13 @@ class _RangePickerDialogState extends State<RangePickerDialog> {
                       height: 28,
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
-                        color: AppTheme.error.withValues(alpha: 0.12),
+                        color: c.error.withValues(alpha: 0.12),
                         shape: BoxShape.circle,
                       ),
                       child: Text(
                         '${day.day}',
                         style: TextStyle(
-                          color: AppTheme.error,
+                          color: c.error,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -308,32 +315,38 @@ class _RangePickerDialogState extends State<RangePickerDialog> {
               ),
               calendarStyle: CalendarStyle(
                 selectedDecoration: BoxDecoration(
-                  color: AppTheme.primary,
+                  color: c.brandFill,
                   shape: BoxShape.circle,
                 ),
-                selectedTextStyle: const TextStyle(
-                    color: Colors.white, fontWeight: FontWeight.w600),
+                selectedTextStyle: TextStyle(
+                    color: c.onBrandFill, fontWeight: FontWeight.w600),
                 rangeStartDecoration: BoxDecoration(
-                  color: AppTheme.primary,
+                  color: c.brandFill,
                   shape: BoxShape.circle,
                 ),
                 rangeEndDecoration: BoxDecoration(
-                  color: AppTheme.primary,
+                  color: c.brandFill,
                   shape: BoxShape.circle,
                 ),
                 withinRangeDecoration: BoxDecoration(
-                  color: AppTheme.primary.withValues(alpha: 0.15),
+                  color: c.accent.withValues(alpha: 0.15),
                   shape: BoxShape.rectangle,
                 ),
-                rangeStartTextStyle: const TextStyle(
-                    color: Colors.white, fontWeight: FontWeight.w600),
-                rangeEndTextStyle: const TextStyle(
-                    color: Colors.white, fontWeight: FontWeight.w600),
+                rangeStartTextStyle: TextStyle(
+                    color: c.onBrandFill, fontWeight: FontWeight.w600),
+                rangeEndTextStyle: TextStyle(
+                    color: c.onBrandFill, fontWeight: FontWeight.w600),
                 todayDecoration: BoxDecoration(
-                  color: AppTheme.primary.withValues(alpha: 0.25),
+                  color: c.accent.withValues(alpha: 0.25),
                   shape: BoxShape.circle,
                 ),
-                todayTextStyle: TextStyle(color: AppTheme.primary),
+                todayTextStyle: TextStyle(color: c.accent),
+                weekendTextStyle: dark
+                    ? TextStyle(color: c.textMuted)
+                    : const TextStyle(color: Color(0xFF5A5A5A)),
+                disabledTextStyle: dark
+                    ? TextStyle(color: c.textMuted.withValues(alpha: 0.5))
+                    : const TextStyle(color: Color(0xFFBFBFBF)),
                 outsideDaysVisible: false,
               ),
               availableGestures: AvailableGestures.horizontalSwipe,

@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import '../core/theme.dart';
+import '../core/omni_colors.dart';
 
 /// Round avatar showing the employee's photo (base64 from
 /// hr.employee.image_128) when available, else their initials, with
@@ -48,9 +48,9 @@ class EmployeeAvatar extends StatelessWidget {
   /// HSL hue wheel and pick a fixed saturation/lightness that
   /// guarantees readable white text. Mirrors Odoo's own avatar
   /// fallback approach (avatar_mixin.get_hsl_from_seed).
-  Color get _fallbackBg {
+  Color _fallbackBg(OmniColors c) {
     final n = name.trim();
-    if (n.isEmpty) return AppTheme.primary;
+    if (n.isEmpty) return c.brandFill;
     int hash = 0x811c9dc5;
     for (final c in n.codeUnits) {
       hash ^= c;
@@ -64,6 +64,7 @@ class EmployeeAvatar extends StatelessWidget {
   Widget build(BuildContext context) {
     final bytes = _imageBytes;
     final hasImage = bytes != null;
+    final c = context.omni;
     final core = Container(
       width: size,
       height: size,
@@ -73,11 +74,11 @@ class EmployeeAvatar extends StatelessWidget {
         // background only when an image is present (so the disc still
         // reads as a separate element against light card backgrounds).
         color: hasImage
-            ? AppTheme.primaryContainer.withValues(alpha: 0.15)
-            : _fallbackBg,
+            ? c.button.withValues(alpha: 0.15)
+            : _fallbackBg(c),
         border: hasImage
             ? Border.all(
-                color: AppTheme.primaryContainer.withValues(alpha: 0.4),
+                color: c.button.withValues(alpha: 0.4),
                 width: 1.5,
               )
             : null,
@@ -114,8 +115,10 @@ class EmployeeAvatar extends StatelessWidget {
             height: size * 0.28,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: const Color(0xFF22C55E),
-              border: Border.all(color: Colors.white, width: 2),
+              color: context.isDarkTheme
+                  ? c.success
+                  : const Color(0xFF22C55E),
+              border: Border.all(color: c.bar, width: 2),
             ),
           ),
         ),

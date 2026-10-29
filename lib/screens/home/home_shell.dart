@@ -7,6 +7,7 @@ import 'arrival_snack_tracker.dart';
 import 'home_root.dart';
 import 'leave_tab_icon.dart';
 import 'my_day/my_day_screen.dart';
+import 'side_tab_column.dart';
 import 'overview/team_overview_screen.dart';
 import '../approvals/approval_detail_screen.dart';
 import '../expenses/expenses_screen.dart';
@@ -14,7 +15,7 @@ import '../history/history_shell.dart';
 import '../leave/leave_screen.dart';
 import '../notifications/notification_tap.dart';
 import '../notifications/notifications_screen.dart';
-import '../../core/theme.dart';
+import '../../core/omni_colors.dart';
 import '../../models/notification_record.dart';
 import '../../services/face_recognition_service.dart';
 import '../../services/holiday_service.dart';
@@ -86,6 +87,7 @@ class HomeShellState extends State<HomeShell> {
     _notifSvc?.removeListener(_onNotificationChange);
     _notifSvc?.stop();
     _push?.removeListener(_onPushChange);
+    _sideHost?.withdraw(this);
     super.dispose();
   }
 
@@ -131,6 +133,8 @@ class HomeShellState extends State<HomeShell> {
     }
     final messenger = _scaffoldMessengerKey.currentState;
     if (messenger == null) return;
+    // Read before the builder: it may run again later (re-wrap).
+    final colors = context.omni;
     showArrivalSnack(
       messenger,
       _arrivalSnack,
@@ -139,6 +143,7 @@ class HomeShellState extends State<HomeShell> {
         fresh,
         onAction: () => _openArrival(fresh),
         wrapContent: wrap,
+        colors: colors,
       ),
     );
   }
@@ -188,6 +193,7 @@ class HomeShellState extends State<HomeShell> {
           pushArrivalSnackBar(
             arrivals.first,
             onOpen: () => unawaited(navigateToMyDay()),
+            colors: context.omni,
           ),
         );
     }
@@ -378,9 +384,65 @@ class HomeShellState extends State<HomeShell> {
     );
   }
 
+  /// The app-level host that draws the tabs in iPhone Duo's side column
+  /// (kept here: [dispose] can't look it up).
+  SideColumnHostState? _sideHost;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _sideHost = SideColumnHost.maybeOf(context);
+  }
+
   @override
   Widget build(BuildContext context) {
     final pending = context.watch<SessionService>().leaveApprovalsPendingCount;
+    final c = context.omni;
+    // iPhone Duo, closed or open sideways: the tabs go into the system's
+    // side column (drawn by SideColumnHost) instead of the bottom bar.
+    final side = SideColumnHost.sideOf(context);
+    final tabs = [
+      const SideTab(
+        icon: Icon(Icons.home_outlined),
+        selectedIcon: Icon(Icons.home_rounded),
+        label: 'HOME',
+      ),
+      SideTab(
+        icon: LeaveTabIcon(
+          count: pending,
+          selected: _index == 1,
+          icon: const Icon(Icons.event_note_outlined),
+        ),
+        selectedIcon: LeaveTabIcon(
+          count: pending,
+          selected: _index == 1,
+          icon: const Icon(Icons.event_note_rounded),
+        ),
+        label: 'LEAVE',
+      ),
+      const SideTab(
+        icon: Icon(Icons.history_rounded),
+        selectedIcon: Icon(Icons.history_rounded),
+        label: 'HISTORY',
+      ),
+      const SideTab(
+        icon: Icon(Icons.receipt_long_outlined),
+        selectedIcon: Icon(Icons.receipt_long_rounded),
+        label: 'EXPENSES',
+      ),
+    ];
+    // A full-screen page on the root navigator (check-in, Profile, a root
+    // sheet) covers the shell: on a phone it hides the bottom bar, so the
+    // column drops the tabs too.
+    final covered = !(ModalRoute.of(context)?.isCurrent ?? true);
+    if (side != SideColumn.none && !covered) {
+      _sideHost?.offer(
+        this,
+        SideTabsSpec(tabs: tabs, selectedIndex: _index, onSelected: _onTabTap),
+      );
+    } else {
+      _sideHost?.withdraw(this);
+    }
     return ScaffoldMessenger(
       key: _scaffoldMessengerKey,
       // PopScope intercepts the Android system back button so it pops
@@ -425,71 +487,52 @@ class HomeShellState extends State<HomeShell> {
               ),
             ],
           ),
-          bottomNavigationBar: NavigationBarTheme(
-            // Material 3 NavigationBar with a tinted indicator pill
-            // behind the active item. Keeps a single source of truth
-            // for both selected/unselected label color.
-            data: NavigationBarThemeData(
-              backgroundColor: Colors.white,
-              elevation: 8,
-              height: 72,
-              indicatorColor: AppTheme.primaryContainer.withValues(alpha: 0.18),
-              labelTextStyle: WidgetStateProperty.resolveWith((states) {
-                if (states.contains(WidgetState.selected)) {
-                  return TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.6,
-                    color: AppTheme.primary,
-                  );
-                }
-                return TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w500,
-                  color: AppTheme.outline,
-                );
-              }),
-              iconTheme: WidgetStateProperty.resolveWith((states) {
-                if (states.contains(WidgetState.selected)) {
-                  return const IconThemeData(color: AppTheme.primary);
-                }
-                return IconThemeData(color: AppTheme.outline);
-              }),
-            ),
-            child: NavigationBar(
-              selectedIndex: _index,
-              onDestinationSelected: _onTabTap,
-              destinations: [
-                const NavigationDestination(
-                  icon: Icon(Icons.home_outlined),
-                  selectedIcon: Icon(Icons.home_rounded),
-                  label: 'HOME',
-                ),
-                NavigationDestination(
-                  icon: LeaveTabIcon(
-                    count: pending,
-                    selected: _index == 1,
-                    icon: const Icon(Icons.event_note_outlined),
+          bottomNavigationBar: side != SideColumn.none
+              ? null
+              : NavigationBarTheme(
+                  // Material 3 NavigationBar with a tinted indicator pill
+                  // behind the active item. Keeps a single source of truth
+                  // for both selected/unselected label color.
+                  data: NavigationBarThemeData(
+                    backgroundColor: c.bar,
+                    elevation: 8,
+                    height: 72,
+                    indicatorColor: c.navIndicator,
+                    labelTextStyle: WidgetStateProperty.resolveWith((states) {
+                      if (states.contains(WidgetState.selected)) {
+                        return TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.6,
+                          color: c.accent,
+                        );
+                      }
+                      return TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        color: c.textMuted,
+                      );
+                    }),
+                    iconTheme: WidgetStateProperty.resolveWith((states) {
+                      if (states.contains(WidgetState.selected)) {
+                        return IconThemeData(color: c.accent);
+                      }
+                      return IconThemeData(color: c.textMuted);
+                    }),
                   ),
-                  selectedIcon: LeaveTabIcon(
-                    count: pending,
-                    selected: _index == 1,
-                    icon: const Icon(Icons.event_note_rounded),
+                  child: NavigationBar(
+                    selectedIndex: _index,
+                    onDestinationSelected: _onTabTap,
+                    destinations: [
+                      for (final t in tabs)
+                        NavigationDestination(
+                          icon: t.icon,
+                          selectedIcon: t.selectedIcon,
+                          label: t.label,
+                        ),
+                    ],
                   ),
-                  label: 'LEAVE',
                 ),
-                const NavigationDestination(
-                  icon: Icon(Icons.history_rounded),
-                  label: 'HISTORY',
-                ),
-                const NavigationDestination(
-                  icon: Icon(Icons.receipt_long_outlined),
-                  selectedIcon: Icon(Icons.receipt_long_rounded),
-                  label: 'EXPENSES',
-                ),
-              ],
-            ),
-          ),
         ),
       ),
     );
@@ -515,12 +558,14 @@ bool refreshesApprovals(Iterable<NotificationRecord> arrivals) =>
 
 /// The snackbar shown when a notification arrives while the app is open.
 /// [onAction] runs for its VIEW / Review action, when the kind has one.
+/// [colors] is the theme's tokens (light when omitted).
 SnackBar notificationArrivalSnackBar(
   NotificationRecord fresh, {
   required VoidCallback onAction,
   Widget Function(Widget content)? wrapContent,
+  OmniColors? colors,
 }) => SnackBar(
-  backgroundColor: AppTheme.primary,
+  backgroundColor: (colors ?? OmniColors.light).brandFill,
   // Flutter 3.44 keeps a bar with an action until it is tapped (persist
   // defaults to action != null); "Leave approved … VIEW" stayed for 6+
   // minutes on the Samsung (APP-8). It times out like any other.
@@ -529,42 +574,44 @@ SnackBar notificationArrivalSnackBar(
   behavior: SnackBarBehavior.floating,
   margin: const EdgeInsets.all(16),
   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-  content: (wrapContent ?? (Widget w) => w)(Row(
-    children: [
-      const Icon(
-        Icons.notifications_active_rounded,
-        color: Colors.white,
-        size: 20,
-      ),
-      const SizedBox(width: 12),
-      Expanded(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              fresh.title,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
-                fontSize: 14,
-              ),
-            ),
-            if (fresh.body.isNotEmpty)
+  content: (wrapContent ?? (Widget w) => w)(
+    Row(
+      children: [
+        const Icon(
+          Icons.notifications_active_rounded,
+          color: Colors.white,
+          size: 20,
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
               Text(
-                fresh.body,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.85),
-                  fontSize: 12,
+                fresh.title,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
                 ),
               ),
-          ],
+              if (fresh.body.isNotEmpty)
+                Text(
+                  fresh.body,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.85),
+                    fontSize: 12,
+                  ),
+                ),
+            ],
+          ),
         ),
-      ),
-    ],
-  )),
+      ],
+    ),
+  ),
   action: fresh.snackActionLabel != null
       ? SnackBarAction(
           label: fresh.snackActionLabel!,
@@ -576,12 +623,14 @@ SnackBar notificationArrivalSnackBar(
 
 /// The snackbar for a push-only notice (a check-in / check-out reminder)
 /// that arrives while the app is open (spec 2026-10-11 §6.4): the push's
-/// own title and body; "Open" goes to Home.
+/// own title and body; "Open" goes to Home. [colors] is the theme's
+/// tokens (light when omitted).
 SnackBar pushArrivalSnackBar(
   PushArrival arrival, {
   required VoidCallback onOpen,
+  OmniColors? colors,
 }) => SnackBar(
-  backgroundColor: AppTheme.primary,
+  backgroundColor: (colors ?? OmniColors.light).brandFill,
   // Same as the notice snackbar: a bar with an action must still time out.
   persist: false,
   duration: const Duration(seconds: 6),

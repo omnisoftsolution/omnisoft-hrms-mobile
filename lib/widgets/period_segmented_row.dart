@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../core/theme.dart';
+import '../core/omni_colors.dart';
 
 /// "Start period" / "End period" row of the half-day leave sheets (apply
 /// and edit): a fixed label and a Morning / Afternoon segmented button.
@@ -37,7 +37,7 @@ class PeriodSegmentedRow extends StatelessWidget {
             label,
             style: TextStyle(
               fontSize: 13,
-              color: AppTheme.onSurfaceVariant,
+              color: context.omni.textSub,
               fontWeight: FontWeight.w500,
             ),
           ),

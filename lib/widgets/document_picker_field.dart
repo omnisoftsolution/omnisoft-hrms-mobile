@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import '../core/theme.dart';
+import '../core/omni_colors.dart';
 import 'file_viewer.dart';
 
 /// Allowed attachment file types for leave docs / supporting documents.
@@ -139,7 +139,7 @@ class DocumentPickerField extends StatelessWidget {
     messenger.showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: AppTheme.error,
+        backgroundColor: messenger.context.omni.errorFill,
       ),
     );
   }
@@ -163,6 +163,7 @@ class DocumentPickerField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.omni;
     if (picked == null) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -175,7 +176,7 @@ class DocumentPickerField extends StatelessWidget {
                   const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               decoration: BoxDecoration(
                 border: Border.all(
-                  color: required ? AppTheme.error : AppTheme.outline,
+                  color: required ? c.error : c.textMuted,
                 ),
                 borderRadius: BorderRadius.circular(12),
               ),
@@ -184,7 +185,7 @@ class DocumentPickerField extends StatelessWidget {
                   Icon(Icons.camera_alt_rounded,
                       size: 18,
                       color:
-                          required ? AppTheme.error : AppTheme.primary),
+                          required ? c.error : c.accent),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
@@ -197,8 +198,8 @@ class DocumentPickerField extends StatelessWidget {
                           style: TextStyle(
                             fontSize: 12,
                             color: required
-                                ? AppTheme.error
-                                : AppTheme.onSurfaceVariant,
+                                ? c.error
+                                : c.textSub,
                           ),
                         ),
                         const SizedBox(height: 2),
@@ -209,7 +210,7 @@ class DocumentPickerField extends StatelessWidget {
                       ],
                     ),
                   ),
-                  Icon(Icons.chevron_right, color: AppTheme.outline),
+                  Icon(Icons.chevron_right, color: c.textMuted),
                 ],
               ),
             ),
@@ -227,7 +228,7 @@ class DocumentPickerField extends StatelessWidget {
                 'or pick from files',
                 style: TextStyle(
                   fontSize: 12,
-                  color: AppTheme.onSurfaceVariant,
+                  color: c.textSub,
                 ),
               ),
             ),
@@ -239,13 +240,13 @@ class DocumentPickerField extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
-        border: Border.all(color: AppTheme.primary),
-        color: AppTheme.primary.withValues(alpha: 0.06),
+        border: Border.all(color: c.accent),
+        color: c.accent.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         children: [
-          Icon(Icons.description_outlined, size: 20, color: AppTheme.primary),
+          Icon(Icons.description_outlined, size: 20, color: c.accent),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -261,13 +262,13 @@ class DocumentPickerField extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(p.sizeLabel,
                     style: TextStyle(
-                        fontSize: 12, color: AppTheme.onSurfaceVariant)),
+                        fontSize: 12, color: c.textSub)),
               ],
             ),
           ),
           IconButton(
             tooltip: 'View',
-            icon: Icon(Icons.visibility_outlined, color: AppTheme.primary),
+            icon: Icon(Icons.visibility_outlined, color: c.accent),
             onPressed: () async {
               final err = await openBase64File(
                   name: p.name, dataB64: p.dataB64);
@@ -278,12 +279,12 @@ class DocumentPickerField extends StatelessWidget {
           ),
           IconButton(
             tooltip: 'Replace',
-            icon: Icon(Icons.refresh_rounded, color: AppTheme.primary),
+            icon: Icon(Icons.refresh_rounded, color: c.accent),
             onPressed: () => _pickFromCamera(context),
           ),
           IconButton(
             tooltip: 'Remove',
-            icon: Icon(Icons.close_rounded, color: AppTheme.error),
+            icon: Icon(Icons.close_rounded, color: c.error),
             onPressed: () => onChanged(null),
           ),
         ],

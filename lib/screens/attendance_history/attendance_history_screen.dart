@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-import '../../core/theme.dart';
+import '../../core/omni_colors.dart';
 import '../../core/error_messages.dart';
 import '../../widgets/error_state_view.dart';
 import '../../models/attendance_record.dart';
@@ -50,17 +50,17 @@ class AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
 
   /// Mode-pill background color. Mobile = primary (the expected source),
   /// Manual = secondary (HR tweak), Auto check-out = error (system stepped in).
-  Color _modeColor(String? mode) {
+  Color _modeColor(OmniColors c, String? mode) {
     switch (mode) {
       case 'kiosk':
       case 'systray':
-        return AppTheme.primary;
+        return c.accent;
       case 'manual':
-        return AppTheme.secondary;
+        return c.secondary;
       case 'auto_check_out':
-        return AppTheme.error;
+        return c.error;
       default:
-        return AppTheme.outline;
+        return c.textMuted;
     }
   }
 
@@ -87,20 +87,21 @@ class AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
               const SizedBox(height: 100),
               const Center(child: Text('No attendance records yet')),
               const SizedBox(height: 24),
-              _scopeFooter(),
+              _scopeFooter(context),
             ])
           : ListView.builder(
               padding: const EdgeInsets.all(16),
               // +1 row for the "Showing the last 30 days" footer.
               itemCount: _records.length + 1,
               itemBuilder: (_, i) => i == _records.length
-                  ? _scopeFooter()
-                  : _buildItem(_records[i]),
+                  ? _scopeFooter(context)
+                  : _buildItem(context, _records[i]),
             ),
     );
   }
 
-  Widget _scopeFooter() {
+  Widget _scopeFooter(BuildContext context) {
+    final c = context.omni;
     return Padding(
       padding: const EdgeInsets.fromLTRB(0, 8, 0, 24),
       child: Center(
@@ -108,14 +109,15 @@ class AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
           'Showing the last 30 days',
           style: GoogleFonts.inter(
             fontSize: 12,
-            color: AppTheme.outline,
+            color: c.textMuted,
           ),
         ),
       ),
     );
   }
 
-  Widget _buildItem(AttendanceRecord r) {
+  Widget _buildItem(BuildContext context, AttendanceRecord r) {
+    final c = context.omni;
     final dateFmt = DateFormat('EEE, dd MMM yyyy');
     final timeFmt = DateFormat('HH:mm');
     final dateLabel = r.date != null
@@ -146,8 +148,7 @@ class AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                       const SizedBox(height: 4),
                       Text(
                         '$inLabel  →  $outLabel  ·  $hours',
-                        style: TextStyle(
-                            fontSize: 13, color: AppTheme.onSurfaceVariant),
+                        style: TextStyle(fontSize: 13, color: c.textSub),
                       ),
                     ],
                   ),
@@ -156,13 +157,13 @@ class AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                   padding: const EdgeInsets.symmetric(
                       horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: _modeColor(r.inMode).withValues(alpha: 0.1),
+                    color: _modeColor(c, r.inMode).withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
                     r.modeLabel,
                     style: TextStyle(
-                      color: _modeColor(r.inMode),
+                      color: _modeColor(c, r.inMode),
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                     ),

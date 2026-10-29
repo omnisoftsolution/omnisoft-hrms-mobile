@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../core/theme.dart';
+import '../../core/omni_colors.dart';
 import '../../models/team_outlook.dart';
 import 'team_colors.dart';
 import 'team_format.dart';
@@ -42,6 +42,7 @@ class TeamDayDetail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.omni;
     final off = _entry(outlook, day)?.off ?? 0;
     // days[].off is the server's count; the rows are the leaves covering the
     // day, shown only when that count says someone is off.
@@ -62,15 +63,15 @@ class TeamDayDetail extends StatelessWidget {
             titleOf(outlook, day),
             key: inSheet ? const ValueKey('team-day-sheet-title') : null,
             style: inSheet
-                ? const TextStyle(
+                ? TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
-                    color: AppTheme.onSurface,
+                    color: c.text,
                   )
-                : const TextStyle(
+                : TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
-                    color: AppTheme.onSurfaceVariant,
+                    color: c.textSub,
                   ),
           ),
         ),
@@ -82,7 +83,10 @@ class TeamDayDetail extends StatelessWidget {
             child: Text(
               // In the sheet the day was just tapped: no "tap" hint.
               inSheet ? 'No one off.' : 'No one off. Tap a shaded day.',
-              style: const TextStyle(fontSize: 13, color: TeamColors.muted),
+              style: TextStyle(
+                fontSize: 13,
+                color: TeamColors.of(context).muted,
+              ),
             ),
           )
         else
@@ -112,6 +116,7 @@ class _TeamPersonRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.omni;
     final r = row;
     final p = person;
     final type = r.type;
@@ -135,10 +140,10 @@ class _TeamPersonRow extends StatelessWidget {
                         p?.name ?? '',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
-                          color: AppTheme.onSurface,
+                          color: c.text,
                         ),
                       ),
                     ),
@@ -150,9 +155,9 @@ class _TeamPersonRow extends StatelessWidget {
                 ),
                 Text(
                   when,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
-                    color: AppTheme.onSurfaceVariant,
+                    color: c.textSub,
                   ),
                 ),
               ],

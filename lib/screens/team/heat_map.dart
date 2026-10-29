@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../core/theme.dart';
+import '../../core/omni_colors.dart';
 import '../../models/team_outlook.dart';
 import 'team_colors.dart';
 import 'team_format.dart';
@@ -64,9 +64,13 @@ class TeamHeatMap extends StatelessWidget {
 class _Legend extends StatelessWidget {
   const _Legend();
 
-  static const _style = TextStyle(fontSize: 11, color: TeamColors.muted);
-
-  Widget _swatch(Color color, String label, {Key? key, Color? border}) => Row(
+  Widget _swatch(
+    TextStyle style,
+    Color color,
+    String label, {
+    Key? key,
+    Color? border,
+  }) => Row(
     key: key,
     mainAxisSize: MainAxisSize.min,
     children: [
@@ -80,12 +84,14 @@ class _Legend extends StatelessWidget {
         ),
       ),
       const SizedBox(width: 4),
-      Text(label, style: _style),
+      Text(label, style: style),
     ],
   );
 
   @override
   Widget build(BuildContext context) {
+    final t = TeamColors.of(context);
+    final style = TextStyle(fontSize: 11, color: t.muted);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4),
       child: Wrap(
@@ -93,22 +99,24 @@ class _Legend extends StatelessWidget {
         runSpacing: 4,
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          const Text('People off:', style: _style),
+          Text('People off:', style: style),
           _swatch(
-            TeamColors.cell0,
+            style,
+            t.cell0,
             '0',
             key: const ValueKey('legend-0'),
-            border: TeamColors.cellLine,
+            border: t.cellLine,
           ),
-          _swatch(TeamColors.c1, '1'),
-          _swatch(TeamColors.c2, '2'),
-          _swatch(TeamColors.c3, '3+'),
+          _swatch(style, t.c1, '1'),
+          _swatch(style, t.c2, '2'),
+          _swatch(style, t.c3, '3+'),
           _swatch(
-            TeamColors.holCell,
+            style,
+            t.holCell,
             'PH = public holiday',
             key: const ValueKey('legend-ph'),
           ),
-          const Text('Tap a day to see who', style: _style),
+          Text('Tap a day to see who', style: style),
         ],
       ),
     );
@@ -149,12 +157,14 @@ class _MonthCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.omni;
+    final t = TeamColors.of(context);
     final lead = DateTime(month.year, month.month, 1).weekday - 1;
     final daysInMonth = DateTime(month.year, month.month + 1, 0).day;
     final slots = <Widget>[
       for (var i = 0; i < lead; i++) const SizedBox(height: _cellHeight),
       for (var d = 1; d <= daysInMonth; d++)
-        _cell(DateTime(month.year, month.month, d)),
+        _cell(c, t, DateTime(month.year, month.month, d)),
     ];
     while (slots.length % 7 != 0) {
       slots.add(const SizedBox(height: _cellHeight));
@@ -162,9 +172,9 @@ class _MonthCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 14, 12, 10),
       decoration: BoxDecoration(
-        color: AppTheme.surfaceContainerLowest,
+        color: c.card,
         borderRadius: BorderRadius.circular(24),
-        boxShadow: AppTheme.glassShadow,
+        boxShadow: c.cardShadow,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -173,10 +183,10 @@ class _MonthCard extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
             child: Text(
               monthLabel(month),
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w700,
-                color: AppTheme.onSurface,
+                color: c.text,
               ),
             ),
           ),
@@ -192,7 +202,7 @@ class _MonthCard extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 11,
                       // Sunday in red, like a paper calendar (1.34.1).
-                      color: i == 6 ? TeamColors.sunday : TeamColors.muted,
+                      color: i == 6 ? t.sunday : t.muted,
                     ),
                   ),
               ]),
@@ -207,7 +217,7 @@ class _MonthCard extends StatelessWidget {
     );
   }
 
-  Widget _cell(DateTime date) {
+  Widget _cell(OmniColors c, TeamColors t, DateTime date) {
     final iso = isoDay(date);
     final inRange = !date.isBefore(from) && !date.isAfter(to);
     if (!inRange) {
@@ -220,10 +230,10 @@ class _MonthCard extends StatelessWidget {
             alignment: Alignment.center,
             child: Text(
               '${date.day}',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
-                color: AppTheme.onSurface,
+                color: c.text,
               ),
             ),
           ),
@@ -236,35 +246,41 @@ class _MonthCard extends StatelessWidget {
     final everyone = holiday != null && holiday.everyone;
     final workday = day?.workday ?? true;
     final fill = everyone
-        ? TeamColors.holCell
+        ? t.holCell
         : !workday
-        ? TeamColors.cellOff
-        : TeamColors.shade(off);
-    final dark = fill == TeamColors.c3;
-    // The count / "PH" line: white on the darkest shade, red "PH".
+        ? t.cellOff
+        : t.shade(off);
+    final dark = fill == t.c3;
+    // The count / "PH" line: [TeamColors.onC3] on the strongest shade, the
+    // shade's own text colour on c1 / c2 (white in dark), red "PH".
+    final shadeFg = fill == t.c1
+        ? t.onC1
+        : fill == t.c2
+        ? t.onC2
+        : c.text;
     final subFg = everyone
-        ? TeamColors.holText
+        ? t.holText
         : dark
-        ? TeamColors.onC3
-        : AppTheme.onSurface;
+        ? t.onC3
+        : shadeFg;
     // The digit: Sunday red unless the shade is too dark for it, a muted
     // digit on a non-working day, else the sub line's colour.
     final isSunday = date.weekday == DateTime.sunday;
     final digitFg = dark
-        ? TeamColors.onC3
-        : isSunday && fill != TeamColors.c2
-        ? TeamColors.sunday
-        : fill == TeamColors.cellOff
-        ? TeamColors.offDigit
-        : AppTheme.onSurface;
+        ? t.onC3
+        : isSunday && fill != t.c2
+        ? t.sunday
+        : fill == t.cellOff
+        ? t.offDigit
+        : shadeFg;
     final isToday = date == today;
     final isSelected = date == selected;
     final side = isSelected
-        ? const BorderSide(color: TeamColors.accent, width: 2)
+        ? BorderSide(color: t.accent, width: 2)
         : isToday
-        ? const BorderSide(color: TeamColors.accent, width: 1.5)
-        : fill == TeamColors.cell0
-        ? const BorderSide(color: TeamColors.cellLine)
+        ? BorderSide(color: t.accent, width: 1.5)
+        : fill == t.cell0
+        ? BorderSide(color: t.cellLine)
         : BorderSide.none;
     final sub = everyone ? 'PH' : (off > 0 ? '$off off' : '');
     return Semantics(
@@ -324,9 +340,9 @@ class _MonthCard extends StatelessWidget {
                         key: ValueKey('heat-hol-dot-$iso'),
                         width: 4,
                         height: 4,
-                        decoration: const BoxDecoration(
+                        decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: TeamColors.holDot,
+                          color: t.holDot,
                         ),
                       ),
                     ),

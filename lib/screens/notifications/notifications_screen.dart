@@ -3,7 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
-import '../../core/theme.dart';
+import '../../core/omni_colors.dart';
 import '../../models/notification_record.dart';
 import '../../services/notification_service.dart';
 import '../../services/push_service.dart';
@@ -86,6 +86,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   Widget build(BuildContext context) {
     final svc = context.watch<NotificationService>();
     final items = svc.items;
+    final c = context.omni;
 
     return Scaffold(
       appBar: AppBar(
@@ -97,7 +98,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               child: Text(
                 'Mark all read',
                 style: TextStyle(
-                  color: AppTheme.primary,
+                  color: c.accent,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -110,9 +111,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         child: svc.loading && items.isEmpty
             ? const Center(child: CircularProgressIndicator())
             : svc.lastError != null && items.isEmpty
-            ? _emptyState(svc.lastError!, isError: true)
+            ? _emptyState(c, svc.lastError!, isError: true)
             : items.isEmpty
-            ? _emptyState('No notifications yet')
+            ? _emptyState(c, 'No notifications yet')
             : ListView.separated(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 16,
@@ -120,13 +121,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 ),
                 itemCount: items.length,
                 separatorBuilder: (_, _) => const SizedBox(height: 8),
-                itemBuilder: (_, i) => _tile(items[i]),
+                itemBuilder: (_, i) => _tile(c, items[i]),
               ),
       ),
     );
   }
 
-  Widget _emptyState(String text, {bool isError = false}) {
+  Widget _emptyState(OmniColors c, String text, {bool isError = false}) {
     return ListView(
       children: [
         const SizedBox(height: 100),
@@ -140,7 +141,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                       ? Icons.error_outline
                       : Icons.notifications_none_rounded,
                   size: 56,
-                  color: isError ? AppTheme.error : AppTheme.outline,
+                  color: isError ? c.error : c.textMuted,
                 ),
                 const SizedBox(height: 12),
                 Text(
@@ -148,7 +149,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   textAlign: TextAlign.center,
                   style: GoogleFonts.inter(
                     fontSize: 14,
-                    color: AppTheme.onSurfaceVariant,
+                    color: c.textSub,
                   ),
                 ),
               ],
@@ -159,7 +160,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     );
   }
 
-  Widget _tile(NotificationRecord n) {
+  Widget _tile(OmniColors c, NotificationRecord n) {
     final iconData = switch (n.kind) {
       'leave_approved' => Icons.event_available_rounded,
       'leave_first_approved' => Icons.event_available_rounded,
@@ -172,24 +173,24 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       _ => Icons.notifications_rounded,
     };
     final iconColor = switch (n.kind) {
-      'leave_approved' => AppTheme.primary,
-      'leave_first_approved' => AppTheme.secondary,
-      'leave_refused' => AppTheme.error,
-      'leave_approval_requested' => AppTheme.primary,
-      'expense_approved' => AppTheme.primary,
-      'expense_refused' => AppTheme.error,
-      'attendance_query' => AppTheme.secondary,
-      'attendance_declaration_applied' => AppTheme.primary,
-      _ => AppTheme.outline,
+      'leave_approved' => c.accent,
+      'leave_first_approved' => c.secondary,
+      'leave_refused' => c.error,
+      'leave_approval_requested' => c.accent,
+      'expense_approved' => c.accent,
+      'expense_refused' => c.error,
+      'attendance_query' => c.secondary,
+      'attendance_declaration_applied' => c.accent,
+      _ => c.textMuted,
     };
     final created = n.createDate;
     final timeLabel = created != null ? _relativeTime(created) : '';
     // APP-5: an answered HR question says so next to the time.
     final answered = n.isAttendanceQuery && n.answered;
-    final meta = GoogleFonts.inter(fontSize: 11, color: AppTheme.outline);
+    final meta = GoogleFonts.inter(fontSize: 11, color: c.textMuted);
 
     return Material(
-      color: Colors.white,
+      color: c.card,
       borderRadius: BorderRadius.circular(20),
       child: InkWell(
         borderRadius: BorderRadius.circular(20),
@@ -198,10 +199,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(20),
-            boxShadow: AppTheme.glassShadow,
+            boxShadow: c.cardShadow,
             border: !n.read
                 ? Border.all(
-                    color: AppTheme.primaryContainer.withValues(alpha: 0.4),
+                    color: c.button.withValues(alpha: 0.4),
                     width: 1.5,
                   )
                 : null,
@@ -232,7 +233,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                             style: GoogleFonts.inter(
                               fontSize: 14,
                               fontWeight: FontWeight.w700,
-                              color: AppTheme.onSurface,
+                              color: c.text,
                             ),
                           ),
                         ),
@@ -242,9 +243,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                             margin: const EdgeInsets.only(top: 6),
                             width: 8,
                             height: 8,
-                            decoration: const BoxDecoration(
+                            decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              color: AppTheme.primaryContainer,
+                              color: c.button,
                             ),
                           ),
                         ],
@@ -256,7 +257,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                         n.body,
                         style: GoogleFonts.inter(
                           fontSize: 13,
-                          color: AppTheme.onSurfaceVariant,
+                          color: c.textSub,
                           height: 1.35,
                         ),
                       ),
@@ -273,7 +274,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                             Icon(
                               Icons.check_circle_outline,
                               size: 12,
-                              color: AppTheme.outline,
+                              color: c.textMuted,
                             ),
                             const SizedBox(width: 4),
                             Text(

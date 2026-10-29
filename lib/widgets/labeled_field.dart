@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../core/theme.dart';
+import '../core/omni_colors.dart';
 
 /// TextField with an uppercase, tracked label rendered above the input.
 /// Adds the design-system "glass shadow" around the input so a stack
@@ -44,6 +44,7 @@ class LabeledField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.omni;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -55,14 +56,14 @@ class LabeledField extends StatelessWidget {
               fontSize: 11,
               fontWeight: FontWeight.w700,
               letterSpacing: 1.5,
-              color: AppTheme.outline,
+              color: c.textMuted,
             ),
           ),
         ),
         Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
-            boxShadow: AppTheme.glassShadow,
+            boxShadow: c.cardShadow,
           ),
           child: TextField(
             controller: controller,
@@ -78,13 +79,13 @@ class LabeledField extends StatelessWidget {
             inputFormatters: inputFormatters,
             style: GoogleFonts.inter(
               fontSize: 16,
-              color: AppTheme.onSurface,
+              color: c.text,
               fontWeight: FontWeight.w500,
             ),
             decoration: InputDecoration(
               hintText: hintText,
               hintStyle: GoogleFonts.inter(
-                color: AppTheme.outline.withValues(alpha: 0.6),
+                color: c.textMuted.withValues(alpha: 0.6),
                 fontWeight: FontWeight.w400,
               ),
               prefixIcon: prefixIcon != null ? Icon(prefixIcon) : null,

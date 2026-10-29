@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:omni_hr/core/theme.dart';
+import 'package:omni_hr/core/omni_colors.dart';
 import 'package:omni_hr/models/my_day.dart';
 import 'package:omni_hr/screens/home/my_day/my_day_colors.dart';
 import 'package:omni_hr/screens/home/my_day/week_strip.dart';
@@ -60,7 +60,7 @@ void main() {
     await tester.pumpWidget(_host(sampleMyDay(week: _week())));
     final shape =
         _cellMaterial(tester, '2026-10-10').shape! as RoundedRectangleBorder;
-    expect(shape.side.color, AppTheme.outlineVariant);
+    expect(shape.side.color, OmniColors.light.line);
     expect(shape.side.width, 1);
   });
 

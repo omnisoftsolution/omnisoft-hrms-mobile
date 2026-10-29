@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
-import 'package:omni_hr/core/theme.dart';
+import 'package:omni_hr/core/omni_colors.dart';
 import 'package:omni_hr/models/leave_record.dart';
 import 'package:omni_hr/screens/leave_history/leave_history_screen.dart';
 import 'package:omni_hr/services/holiday_service.dart';
@@ -106,8 +106,8 @@ void main() {
   test('validate1 uses the pending chip colour, not the approved one', () {
     expect(leaveStateColor('validate1'), leaveStateColor('confirm'));
     expect(leaveStateColor('validate1'), isNot(leaveStateColor('validate')));
-    expect(leaveStateColor('validate'), AppTheme.primary);
-    expect(leaveStateColor('refuse'), AppTheme.error);
+    expect(leaveStateColor('validate'), OmniColors.light.accent);
+    expect(leaveStateColor('refuse'), OmniColors.light.error);
   });
 
   testWidgets('the expanded card pluralises the balance rows', (tester) async {

@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/error_messages.dart';
-import '../../../core/theme.dart';
+import '../../../core/omni_colors.dart';
 import '../../../models/team_overview.dart';
 import '../../../services/omni_mobile_api.dart';
 import '../../../services/session_service.dart';
@@ -450,6 +450,8 @@ class _OverviewDrillScreenState extends State<OverviewDrillScreen> {
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
+    final c = context.omni;
+    final t = TeamColors.of(context);
     final error = _error;
     return Scaffold(
       appBar: widget.appBar ?? OmniAppBar(title: drillTitle(widget.scopeLabel)),
@@ -458,11 +460,11 @@ class _OverviewDrillScreenState extends State<OverviewDrillScreen> {
         children: [
           if (error != null && _rows.isNotEmpty)
             Container(
-              color: AppTheme.error.withValues(alpha: 0.08),
+              color: c.error.withValues(alpha: 0.08),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Text(
                 error,
-                style: text.bodySmall?.copyWith(color: AppTheme.error),
+                style: text.bodySmall?.copyWith(color: c.error),
               ),
             ),
           const SizedBox(height: 14),
@@ -480,7 +482,7 @@ class _OverviewDrillScreenState extends State<OverviewDrillScreen> {
                   key: ValueKey('drill-chip-$b'),
                   label: overviewBucketLabel(b),
                   count: _totals[b] ?? 0,
-                  dot: TeamColors.bucket(b).dot,
+                  dot: t.bucket(b).dot,
                   selected: b == _bucket,
                   onTap: () => _select(b),
                 );
@@ -492,7 +494,7 @@ class _OverviewDrillScreenState extends State<OverviewDrillScreen> {
             child: Text(
               overviewBucketHint(_bucket),
               key: const ValueKey('drill-hint'),
-              style: text.bodySmall?.copyWith(color: AppTheme.outline),
+              style: text.bodySmall?.copyWith(color: c.textMuted),
             ),
           ),
           Expanded(child: _list(context)),
@@ -536,7 +538,7 @@ class _OverviewDrillScreenState extends State<OverviewDrillScreen> {
                   'Nobody here right now.',
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: AppTheme.onSurfaceVariant,
+                    color: context.omni.textSub,
                   ),
                 ),
               ),
@@ -622,6 +624,7 @@ class _BucketChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.omni;
     return Semantics(
       button: true,
       selected: selected,
@@ -629,11 +632,11 @@ class _BucketChip extends StatelessWidget {
       excludeSemantics: true,
       child: Material(
         color: selected
-            ? AppTheme.primary.withValues(alpha: 0.12)
+            ? c.accent.withValues(alpha: 0.12)
             : Colors.transparent,
         shape: StadiumBorder(
           side: BorderSide(
-            color: selected ? Colors.transparent : AppTheme.outlineVariant,
+            color: selected ? Colors.transparent : c.line,
             width: 1.5,
           ),
         ),
@@ -657,8 +660,11 @@ class _BucketChip extends StatelessWidget {
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
                     color: selected
-                        ? AppTheme.onPrimaryContainer
-                        : AppTheme.onSurfaceVariant,
+                        // onPrimaryContainer (#004449) has no token.
+                        ? (context.isDarkTheme
+                              ? c.onAccentTint
+                              : const Color(0xFF004449))
+                        : c.textSub,
                   ),
                 ),
               ],
@@ -687,14 +693,16 @@ class _DrillRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = drillRowText(row);
-    final tone = TeamColors.bucket(row.bucket);
+    final c = context.omni;
+    final team = TeamColors.of(context);
+    final tone = team.bucket(row.bucket);
     final radius = BorderRadius.vertical(
       top: Radius.circular(first ? 24 : 0),
       bottom: Radius.circular(last ? 24 : 0),
     );
     final text = Theme.of(context).textTheme;
     return Material(
-      color: AppTheme.surfaceContainerLowest,
+      color: c.card,
       borderRadius: radius,
       child: InkWell(
         borderRadius: radius,
@@ -705,7 +713,7 @@ class _DrillRow extends StatelessWidget {
                 ? null
                 : Border(
                     top: BorderSide(
-                      color: AppTheme.outlineVariant.withValues(alpha: 0.4),
+                      color: c.line.withValues(alpha: 0.4),
                     ),
                   ),
           ),
@@ -739,14 +747,14 @@ class _DrillRow extends StatelessWidget {
                       Text(
                         t.line,
                         style: text.bodySmall?.copyWith(
-                          color: AppTheme.onSurfaceVariant,
+                          color: c.textSub,
                         ),
                       ),
                     if (t.note.isNotEmpty)
                       Text(
                         t.note,
                         style: text.bodySmall?.copyWith(
-                          color: TeamColors.leaveOn,
+                          color: team.leaveOn,
                         ),
                       ),
                   ],

@@ -100,22 +100,29 @@ void main() {
   });
 
   group('overviewTone', () {
-    test('Today keys are T5\'s tones', () {
-      for (final b in overviewBucketOrder) {
-        expect(overviewTone(b), same(TeamColors.bucket(b)));
-      }
-    });
+    for (final (name, t) in [
+      ('light', TeamColors.light),
+      ('dark', TeamColors.dark),
+    ]) {
+      test('$name: Today keys are T5\'s tones', () {
+        for (final b in overviewBucketOrder) {
+          expect(overviewTone(t, b), same(t.bucket(b)));
+        }
+      });
 
-    test('Yesterday ids borrow Late, No check-in and Off today', () {
-      expect(overviewTone('left_early'), same(TeamColors.bucket('late')));
-      expect(overviewTone('absent'), same(TeamColors.bucket('no_check_in')));
-      expect(overviewTone('off'), same(TeamColors.bucket('off_today')));
-    });
+      test('$name: Yesterday ids borrow Late, No check-in and Off today', () {
+        expect(overviewTone(t, 'left_early'), same(t.bucket('late')));
+        expect(overviewTone(t, 'absent'), same(t.bucket('no_check_in')));
+        expect(overviewTone(t, 'off'), same(t.bucket('off_today')));
+      });
 
-    test('every Today bucket has its own dot', () {
-      final dots = {for (final b in overviewBucketOrder) overviewTone(b).dot};
-      expect(dots.length, 6);
-    });
+      test('$name: every Today bucket has its own dot', () {
+        final dots = {
+          for (final b in overviewBucketOrder) overviewTone(t, b).dot,
+        };
+        expect(dots.length, 6);
+      });
+    }
   });
 
   group('whoOutTodayLine', () {

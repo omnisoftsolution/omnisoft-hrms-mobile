@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/error_messages.dart';
-import '../../../core/theme.dart';
+import '../../../core/omni_colors.dart';
 import '../../../models/team_outlook.dart';
 import '../../../models/team_overview.dart';
 import '../../../services/omni_mobile_api.dart';
@@ -245,6 +245,7 @@ class _PersonSheetState extends State<_PersonSheet> {
 
   Widget _content(BuildContext context) {
     final text = Theme.of(context).textTheme;
+    final c = context.omni;
     final error = _error;
     if (error != null) {
       return Column(
@@ -312,7 +313,7 @@ class _PersonSheetState extends State<_PersonSheet> {
                     Text(
                       sub,
                       style: text.bodySmall?.copyWith(
-                        color: AppTheme.onSurfaceVariant,
+                        color: c.textSub,
                       ),
                     ),
                 ],
@@ -346,14 +347,14 @@ class _PersonSheetState extends State<_PersonSheet> {
           'Punches today',
           style: text.titleSmall?.copyWith(
             fontWeight: FontWeight.w700,
-            color: AppTheme.onSurfaceVariant,
+            color: c.textSub,
           ),
         ),
         const SizedBox(height: 8),
         if (p.punches.isEmpty)
           Text(
             'None yet.',
-            style: text.bodyMedium?.copyWith(color: AppTheme.onSurfaceVariant),
+            style: text.bodyMedium?.copyWith(color: c.textSub),
           )
         else
           for (final punch in p.punches)
@@ -364,8 +365,8 @@ class _PersonSheetState extends State<_PersonSheet> {
                   Container(
                     width: 10,
                     height: 10,
-                    decoration: const BoxDecoration(
-                      color: AppTheme.primary,
+                    decoration: BoxDecoration(
+                      color: c.accent,
                       shape: BoxShape.circle,
                     ),
                   ),
@@ -381,7 +382,7 @@ class _PersonSheetState extends State<_PersonSheet> {
                     child: Text(
                       punchLine(punch),
                       style: text.bodyMedium?.copyWith(
-                        color: AppTheme.onSurfaceVariant,
+                        color: c.textSub,
                       ),
                     ),
                   ),
@@ -395,12 +396,15 @@ class _PersonSheetState extends State<_PersonSheet> {
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
-              color: TeamColors.leaveTint,
+              color: TeamColors.of(context).leaveTint,
               borderRadius: BorderRadius.circular(16),
             ),
             child: Text.rich(
               TextSpan(
-                style: const TextStyle(fontSize: 13, color: TeamColors.leaveOn),
+                style: TextStyle(
+                  fontSize: 13,
+                  color: TeamColors.of(context).leaveOn,
+                ),
                 children: [
                   const TextSpan(
                     text: 'Leave',
@@ -415,7 +419,7 @@ class _PersonSheetState extends State<_PersonSheet> {
         const SizedBox(height: 14),
         Text(
           'Read-only. Fixes and approvals stay in Odoo and in Leave approvals.',
-          style: text.bodySmall?.copyWith(color: AppTheme.outline),
+          style: text.bodySmall?.copyWith(color: c.textMuted),
         ),
       ],
     );
@@ -432,10 +436,11 @@ class _Fact extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
+    final c = context.omni;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: AppTheme.surfaceContainer,
+        color: c.soft,
         borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
@@ -444,7 +449,7 @@ class _Fact extends StatelessWidget {
           Text(
             label,
             style: text.labelSmall?.copyWith(
-              color: AppTheme.outline,
+              color: c.textMuted,
               fontWeight: FontWeight.w600,
               letterSpacing: 0.8,
             ),

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants.dart';
-import '../../core/theme.dart';
+import '../../core/omni_colors.dart';
 import '../../core/error_messages.dart';
 import '../../services/session_service.dart';
 import '../../widgets/brand_logo.dart';
@@ -78,6 +78,7 @@ class _CompanyCodeScreenState extends State<CompanyCodeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.omni;
     return Scaffold(
       body: SafeArea(
         child: LayoutBuilder(
@@ -103,7 +104,7 @@ class _CompanyCodeScreenState extends State<CompanyCodeScreen> {
                               style: Theme.of(context)
                                   .textTheme
                                   .displaySmall
-                                  ?.copyWith(color: AppTheme.onSurface),
+                                  ?.copyWith(color: c.text),
                             ),
                             const SizedBox(height: 12),
                             Text(
@@ -112,7 +113,7 @@ class _CompanyCodeScreenState extends State<CompanyCodeScreen> {
                                 fontSize: 11,
                                 fontWeight: FontWeight.w700,
                                 letterSpacing: 4,
-                                color: AppTheme.primaryContainer,
+                                color: c.button,
                               ),
                             ),
                           ],
@@ -141,21 +142,21 @@ class _CompanyCodeScreenState extends State<CompanyCodeScreen> {
                         Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: AppTheme.error.withValues(alpha: 0.1),
+                            color: c.error.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                                color: AppTheme.error.withValues(alpha: 0.3)),
+                                color: c.error.withValues(alpha: 0.3)),
                           ),
                           child: Row(
                             children: [
                               Icon(Icons.error_outline,
-                                  color: AppTheme.error, size: 18),
+                                  color: c.error, size: 18),
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
                                   _error!,
                                   style: TextStyle(
-                                      color: AppTheme.error, fontSize: 13),
+                                      color: c.error, fontSize: 13),
                                 ),
                               ),
                             ],
@@ -191,7 +192,7 @@ class _CompanyCodeScreenState extends State<CompanyCodeScreen> {
                             fontSize: 9,
                             fontWeight: FontWeight.w700,
                             letterSpacing: 2,
-                            color: AppTheme.outline.withValues(alpha: 0.7),
+                            color: c.textMuted.withValues(alpha: 0.7),
                           ),
                         ),
                       ),

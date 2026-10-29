@@ -9,7 +9,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/constants.dart';
-import '../../core/theme.dart';
+import '../../core/omni_colors.dart';
 import '../../core/error_messages.dart';
 import '../../core/money.dart';
 import '../../core/pdf_raster.dart';
@@ -678,6 +678,7 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.omni;
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.isEditing ? 'Edit Expense' : 'New Expense'),
@@ -756,7 +757,7 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
                   _amountInlineError!,
                   style: TextStyle(
                     fontSize: 12,
-                    color: AppTheme.error,
+                    color: c.error,
                   ),
                 ),
               ),
@@ -770,7 +771,7 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
                       : _conversionLine!,
                   style: TextStyle(
                     fontSize: 12,
-                    color: AppTheme.onSurfaceVariant,
+                    color: c.textSub,
                   ),
                 ),
               ),
@@ -807,6 +808,7 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
   }
 
   Widget _categoryField() {
+    final c = context.omni;
     if (_loadingCategories) {
       return _wrap(
         label: 'CATEGORY',
@@ -824,13 +826,12 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
         label: 'CATEGORY',
         child: Row(
           children: [
-            Icon(Icons.error_outline, color: AppTheme.error, size: 18),
+            Icon(Icons.error_outline, color: c.error, size: 18),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
                 _categoryError!,
-                style:
-                    TextStyle(color: AppTheme.onSurfaceVariant, fontSize: 13),
+                style: TextStyle(color: c.textSub, fontSize: 13),
               ),
             ),
             TextButton(
@@ -848,7 +849,7 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
         child: Text(
           'No expense categories available for your company. '
           'Ask your administrator to set them up.',
-          style: TextStyle(color: AppTheme.onSurfaceVariant, fontSize: 13),
+          style: TextStyle(color: c.textSub, fontSize: 13),
         ),
       );
     }
@@ -868,6 +869,7 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
   }
 
   Widget _dateField() {
+    final c = context.omni;
     final iso = _selectedDate.toIso8601String().substring(0, 10);
     return _wrap(
       label: 'DATE',
@@ -878,12 +880,12 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
           child: Row(
             children: [
               Icon(Icons.calendar_today_rounded,
-                  size: 18, color: AppTheme.onSurfaceVariant),
+                  size: 18, color: c.textSub),
               const SizedBox(width: 10),
               Text(iso, style: const TextStyle(fontSize: 15)),
               const Spacer(),
               Icon(Icons.edit_rounded,
-                  size: 16, color: AppTheme.onSurfaceVariant),
+                  size: 16, color: c.textSub),
             ],
           ),
         ),
@@ -911,6 +913,7 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
   }
 
   Widget _paidByOption({required String value, required String title}) {
+    final c = context.omni;
     final selected = _paymentMode == value;
     return InkWell(
       onTap: () => setState(() => _paymentMode = value),
@@ -924,7 +927,7 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
                   ? Icons.radio_button_checked_rounded
                   : Icons.radio_button_unchecked_rounded,
               size: 20,
-              color: selected ? AppTheme.primary : AppTheme.onSurfaceVariant,
+              color: selected ? c.accent : c.textSub,
             ),
             const SizedBox(width: 10),
             Text(
@@ -932,7 +935,7 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                color: AppTheme.onSurface,
+                color: c.text,
               ),
             ),
           ],
@@ -945,6 +948,7 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
     final isEditing = widget.isEditing;
     final session = context.watch<SessionService>();
     final aiDisabled = !session.featureExpenseOcr;
+    final c = context.omni;
     final label = isEditing
         ? 'RECEIPT'
         : (DevConstants.requireReceiptOnExpense
@@ -964,7 +968,7 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
               style: TextStyle(
                 fontSize: 12,
                 fontStyle: FontStyle.italic,
-                color: AppTheme.onSurfaceVariant,
+                color: c.textSub,
               ),
             ),
             const SizedBox(height: 8),
@@ -980,6 +984,7 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
   /// disabled Scan is intentional — it tells the user "scanning is a
   /// thing here" before they have a photo to scan.
   Widget _buildReceiptEmpty(bool isEditing) {
+    final c = context.omni;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -991,14 +996,14 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
                 Icon(
                   Icons.attach_file_rounded,
                   size: 16,
-                  color: AppTheme.onSurfaceVariant,
+                  color: c.textSub,
                 ),
                 const SizedBox(width: 8),
                 Text(
                   'Existing receipt attached',
                   style: TextStyle(
                     fontSize: 13,
-                    color: AppTheme.onSurfaceVariant,
+                    color: c.textSub,
                   ),
                 ),
               ],
@@ -1038,7 +1043,7 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
               'or pick from library',
               style: TextStyle(
                 fontSize: 12,
-                color: AppTheme.onSurfaceVariant,
+                color: c.textSub,
               ),
             ),
           ),
@@ -1050,6 +1055,7 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
   /// Attached state: thumbnail + filename / Replace row + full-width
   /// Scan as the next prominent action.
   Widget _buildReceiptAttached() {
+    final c = context.omni;
     // Scan is offered only when there's something the VLM can read:
     // an image, or a PDF we successfully rasterized to page images.
     final scanReadable = !_receiptIsPdf || _pdfPages.isNotEmpty;
@@ -1067,7 +1073,7 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontSize: 12,
-                  color: AppTheme.onSurfaceVariant,
+                  color: c.textSub,
                 ),
               ),
             ),
@@ -1096,6 +1102,7 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
   /// - PDF (rasterizing): a spinner placeholder
   /// - PDF (raster failed): a generic PDF file-chip (still uploads fine)
   Widget _buildReceiptPreview() {
+    final c = context.omni;
     if (!_receiptIsPdf) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(8),
@@ -1112,7 +1119,7 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
         height: 160,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: AppTheme.surfaceContainer,
+          color: c.soft,
           borderRadius: BorderRadius.circular(8),
         ),
         child: const CircularProgressIndicator(),
@@ -1165,13 +1172,13 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
       height: 96,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
-        color: AppTheme.surfaceContainer,
+        color: c.soft,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         children: [
           Icon(Icons.picture_as_pdf_rounded,
-              size: 32, color: AppTheme.error),
+              size: 32, color: c.error),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -1183,7 +1190,7 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
-                    color: AppTheme.onSurface,
+                    color: c.text,
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -1191,7 +1198,7 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
                   'Preview unavailable — the file will still be uploaded.',
                   style: TextStyle(
                     fontSize: 11,
-                    color: AppTheme.onSurfaceVariant,
+                    color: c.textSub,
                   ),
                 ),
               ],
@@ -1228,6 +1235,7 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
   }
 
   Widget _wrap({required String label, required Widget child}) {
+    final c = context.omni;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1237,17 +1245,16 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
             fontSize: 11,
             fontWeight: FontWeight.w700,
             letterSpacing: 0.8,
-            color: AppTheme.onSurfaceVariant,
+            color: c.textSub,
           ),
         ),
         const SizedBox(height: 6),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: c.card,
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-                color: AppTheme.outlineVariant.withValues(alpha: 0.7)),
+            border: Border.all(color: c.line.withValues(alpha: 0.7)),
           ),
           child: child,
         ),
@@ -1256,20 +1263,21 @@ class _ExpenseCreateScreenState extends State<ExpenseCreateScreen> {
   }
 
   Widget _errorBanner(String text) {
+    final c = context.omni;
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: AppTheme.error.withValues(alpha: 0.1),
+        color: c.error.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.error.withValues(alpha: 0.3)),
+        border: Border.all(color: c.error.withValues(alpha: 0.3)),
       ),
       child: Row(
         children: [
-          Icon(Icons.error_outline, color: AppTheme.error, size: 18),
+          Icon(Icons.error_outline, color: c.error, size: 18),
           const SizedBox(width: 8),
           Expanded(
             child: Text(text,
-                style: TextStyle(color: AppTheme.error, fontSize: 13)),
+                style: TextStyle(color: c.error, fontSize: 13)),
           ),
         ],
       ),

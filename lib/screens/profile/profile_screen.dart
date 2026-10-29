@@ -7,7 +7,7 @@ import 'package:provider/provider.dart';
 import '../../core/constants.dart';
 import '../../core/datetime_utils.dart';
 import '../../core/error_messages.dart';
-import '../../core/theme.dart';
+import '../../core/omni_colors.dart';
 import '../../services/biometric_auth_service.dart';
 import '../../services/face_recognition_service.dart';
 import '../../services/omni_mobile_api.dart';
@@ -37,6 +37,7 @@ class ProfileScreen extends StatelessWidget {
     final face = context.watch<FaceRecognitionService>();
     // Profile → Notifications only when the tenant sends pushes (§6.6).
     final push = context.watch<PushService>();
+    final c = context.omni;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Profile'),
@@ -59,10 +60,10 @@ class ProfileScreen extends StatelessWidget {
           _hero(context, session),
           const SizedBox(height: 24),
           if (session.employeeCompanyName.isNotEmpty) ...[
-            _companyCard(session),
+            _companyCard(c, session),
             const SizedBox(height: 16),
           ],
-          _identityCard(session),
+          _identityCard(c, session),
           // Payslips promoted above approvers/face so it's reachable
           // without scrolling on standard phone heights — monthly
           // viewing is the primary reason most users open Profile.
@@ -74,7 +75,7 @@ class ProfileScreen extends StatelessWidget {
           ],
           if (_hasAnyApprover(session)) ...[
             const SizedBox(height: 16),
-            _approversCard(session),
+            _approversCard(c, session),
           ],
           // Face enrollment card is only meaningful when the SaaS
           // face_verification flag is on for this company. When off,
@@ -125,7 +126,7 @@ class ProfileScreen extends StatelessWidget {
                 'Delete my account',
                 style: TextStyle(
                   fontSize: 13,
-                  color: AppTheme.onSurfaceVariant,
+                  color: c.textSub,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -142,6 +143,7 @@ class ProfileScreen extends StatelessWidget {
   // ------------------------------------------------------------------
 
   Widget _hero(BuildContext context, SessionService session) {
+    final c = context.omni;
     final roleLine = _composeRoleLine(session);
     final manager = session.employeeManager;
     return Column(
@@ -164,7 +166,7 @@ class ProfileScreen extends StatelessWidget {
           style: GoogleFonts.inter(
             fontSize: 22,
             fontWeight: FontWeight.w800,
-            color: AppTheme.onSurface,
+            color: c.text,
             letterSpacing: -0.3,
           ),
         ),
@@ -176,7 +178,7 @@ class ProfileScreen extends StatelessWidget {
             style: GoogleFonts.inter(
               fontSize: 14,
               fontWeight: FontWeight.w500,
-              color: AppTheme.onSurfaceVariant,
+              color: c.textSub,
             ),
           ),
         ],
@@ -186,7 +188,7 @@ class ProfileScreen extends StatelessWidget {
             padding:
                 const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
-              color: AppTheme.primaryContainer.withValues(alpha: 0.12),
+              color: c.button.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(20),
             ),
             child: Row(
@@ -195,7 +197,7 @@ class ProfileScreen extends StatelessWidget {
                 Icon(
                   Icons.supervisor_account_rounded,
                   size: 14,
-                  color: AppTheme.primary,
+                  color: c.accent,
                 ),
                 const SizedBox(width: 6),
                 Text(
@@ -203,7 +205,7 @@ class ProfileScreen extends StatelessWidget {
                   style: GoogleFonts.inter(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
-                    color: AppTheme.primary,
+                    color: c.accent,
                   ),
                 ),
               ],
@@ -231,12 +233,12 @@ class ProfileScreen extends StatelessWidget {
   // Identity card — login + work contact (only when populated)
   // ------------------------------------------------------------------
 
-  Widget _identityCard(SessionService session) {
+  Widget _identityCard(OmniColors c, SessionService session) {
     final rows = <Widget>[];
     void addRow(String label, String value, {IconData? icon}) {
       if (value.isEmpty) return;
       if (rows.isNotEmpty) rows.add(const Divider(height: 24));
-      rows.add(_kv(label, value, icon: icon));
+      rows.add(_kv(c, label, value, icon: icon));
     }
 
     addRow('Login', session.userLogin, icon: Icons.alternate_email_rounded);
@@ -257,12 +259,12 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
-  Widget _kv(String label, String value, {IconData? icon}) {
+  Widget _kv(OmniColors c, String label, String value, {IconData? icon}) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (icon != null) ...[
-          Icon(icon, size: 16, color: AppTheme.onSurfaceVariant),
+          Icon(icon, size: 16, color: c.textSub),
           const SizedBox(width: 12),
         ],
         Expanded(
@@ -273,7 +275,7 @@ class ProfileScreen extends StatelessWidget {
                 label,
                 style: TextStyle(
                   fontSize: 12,
-                  color: AppTheme.onSurfaceVariant,
+                  color: c.textSub,
                 ),
               ),
               const SizedBox(height: 2),
@@ -306,7 +308,7 @@ class ProfileScreen extends StatelessWidget {
     }
   }
 
-  Widget _companyCard(SessionService session) {
+  Widget _companyCard(OmniColors c, SessionService session) {
     final logoBytes = _decodeCompanyLogo(session.employeeCompanyLogoB64);
     return Card(
       child: Padding(
@@ -320,7 +322,7 @@ class ProfileScreen extends StatelessWidget {
                 fontSize: 10,
                 fontWeight: FontWeight.w700,
                 letterSpacing: 0.8,
-                color: AppTheme.onSurfaceVariant,
+                color: c.textSub,
               ),
             ),
             const SizedBox(height: 14),
@@ -333,10 +335,10 @@ class ProfileScreen extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: logoBytes != null
                         ? Colors.white
-                        : AppTheme.primaryContainer.withValues(alpha: 0.12),
+                        : c.button.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
-                      color: AppTheme.outlineVariant.withValues(alpha: 0.6),
+                      color: c.line.withValues(alpha: 0.6),
                       width: 1,
                     ),
                     image: logoBytes != null
@@ -351,7 +353,7 @@ class ProfileScreen extends StatelessWidget {
                       : Icon(
                           Icons.business_rounded,
                           size: 22,
-                          color: AppTheme.primary,
+                          color: c.accent,
                         ),
                 ),
                 const SizedBox(width: 14),
@@ -389,12 +391,12 @@ class ProfileScreen extends StatelessWidget {
     return false;
   }
 
-  Widget _approversCard(SessionService session) {
+  Widget _approversCard(OmniColors c, SessionService session) {
     final rows = <Widget>[];
     void addRow(String label, String value) {
       if (value.isEmpty) return;
       if (rows.isNotEmpty) rows.add(const Divider(height: 20));
-      rows.add(_approverRow(label, value));
+      rows.add(_approverRow(c, label, value));
     }
 
     addRow('HR RESPONSIBLE', session.employeeHrApprover);
@@ -418,7 +420,7 @@ class ProfileScreen extends StatelessWidget {
                 Icon(
                   Icons.assignment_ind_outlined,
                   size: 18,
-                  color: AppTheme.primary,
+                  color: c.accent,
                 ),
                 const SizedBox(width: 8),
                 const Text(
@@ -436,7 +438,7 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
-  Widget _approverRow(String label, String name) {
+  Widget _approverRow(OmniColors c, String label, String name) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
@@ -448,7 +450,7 @@ class ProfileScreen extends StatelessWidget {
               fontSize: 10,
               fontWeight: FontWeight.w700,
               letterSpacing: 0.8,
-              color: AppTheme.onSurfaceVariant,
+              color: c.textSub,
             ),
           ),
         ),
@@ -474,6 +476,7 @@ class ProfileScreen extends StatelessWidget {
   // ------------------------------------------------------------------
 
   Widget _payslipCard(BuildContext context, SessionService session) {
+    final c = context.omni;
     final enabled = session.featurePayroll;
     final cardBody = Padding(
       padding: const EdgeInsets.all(20),
@@ -485,8 +488,8 @@ class ProfileScreen extends StatelessWidget {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: enabled
-                  ? AppTheme.primaryContainer.withValues(alpha: 0.15)
-                  : AppTheme.surfaceContainer,
+                  ? c.button.withValues(alpha: 0.15)
+                  : c.soft,
             ),
             child: Icon(
               enabled
@@ -494,7 +497,7 @@ class ProfileScreen extends StatelessWidget {
                   : Icons.lock_outline_rounded,
               size: 22,
               color:
-                  enabled ? AppTheme.primary : AppTheme.onSurfaceVariant,
+                  enabled ? c.accent : c.textSub,
             ),
           ),
           const SizedBox(width: 16),
@@ -517,7 +520,7 @@ class ProfileScreen extends StatelessWidget {
                           'Contact your administrator to upgrade.',
                   style: TextStyle(
                     fontSize: 12,
-                    color: AppTheme.onSurfaceVariant,
+                    color: c.textSub,
                     height: 1.4,
                   ),
                 ),
@@ -528,7 +531,7 @@ class ProfileScreen extends StatelessWidget {
             const SizedBox(width: 8),
             Icon(
               Icons.chevron_right_rounded,
-              color: AppTheme.onSurfaceVariant,
+              color: c.textSub,
             ),
           ],
         ],
@@ -553,6 +556,7 @@ class ProfileScreen extends StatelessWidget {
   // ------------------------------------------------------------------
 
   Widget _notificationsCard(BuildContext context) {
+    final c = context.omni;
     return Card(
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -571,12 +575,12 @@ class ProfileScreen extends StatelessWidget {
                 height: 44,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: AppTheme.primaryContainer.withValues(alpha: 0.15),
+                  color: c.button.withValues(alpha: 0.15),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.notifications_rounded,
                   size: 22,
-                  color: AppTheme.primary,
+                  color: c.accent,
                 ),
               ),
               const SizedBox(width: 16),
@@ -596,7 +600,7 @@ class ProfileScreen extends StatelessWidget {
                       'Choose what Omni HR tells you about.',
                       style: TextStyle(
                         fontSize: 12,
-                        color: AppTheme.onSurfaceVariant,
+                        color: c.textSub,
                         height: 1.4,
                       ),
                     ),
@@ -606,7 +610,7 @@ class ProfileScreen extends StatelessWidget {
               const SizedBox(width: 8),
               Icon(
                 Icons.chevron_right_rounded,
-                color: AppTheme.onSurfaceVariant,
+                color: c.textSub,
               ),
             ],
           ),
@@ -622,6 +626,7 @@ class ProfileScreen extends StatelessWidget {
 
   Widget _faceCard(BuildContext context, FaceRecognitionService face,
       SessionService session) {
+    final c = context.omni;
     final enrolled = face.isEnrolled == true;
     final canReenroll = face.isReenrollAllowed;
 
@@ -630,7 +635,7 @@ class ProfileScreen extends StatelessWidget {
     if (!enrolled) {
       statusText = Text(
         'No face enrolled yet. Enroll one to enable face-verified attendance.',
-        style: TextStyle(fontSize: 13, color: AppTheme.onSurfaceVariant),
+        style: TextStyle(fontSize: 13, color: c.textSub),
       );
       primaryAction = FilledButton.icon(
         icon: const Icon(Icons.face_rounded),
@@ -646,7 +651,7 @@ class ProfileScreen extends StatelessWidget {
           Text(
             'Face already enrolled. Contact HR to reset face enrollment.',
             style:
-                TextStyle(fontSize: 13, color: AppTheme.onSurfaceVariant),
+                TextStyle(fontSize: 13, color: c.textSub),
           ),
           if (face.lastEnrolledAt != null) ...[
             const SizedBox(height: 4),
@@ -654,7 +659,7 @@ class ProfileScreen extends StatelessWidget {
               'Enrolled on '
               '${DateTimeUtils.formatLocalDate(face.lastEnrolledAt!.toIso8601String())}.',
               style: TextStyle(
-                  fontSize: 12, color: AppTheme.onSurfaceVariant),
+                  fontSize: 12, color: c.textSub),
             ),
           ],
         ],
@@ -668,23 +673,23 @@ class ProfileScreen extends StatelessWidget {
       statusText = Container(
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
-          color: AppTheme.primary.withValues(alpha: 0.08),
+          color: c.accent.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(10),
           border:
-              Border.all(color: AppTheme.primary.withValues(alpha: 0.3)),
+              Border.all(color: c.accent.withValues(alpha: 0.3)),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Icon(Icons.lock_open_rounded,
-                size: 18, color: AppTheme.primary),
+                size: 18, color: c.accent),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
                 'HR has allowed face re-enrollment. This will replace your current enrolled face.',
                 style: TextStyle(
                     fontSize: 12,
-                    color: AppTheme.primary,
+                    color: c.accent,
                     fontWeight: FontWeight.w500),
               ),
             ),
@@ -712,7 +717,7 @@ class ProfileScreen extends StatelessWidget {
                   enrolled
                       ? Icons.verified_user
                       : Icons.face_retouching_off,
-                  color: enrolled ? AppTheme.primary : AppTheme.outline,
+                  color: enrolled ? c.accent : c.textMuted,
                 ),
                 const SizedBox(width: 8),
                 const Text('Face Enrollment',
@@ -726,8 +731,8 @@ class ProfileScreen extends StatelessWidget {
                         : Icons.lock_rounded,
                     size: 16,
                     color: canReenroll
-                        ? AppTheme.primary
-                        : AppTheme.onSurfaceVariant,
+                        ? c.accent
+                        : c.textSub,
                   ),
               ],
             ),

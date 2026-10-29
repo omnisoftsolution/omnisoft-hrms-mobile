@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../core/theme.dart';
+import '../core/omni_colors.dart';
 import '../services/biometric_types.dart';
 import 'primary_button.dart';
 
@@ -53,7 +53,7 @@ class BiometricOptInSheet extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(_iconFor(kind), size: 56, color: AppTheme.primary),
+          Icon(_iconFor(kind), size: 56, color: context.omni.accent),
           const SizedBox(height: 16),
           Text('Faster sign-in next time',
               style: Theme.of(context).textTheme.titleLarge,
@@ -87,7 +87,7 @@ Future<bool?> showBiometricOptInSheet(
   return showModalBottomSheet<bool>(
     context: context,
     isScrollControlled: true,
-    backgroundColor: AppTheme.surfaceContainerLowest,
+    backgroundColor: context.omni.sheet,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
     ),

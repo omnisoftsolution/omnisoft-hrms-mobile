@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/datetime_utils.dart';
-import '../../../core/theme.dart';
+import '../../../core/omni_colors.dart';
 import '../../../models/my_day.dart';
 import 'my_day_colors.dart';
 import 'my_day_display.dart';
@@ -57,8 +57,6 @@ class TimelineEvent {
   );
 }
 
-const _grey = MyDayColors.waiting;
-
 String _odooUtc(DateTime utc) => DateFormat('yyyy-MM-dd HH:mm:ss').format(utc);
 
 bool _overlaps(String aStart, String aEnd, String bStart, String bEnd) =>
@@ -66,13 +64,16 @@ bool _overlaps(String aStart, String aEnd, String bStart, String bEnd) =>
 
 /// The rows of the timeline in time order (spec 2026-10-06 §4.4). Pure,
 /// so the tests check the data and not the paint. [now] only matters for
-/// the open-break badge and whether the shift end has passed.
+/// the open-break badge and whether the shift end has passed. [palette]
+/// is the theme's (light by default, for the tests).
 @visibleForTesting
 List<TimelineEvent> buildTimeline(
   MyDay day, {
   DateTime? now,
   String? phoneHint,
+  MyDayPalette palette = MyDayPalette.light,
 }) {
+  final grey = palette.waiting;
   final shift = day.shift;
   final punches = day.punches;
   if (shift == null && punches.isEmpty) return const [];
@@ -100,8 +101,8 @@ List<TimelineEvent> buildTimeline(
             : (punches.isEmpty ? checkInHere : shift.blocksLabel),
         kind: TimelineKind.anchor,
         tone: missing
-            ? MyDayColors.missing
-            : (punches.isEmpty ? _grey : MyDayColors.work),
+            ? palette.missing
+            : (punches.isEmpty ? grey : palette.work),
         badge: missing ? 'Missing' : '',
         upcoming: punches.isEmpty && !missing,
       ),
@@ -118,7 +119,7 @@ List<TimelineEvent> buildTimeline(
               ? 'If you are at work, check in at the kiosk'
               : (phoneHint ?? 'Check in from your phone'),
           kind: TimelineKind.now,
-          tone: MyDayColors.missing,
+          tone: palette.missing,
           current: true,
         ),
       );
@@ -129,13 +130,13 @@ List<TimelineEvent> buildTimeline(
   for (var i = 0; i < punches.length; i++) {
     final p = punches[i];
     final last = i == punches.length - 1;
-    var tone = p.kind == 'break_start' ? MyDayColors.brk : MyDayColors.work;
+    var tone = p.kind == 'break_start' ? palette.brk : palette.work;
     var badge = '';
     // Lateness belongs to the first check-in of the day only; a return
     // after an early check-out is just work.
     if (p.kind == 'check_in' && i == firstCheckIn) {
       if (day.lateMinutes > 0) {
-        tone = MyDayColors.late;
+        tone = palette.late;
         badge = '${minutesLabel(day.lateMinutes)} late';
       } else if (shift != null && day.hasMinutes) {
         // A 2.51.0 connector sends no minute counters: zero there is
@@ -145,10 +146,10 @@ List<TimelineEvent> buildTimeline(
     }
     if (p.kind == 'check_out' && last) {
       if (day.earlyMinutes > 0) {
-        tone = MyDayColors.late;
+        tone = palette.late;
         badge = '${minutesLabel(day.earlyMinutes)} early';
       } else if (day.overtimeMinutes > 0) {
-        tone = MyDayColors.overtime;
+        tone = palette.overtime;
         badge = '${minutesLabel(day.overtimeMinutes)} overtime';
       }
     }
@@ -206,7 +207,7 @@ List<TimelineEvent> buildTimeline(
           title: 'Lunch',
           sub: '${lunch.label} · from your work schedule',
           kind: TimelineKind.lunch,
-          tone: _grey,
+          tone: grey,
           upcoming: true,
         ),
       );
@@ -230,7 +231,7 @@ List<TimelineEvent> buildTimeline(
             ? 'Coming back? This counts as a break.'
             : (passed && !open ? shift.label : checkOutHere),
         kind: TimelineKind.anchor,
-        tone: passed ? MyDayColors.work : _grey,
+        tone: passed ? palette.work : grey,
         upcoming: !passed,
       ),
     );
@@ -249,7 +250,7 @@ List<TimelineEvent> buildTimeline(
       return byRank != 0 ? byRank : a.compareTo(b);
     });
   final sorted = [for (final i in order) events[i]];
-  return _withRails(day, sorted, punchKinds);
+  return _withRails(day, sorted, punchKinds, palette);
 }
 
 enum _Phase { beforeIn, working, onBreak, afterOut }
@@ -260,7 +261,9 @@ List<TimelineEvent> _withRails(
   MyDay day,
   List<TimelineEvent> rows,
   Map<TimelineEvent, String> punchKinds,
+  MyDayPalette palette,
 ) {
+  final grey = palette.waiting;
   final shift = day.shift;
   final open = day.state == 'checked_in' || day.state == 'on_break';
   final missing = displayOf(day) == MyDayDisplay.missing;
@@ -284,7 +287,7 @@ List<TimelineEvent> _withRails(
       color = Colors.transparent;
     } else if (futureFrom >= 0 && i >= futureFrom) {
       rail = RailStyle.dotted;
-      color = _grey.dot;
+      color = grey.dot;
     } else {
       switch (phase) {
         case _Phase.working:
@@ -293,31 +296,31 @@ List<TimelineEvent> _withRails(
               day.overtimeMinutes > 0 &&
               e.at.compareTo(shift.end) >= 0;
           rail = RailStyle.solid;
-          color = overtime ? MyDayColors.overtime.dot : MyDayColors.work.dot;
+          color = overtime ? palette.overtime.dot : palette.work.dot;
         case _Phase.onBreak:
           rail = RailStyle.dashed;
-          color = MyDayColors.brk.dot;
+          color = palette.brk.dot;
         case _Phase.beforeIn:
           if (missing) {
             rail = RailStyle.dashed;
-            color = MyDayColors.missing.dot;
+            color = palette.missing.dot;
           } else if (day.lateMinutes > 0) {
             rail = RailStyle.dashed;
-            color = MyDayColors.late.dot;
+            color = palette.late.dot;
           } else if (hasPunch) {
             rail = RailStyle.solid;
-            color = MyDayColors.work.dot;
+            color = palette.work.dot;
           } else {
             rail = RailStyle.dotted;
-            color = _grey.dot;
+            color = grey.dot;
           }
         case _Phase.afterOut:
           if (day.earlyMinutes > 0) {
             rail = RailStyle.dashed;
-            color = MyDayColors.late.dot;
+            color = palette.late.dot;
           } else {
             rail = RailStyle.dotted;
-            color = _grey.dot;
+            color = grey.dot;
           }
       }
     }
@@ -343,20 +346,26 @@ class DayTimeline extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final events = buildTimeline(day, now: now, phoneHint: phoneHint);
+    final c = context.omni;
+    final events = buildTimeline(
+      day,
+      now: now,
+      phoneHint: phoneHint,
+      palette: c.myDay,
+    );
     final text = Theme.of(context).textTheme;
     if (events.isEmpty) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 16),
         child: Text(
           emptyText,
-          style: text.bodyMedium?.copyWith(color: AppTheme.outline),
+          style: text.bodyMedium?.copyWith(color: c.textMuted),
         ),
       );
     }
     return Column(
       children: [
-        for (var i = 0; i < events.length; i++) _row(text, i, events[i]),
+        for (var i = 0; i < events.length; i++) _row(c, text, i, events[i]),
       ],
     );
   }
@@ -374,14 +383,15 @@ class DayTimeline extends StatelessWidget {
     }
   }
 
-  Widget _row(TextTheme text, int index, TimelineEvent e) {
+  Widget _row(OmniColors c, TextTheme text, int index, TimelineEvent e) {
     final filled = e.kind == TimelineKind.punch && !e.upcoming;
-    final ringColor = e.upcoming ? _grey.dot : e.tone.dot;
+    final ringColor = e.upcoming ? c.myDay.waiting.dot : e.tone.dot;
+    // By kind: the light and dark palettes are different objects.
     final tinted =
-        e.tone != MyDayColors.work && e.tone != MyDayColors.brk && !e.upcoming;
-    final titleColor = e.upcoming
-        ? AppTheme.onSurfaceVariant
-        : AppTheme.onSurface;
+        e.tone.kind != MyDayToneKind.work &&
+        e.tone.kind != MyDayToneKind.brk &&
+        !e.upcoming;
+    final titleColor = e.upcoming ? c.textSub : c.text;
     final timeText = e.kind == TimelineKind.now
         ? 'now'
         : DateTimeUtils.formatLocalTime(e.at);
@@ -427,7 +437,7 @@ class DayTimeline extends StatelessWidget {
                     height: 28,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: filled ? e.tone.dot : Colors.white,
+                      color: filled ? e.tone.dot : c.card,
                       border: Border.all(color: ringColor, width: 2),
                       boxShadow: e.current
                           ? [BoxShadow(color: e.tone.tint, spreadRadius: 4)]
@@ -436,7 +446,7 @@ class DayTimeline extends StatelessWidget {
                     child: Icon(
                       _icon(e),
                       size: 14,
-                      color: filled ? Colors.white : ringColor,
+                      color: filled ? c.myDay.onDot : ringColor,
                     ),
                   ),
                   Expanded(
@@ -503,7 +513,7 @@ class DayTimeline extends StatelessWidget {
                         child: Text(
                           e.sub,
                           style: text.bodySmall?.copyWith(
-                            color: AppTheme.outline,
+                            color: c.textMuted,
                           ),
                         ),
                       ),

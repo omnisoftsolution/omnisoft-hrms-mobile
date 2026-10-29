@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants.dart';
 import '../../core/error_messages.dart';
-import '../../core/theme.dart';
+import '../../core/omni_colors.dart';
 import '../../models/face_capture_result.dart';
 import '../../services/face_recognition_service.dart';
 import '../../services/session_service.dart';
@@ -76,6 +76,7 @@ class _FaceEnrollmentScreenState extends State<FaceEnrollmentScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.omni;
     return Scaffold(
       appBar: AppBar(title: const Text('Enroll Face')),
       body: Padding(
@@ -89,7 +90,7 @@ class _FaceEnrollmentScreenState extends State<FaceEnrollmentScreen> {
                 const SizedBox(height: 24),
               ],
               if (_error != null) ...[
-                Icon(Icons.error_outline, size: 64, color: AppTheme.error),
+                Icon(Icons.error_outline, size: 64, color: c.error),
                 const SizedBox(height: 16),
                 Text(_error!, textAlign: TextAlign.center),
                 const SizedBox(height: 24),
@@ -108,8 +109,7 @@ class _FaceEnrollmentScreenState extends State<FaceEnrollmentScreen> {
                   ],
                 ),
               ] else if (_done) ...[
-                Icon(Icons.check_circle,
-                    size: 64, color: AppTheme.primary),
+                Icon(Icons.check_circle, size: 64, color: c.accent),
                 const SizedBox(height: 16),
                 const Text('Face enrolled successfully',
                     style: TextStyle(

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-import '../../../core/theme.dart';
+import '../../../core/omni_colors.dart';
 import '../../../models/team_overview.dart';
 import '../../team/team_colors.dart';
 import '../../team/team_format.dart';
@@ -208,11 +208,12 @@ class WhoOutCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final next7 = collapseNext7(whoOut.next7);
-    const caption = TextStyle(
+    final c = context.omni;
+    final caption = TextStyle(
       fontSize: 12,
       fontWeight: FontWeight.w700,
       letterSpacing: 0.7,
-      color: AppTheme.outline,
+      color: c.textMuted,
     );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -223,19 +224,19 @@ class WhoOutCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.baseline,
             textBaseline: TextBaseline.alphabetic,
             children: [
-              const Expanded(
+              Expanded(
                 child: Text(
                   OverviewCopy.whoOut,
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
-                    color: AppTheme.onSurfaceVariant,
+                    color: c.textSub,
                   ),
                 ),
               ),
               Text(
                 OverviewCopy.everyoneIn(scopeLabel),
-                style: const TextStyle(fontSize: 12, color: AppTheme.outline),
+                style: TextStyle(fontSize: 12, color: c.textMuted),
               ),
             ],
           ),
@@ -258,13 +259,13 @@ class WhoOutCard extends StatelessWidget {
                 ),
               ),
               if (whoOut.today.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 6, 16, 6),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
                   child: Text(
                     OverviewCopy.noOneOutToday,
                     style: TextStyle(
                       fontSize: 13,
-                      color: AppTheme.onSurfaceVariant,
+                      color: c.textSub,
                     ),
                   ),
                 ),
@@ -280,20 +281,20 @@ class WhoOutCard extends StatelessWidget {
                 height: 13,
                 indent: 16,
                 endIndent: 16,
-                color: AppTheme.outlineVariant.withValues(alpha: 0.5),
+                color: c.line.withValues(alpha: 0.5),
               ),
-              const Padding(
-                padding: EdgeInsets.fromLTRB(16, 4, 16, 4),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
                 child: Text(OverviewCopy.next7Caption, style: caption),
               ),
               if (next7.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 6, 16, 6),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
                   child: Text(
                     OverviewCopy.nothingNext7,
                     style: TextStyle(
                       fontSize: 13,
-                      color: AppTheme.onSurfaceVariant,
+                      color: c.textSub,
                     ),
                   ),
                 ),
@@ -319,9 +320,9 @@ class WhoOutCard extends StatelessWidget {
                               TextSpan(text: ' · ${next7[i].detail}'),
                             ],
                           ),
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 13,
-                            color: AppTheme.onSurface,
+                            color: c.text,
                           ),
                         ),
                       ),
@@ -335,12 +336,15 @@ class WhoOutCard extends StatelessWidget {
               // The server bounded the rows (who_out.truncated, K2): one
               // quiet line (A-L17).
               if (whoOut.truncated)
-                const Padding(
-                  key: ValueKey('ov-who-out-truncated'),
-                  padding: EdgeInsets.fromLTRB(16, 6, 16, 0),
+                Padding(
+                  key: const ValueKey('ov-who-out-truncated'),
+                  padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
                   child: Text(
                     teamRowsNotShown,
-                    style: TextStyle(fontSize: 12, color: TeamColors.muted),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: TeamColors.of(context).muted,
+                    ),
                   ),
                 ),
               Padding(
@@ -350,8 +354,8 @@ class WhoOutCard extends StatelessWidget {
                   onPressed: onSeeOutlook,
                   style: OutlinedButton.styleFrom(
                     minimumSize: const Size.fromHeight(44),
-                    side: const BorderSide(color: AppTheme.primary, width: 1.5),
-                    foregroundColor: AppTheme.primary,
+                    side: BorderSide(color: c.accent, width: 1.5),
+                    foregroundColor: c.accent,
                     shape: const StadiumBorder(),
                   ),
                   child: const Text(
@@ -377,6 +381,8 @@ class _TodayRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.omni;
+    final t = TeamColors.of(context);
     return InkWell(
       key: ValueKey('ov-out-${person.id}'),
       onTap: onTap,
@@ -392,17 +398,17 @@ class _TodayRow extends StatelessWidget {
                 children: [
                   Text(
                     person.name,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
-                      color: AppTheme.onSurface,
+                      color: c.text,
                     ),
                   ),
                   Text(
                     line,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
-                      color: AppTheme.onSurfaceVariant,
+                      color: c.textSub,
                     ),
                   ),
                 ],
@@ -413,7 +419,7 @@ class _TodayRow extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
                 decoration: BoxDecoration(
-                  color: TeamColors.leaveTint,
+                  color: t.leaveTint,
                   borderRadius: BorderRadius.circular(999),
                 ),
                 child: Text(
@@ -421,7 +427,7 @@ class _TodayRow extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
-                    color: TeamColors.leaveOn,
+                    color: t.leaveOn,
                   ),
                 ),
               ),

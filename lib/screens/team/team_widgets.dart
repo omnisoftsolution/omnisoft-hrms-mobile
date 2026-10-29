@@ -2,7 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import '../../core/theme.dart';
+import '../../core/omni_colors.dart';
 import 'team_colors.dart';
 
 /// Initials circle with the employee-id hue (A-L6). No photos are fetched
@@ -22,6 +22,7 @@ class TeamAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final t = TeamColors.of(context);
     return ExcludeSemantics(
       child: Container(
         width: size,
@@ -29,12 +30,12 @@ class TeamAvatar extends StatelessWidget {
         alignment: Alignment.center,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: TeamColors.avatar(id),
+          color: t.avatar(id),
         ),
         child: Text(
           initials,
           style: TextStyle(
-            color: TeamColors.onC3,
+            color: t.onAvatar,
             fontSize: size * 0.375,
             fontWeight: FontWeight.w700,
           ),
@@ -50,18 +51,19 @@ class TeamYouChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final t = TeamColors.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
       decoration: BoxDecoration(
-        color: TeamColors.accentTint,
+        color: t.accentTint,
         borderRadius: BorderRadius.circular(999),
       ),
-      child: const Text(
+      child: Text(
         'You',
         style: TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w700,
-          color: TeamColors.onAccentTint,
+          color: t.onAccentTint,
         ),
       ),
     );
@@ -74,16 +76,17 @@ class TeamPendingChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final t = TeamColors.of(context);
     return CustomPaint(
-      painter: const _DashedPillPainter(TeamColors.leave),
-      child: const Padding(
-        padding: EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+      painter: _DashedPillPainter(t.leave),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
         child: Text(
           'Pending',
           style: TextStyle(
             fontSize: 11,
             fontWeight: FontWeight.w700,
-            color: TeamColors.leave,
+            color: t.leave,
           ),
         ),
       ),
@@ -140,9 +143,11 @@ class TeamFilterChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.omni;
+    final t = TeamColors.of(context);
     final shape = StadiumBorder(
       side: BorderSide(
-        color: selected ? TeamColors.accentTint : TeamColors.chipBorder,
+        color: selected ? t.accentTint : t.chipBorder,
         width: 1.5,
       ),
     );
@@ -150,7 +155,7 @@ class TeamFilterChip extends StatelessWidget {
       button: true,
       selected: selected,
       child: Material(
-        color: selected ? TeamColors.accentTint : Colors.transparent,
+        color: selected ? t.accentTint : Colors.transparent,
         shape: shape,
         clipBehavior: Clip.antiAlias,
         child: InkWell(
@@ -164,9 +169,7 @@ class TeamFilterChip extends StatelessWidget {
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
-                color: selected
-                    ? TeamColors.onAccentTint
-                    : AppTheme.onSurfaceVariant,
+                color: selected ? t.onAccentTint : c.textSub,
               ),
             ),
           ),

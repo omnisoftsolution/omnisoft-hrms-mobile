@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
-import '../../core/theme.dart';
+import '../../core/omni_colors.dart';
 import '../../core/error_messages.dart';
 import '../../core/datetime_utils.dart';
 import '../../core/money.dart';
@@ -112,6 +112,7 @@ class ExpensesScreenState extends State<ExpensesScreen> {
   @override
   Widget build(BuildContext context) {
     final session = context.watch<SessionService>();
+    final c = context.omni;
     return Scaffold(
       appBar: const OmniAppBar(title: 'Expenses'),
       body: !session.featureExpenses
@@ -125,8 +126,8 @@ class ExpensesScreenState extends State<ExpensesScreen> {
           ? null
           : FloatingActionButton.extended(
               onPressed: _openCreate,
-              backgroundColor: AppTheme.primary,
-              foregroundColor: Colors.white,
+              backgroundColor: c.brandFill,
+              foregroundColor: c.onBrandFill,
               icon: const Icon(Icons.add_rounded),
               label: const Text(
                 'NEW EXPENSE',
@@ -181,6 +182,7 @@ class ExpensesScreenState extends State<ExpensesScreen> {
   }
 
   Widget _emptyState() {
+    final c = context.omni;
     return ListView(
       // ListView (vs. Center) lets pull-to-refresh still work on empty.
       padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 80),
@@ -191,16 +193,16 @@ class ExpensesScreenState extends State<ExpensesScreen> {
           margin: const EdgeInsets.only(bottom: 24),
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: AppTheme.primaryContainer.withValues(alpha: 0.12),
+            color: c.button.withValues(alpha: 0.12),
             border: Border.all(
-              color: AppTheme.primaryContainer.withValues(alpha: 0.35),
+              color: c.button.withValues(alpha: 0.35),
               width: 1.5,
             ),
           ),
           child: Icon(
             Icons.receipt_long_rounded,
             size: 36,
-            color: AppTheme.primary,
+            color: c.accent,
           ),
         ),
         Text(
@@ -209,7 +211,7 @@ class ExpensesScreenState extends State<ExpensesScreen> {
           style: GoogleFonts.inter(
             fontSize: 22,
             fontWeight: FontWeight.w800,
-            color: AppTheme.onSurface,
+            color: c.text,
             letterSpacing: -0.3,
           ),
         ),
@@ -219,7 +221,7 @@ class ExpensesScreenState extends State<ExpensesScreen> {
           textAlign: TextAlign.center,
           style: GoogleFonts.inter(
             fontSize: 14,
-            color: AppTheme.onSurfaceVariant,
+            color: c.textSub,
             height: 1.45,
           ),
         ),
@@ -228,6 +230,7 @@ class ExpensesScreenState extends State<ExpensesScreen> {
   }
 
   Widget _expenseTile(ExpenseRecord r) {
+    final c = context.omni;
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: InkWell(
@@ -253,12 +256,12 @@ class ExpensesScreenState extends State<ExpensesScreen> {
                 width: 44,
                 height: 44,
                 decoration: BoxDecoration(
-                  color: AppTheme.primaryContainer.withValues(alpha: 0.12),
+                  color: c.button.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(
                   Icons.receipt_long_rounded,
-                  color: AppTheme.primary,
+                  color: c.accent,
                   size: 22,
                 ),
               ),
@@ -285,7 +288,7 @@ class ExpensesScreenState extends State<ExpensesScreen> {
                       '${DateTimeUtils.formatSubmittedAgo(r.createDate)}',
                       style: TextStyle(
                         fontSize: 12,
-                        color: AppTheme.onSurfaceVariant,
+                        color: c.textSub,
                       ),
                     ),
                     if (r.date.isNotEmpty) ...[
@@ -297,7 +300,7 @@ class ExpensesScreenState extends State<ExpensesScreen> {
                         'Receipt ${DateTimeUtils.formatLocalDate(r.date)}',
                         style: TextStyle(
                           fontSize: 11,
-                          color: AppTheme.onSurfaceVariant
+                          color: c.textSub
                               .withValues(alpha: 0.7),
                         ),
                       ),
@@ -355,36 +358,38 @@ class ExpensesScreenState extends State<ExpensesScreen> {
   }
 
   Color _stateColor(String state) {
+    final c = context.omni;
     switch (state) {
       case 'draft':
-        return AppTheme.onSurfaceVariant;
+        return c.textSub;
       case 'submitted':
-        return AppTheme.secondary;
+        return c.secondary;
       case 'approved':
       case 'posted':
       case 'in_payment':
-        return AppTheme.primary;
+        return c.accent;
       case 'paid':
-        return const Color(0xFF22C55E);
+        return context.isDarkTheme ? c.success : const Color(0xFF22C55E);
       case 'refused':
-        return AppTheme.error;
+        return c.error;
       default:
-        return AppTheme.onSurfaceVariant;
+        return c.textSub;
     }
   }
 
   Widget _errorPane(String msg) {
+    final c = context.omni;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.error_outline, color: AppTheme.error, size: 48),
+            Icon(Icons.error_outline, color: c.error, size: 48),
             const SizedBox(height: 12),
             Text(msg,
                 textAlign: TextAlign.center,
-                style: TextStyle(color: AppTheme.error)),
+                style: TextStyle(color: c.error)),
             const SizedBox(height: 16),
             OutlinedButton(
               onPressed: _refresh,

@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import '../../core/app_login.dart';
 import '../../core/constants.dart';
 import '../../core/error_messages.dart';
-import '../../core/theme.dart';
+import '../../core/omni_colors.dart';
 import '../../models/company_info.dart';
 import '../../services/biometric_auth_service.dart';
 import '../../services/device_service.dart';
@@ -305,6 +305,7 @@ class _ActivationScreenState extends State<ActivationScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final c = context.omni;
     return Scaffold(
       appBar: AppBar(),
       body: SafeArea(
@@ -319,7 +320,7 @@ class _ActivationScreenState extends State<ActivationScreen> {
               const SizedBox(height: 8),
               Text('Use the link or code HR sent you.',
                   style: theme.textTheme.bodyMedium
-                      ?.copyWith(color: AppTheme.outline)),
+                      ?.copyWith(color: c.textMuted)),
               const SizedBox(height: 28),
               if (!_hasToken && _canScan) ...[
                 SizedBox(
@@ -336,7 +337,7 @@ class _ActivationScreenState extends State<ActivationScreen> {
               if (_hasCompany) ...[
                 Text('Company',
                     style: theme.textTheme.labelMedium
-                        ?.copyWith(color: AppTheme.outline)),
+                        ?.copyWith(color: c.textMuted)),
                 const SizedBox(height: 4),
                 Text(widget.companyCode!,
                     style: theme.textTheme.titleMedium
@@ -368,7 +369,7 @@ class _ActivationScreenState extends State<ActivationScreen> {
                         ? 'You can change it.'
                         : 'The login HR gave you.',
                     style: theme.textTheme.bodySmall
-                        ?.copyWith(color: AppTheme.outline)),
+                        ?.copyWith(color: c.textMuted)),
               ),
               if (!_hasToken) ...[
                 if (_showNewLogin) ...[
@@ -431,7 +432,7 @@ class _ActivationScreenState extends State<ActivationScreen> {
                 padding: const EdgeInsets.only(left: 4, top: 6),
                 child: Text('At least 8 characters',
                     style: theme.textTheme.bodySmall
-                        ?.copyWith(color: AppTheme.outline)),
+                        ?.copyWith(color: c.textMuted)),
               ),
               const SizedBox(height: 20),
               LabeledField(
@@ -446,7 +447,7 @@ class _ActivationScreenState extends State<ActivationScreen> {
               if (_error != null) ...[
                 const SizedBox(height: 16),
                 Text(_error!,
-                    style: TextStyle(color: AppTheme.error, fontSize: 13)),
+                    style: TextStyle(color: c.error, fontSize: 13)),
               ],
               const SizedBox(height: 28),
               FilledButton(

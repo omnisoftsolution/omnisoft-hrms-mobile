@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 import 'package:provider/provider.dart';
-import '../../core/theme.dart';
+import '../../core/omni_colors.dart';
 import '../../core/error_messages.dart';
 import '../../core/leave_units.dart';
 import '../../models/leave_record.dart';
@@ -19,18 +19,20 @@ import '../../utils/leave_backdate.dart';
 
 /// Chip colour of a leave state on the History card. `validate1` (HR
 /// still has to approve) is pending, not approved: it shares the
-/// "Pending" colour so nobody reads it as a green light.
-Color leaveStateColor(String state) {
+/// "Pending" colour so nobody reads it as a green light. [c] defaults to
+/// the light tokens for callers that have no context.
+Color leaveStateColor(String state, [OmniColors? c]) {
+  c ??= OmniColors.light;
   switch (state) {
     case 'validate':
-      return AppTheme.primary;
+      return c.accent;
     case 'refuse':
-      return AppTheme.error;
+      return c.error;
     case 'confirm':
     case 'validate1':
-      return AppTheme.secondary;
+      return c.secondary;
     default:
-      return AppTheme.outline;
+      return c.textMuted;
   }
 }
 
@@ -209,13 +211,13 @@ class LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(friendlyError(e)),
-        backgroundColor: AppTheme.error,
+        backgroundColor: context.omni.errorFill,
       ),
     );
     await refresh(quiet: true);
   }
 
-  Color _stateColor(String state) => leaveStateColor(state);
+  Color _stateColor(String state) => leaveStateColor(state, context.omni);
 
   OmniMobileApi _api() {
     final s = context.read<SessionService>();
@@ -243,7 +245,7 @@ class LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text('Leave cancelled'),
-          backgroundColor: AppTheme.primary,
+          backgroundColor: context.omni.brandFill,
         ),
       );
       await refresh();
@@ -256,7 +258,7 @@ class LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(friendlyError(e)),
-          backgroundColor: AppTheme.error,
+          backgroundColor: context.omni.errorFill,
         ),
       );
     }
@@ -334,6 +336,7 @@ class LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
   }
 
   Widget _buildItem(LeaveRecord r) {
+    final c = context.omni;
     final expanded = _expandedId == r.id;
     final highlighted = _highlightId == r.id;
     return AnimatedContainer(
@@ -343,7 +346,7 @@ class LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(28),
         color: highlighted
-            ? AppTheme.primaryContainer.withValues(alpha: 0.18)
+            ? c.button.withValues(alpha: 0.18)
             : Colors.transparent,
       ),
       padding: const EdgeInsets.all(2),
@@ -370,8 +373,7 @@ class LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
                         const SizedBox(height: 4),
                         Text(
                           r.summaryLabel,
-                          style: TextStyle(
-                              fontSize: 13, color: AppTheme.onSurfaceVariant),
+                          style: TextStyle(fontSize: 13, color: c.textSub),
                         ),
                       ],
                     ),
@@ -397,7 +399,7 @@ class LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
                     expanded
                         ? Icons.expand_less_rounded
                         : Icons.expand_more_rounded,
-                    color: AppTheme.outline,
+                    color: c.textMuted,
                     size: 20,
                   ),
                 ],
@@ -441,7 +443,7 @@ class LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
                         child: Row(
                           children: [
                             Icon(Icons.description_outlined,
-                                size: 16, color: AppTheme.primary),
+                                size: 16, color: c.accent),
                             const SizedBox(width: 6),
                             Expanded(
                               child: Text(
@@ -450,9 +452,9 @@ class LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
                                   fontSize: 13,
-                                  color: AppTheme.primary,
+                                  color: c.accent,
                                   decoration: TextDecoration.underline,
-                                  decorationColor: AppTheme.primary,
+                                  decorationColor: c.accent,
                                 ),
                               ),
                             ),
@@ -499,8 +501,8 @@ class LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
                             overflow: TextOverflow.ellipsis,
                           ),
                           style: OutlinedButton.styleFrom(
-                            foregroundColor: AppTheme.error,
-                            side: BorderSide(color: AppTheme.error),
+                            foregroundColor: c.error,
+                            side: BorderSide(color: c.error),
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 8),
                           ),
@@ -519,9 +521,9 @@ class LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
     );
   }
 
-  static const _detailLabelStyle = TextStyle(
+  static TextStyle _detailLabelStyle(OmniColors c) => TextStyle(
     fontSize: 13,
-    color: AppTheme.onSurfaceVariant,
+    color: c.textSub,
     fontWeight: FontWeight.w500,
   );
 
@@ -540,13 +542,14 @@ class LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
   static const _detailGap = 12.0;
 
   Widget _detailRow(String label, String value) {
+    final labelStyle = _detailLabelStyle(context.omni);
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: LayoutBuilder(
         builder: (context, constraints) {
           final width = detailLabelColumnWidth(
             labels: _detailLabels,
-            style: _detailLabelStyle,
+            style: labelStyle,
             textScaler: MediaQuery.textScalerOf(context),
             gap: _detailGap,
             maxWidth: constraints.maxWidth * 0.45,
@@ -556,7 +559,7 @@ class LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
             children: [
               SizedBox(
                 width: width - _detailGap,
-                child: Text(label, style: _detailLabelStyle),
+                child: Text(label, style: labelStyle),
               ),
               const SizedBox(width: _detailGap),
               Expanded(
@@ -570,6 +573,7 @@ class LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
   }
 
   Widget _balanceBar(LeaveRecord r) {
+    final c = context.omni;
     final total = r.allocationTotal ?? 0;
     final remaining = r.allocationRemaining ?? 0;
     final taken = total - remaining;
@@ -579,9 +583,9 @@ class LeaveHistoryScreenState extends State<LeaveHistoryScreen> {
       child: LinearProgressIndicator(
         value: fraction,
         minHeight: 6,
-        backgroundColor: AppTheme.surfaceContainer,
+        backgroundColor: c.soft,
         valueColor: AlwaysStoppedAnimation<Color>(
-          fraction > 0.8 ? AppTheme.error : AppTheme.primary,
+          fraction > 0.8 ? c.error : c.accent,
         ),
       ),
     );
@@ -608,6 +612,7 @@ class _CancelLeaveDialogState extends State<_CancelLeaveDialog> {
   @override
   Widget build(BuildContext context) {
     final r = widget.record;
+    final c = context.omni;
     return AlertDialog(
       title: const Text('Cancel this leave?'),
       content: Column(
@@ -616,7 +621,7 @@ class _CancelLeaveDialogState extends State<_CancelLeaveDialog> {
         children: [
           Text(
             '${r.leaveType}\n${r.summaryLabel}',
-            style: TextStyle(color: AppTheme.onSurfaceVariant, fontSize: 13),
+            style: TextStyle(color: c.textSub, fontSize: 13),
           ),
           const SizedBox(height: 16),
           TextField(
@@ -636,7 +641,8 @@ class _CancelLeaveDialogState extends State<_CancelLeaveDialog> {
           child: const Text('Keep it'),
         ),
         FilledButton(
-          style: FilledButton.styleFrom(backgroundColor: AppTheme.error),
+          style: FilledButton.styleFrom(
+              backgroundColor: c.errorFill, foregroundColor: Colors.white),
           onPressed: () => Navigator.of(context).pop(
               (ok: true, reason: _reasonController.text.trim())),
           child: const Text('Cancel leave'),
@@ -710,6 +716,7 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
   }
 
   Future<void> _deleteAttachment(LeaveAttachment a) async {
+    final c = context.omni;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -721,7 +728,8 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
             child: const Text('Keep'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppTheme.error),
+            style: FilledButton.styleFrom(
+                backgroundColor: c.errorFill, foregroundColor: Colors.white),
             onPressed: () => Navigator.of(context).pop(true),
             child: const Text('Delete'),
           ),
@@ -739,7 +747,7 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(friendlyError(e)),
-          backgroundColor: AppTheme.error,
+          backgroundColor: context.omni.errorFill,
         ));
       }
     } finally {
@@ -984,11 +992,12 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
         attachment: _document?.toApiJson(),
       );
       if (!mounted) return;
+      final fill = context.omni.brandFill;
       Navigator.of(context).pop(true);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text('Leave updated'),
-          backgroundColor: AppTheme.primary,
+          backgroundColor: fill,
         ),
       );
     } catch (e) {
@@ -1034,27 +1043,26 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
     required TimeOfDay time,
     required VoidCallback onTap,
   }) {
+    final c = context.omni;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-          border: Border.all(color: AppTheme.outline),
+          border: Border.all(color: c.textMuted),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
           children: [
-            Icon(Icons.schedule, size: 18, color: AppTheme.primary),
+            Icon(Icons.schedule, size: 18, color: c.accent),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(label,
-                      style: TextStyle(
-                          fontSize: 12,
-                          color: AppTheme.onSurfaceVariant)),
+                      style: TextStyle(fontSize: 12, color: c.textSub)),
                   const SizedBox(height: 2),
                   Text(
                     time.format(context),
@@ -1074,6 +1082,7 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
   Widget build(BuildContext context) {
     final fmt = DateFormat('dd MMM yyyy');
     final mq = MediaQuery.of(context);
+    final c = context.omni;
     // SingleChildScrollView so the form survives keyboard-up without
     // overflow. viewPadding.bottom covers the persistent bottom nav's
     // system-nav inset (we render past the nav via useRootNavigator).
@@ -1119,22 +1128,19 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
               padding:
                   const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               decoration: BoxDecoration(
-                border: Border.all(color: AppTheme.outline),
+                border: Border.all(color: c.textMuted),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Row(
                 children: [
-                  Icon(Icons.calendar_today,
-                      size: 18, color: AppTheme.primary),
+                  Icon(Icons.calendar_today, size: 18, color: c.accent),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text('Leave dates',
-                            style: TextStyle(
-                                fontSize: 12,
-                                color: AppTheme.onSurfaceVariant)),
+                            style: TextStyle(fontSize: 12, color: c.textSub)),
                         const SizedBox(height: 2),
                         Text(
                           _hourlyCustom
@@ -1146,7 +1152,7 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
                       ],
                     ),
                   ),
-                  Icon(Icons.chevron_right, color: AppTheme.outline),
+                  Icon(Icons.chevron_right, color: c.textMuted),
                 ],
               ),
             ),
@@ -1175,9 +1181,7 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
                   _hourCaption!,
                   style: TextStyle(
                     fontSize: 12,
-                    color: _customHoursOutsideSchedule
-                        ? AppTheme.error
-                        : AppTheme.onSurfaceVariant,
+                    color: _customHoursOutsideSchedule ? c.error : c.textSub,
                   ),
                 ),
               ),
@@ -1221,13 +1225,13 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
                       horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
                     border: Border.all(
-                        color: AppTheme.outline.withValues(alpha: 0.5)),
+                        color: c.textMuted.withValues(alpha: 0.5)),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Row(
                     children: [
                       Icon(Icons.description_outlined,
-                          size: 18, color: AppTheme.primary),
+                          size: 18, color: c.accent),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
@@ -1250,7 +1254,7 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
                           constraints: const BoxConstraints(
                               minWidth: 36, minHeight: 36),
                           icon: Icon(Icons.visibility_outlined,
-                              size: 20, color: AppTheme.primary),
+                              size: 20, color: c.accent),
                           onPressed: () => _viewAttachment(a),
                         ),
                         IconButton(
@@ -1259,7 +1263,7 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
                           constraints: const BoxConstraints(
                               minWidth: 36, minHeight: 36),
                           icon: Icon(Icons.close_rounded,
-                              size: 20, color: AppTheme.error),
+                              size: 20, color: c.error),
                           onPressed: () => _deleteAttachment(a),
                         ),
                       ],
@@ -1282,12 +1286,12 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.info_outline, size: 16, color: AppTheme.error),
+                Icon(Icons.info_outline, size: 16, color: c.error),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
                     'This leave type needs a supporting document. Upload one to save your changes.',
-                    style: TextStyle(fontSize: 12, color: AppTheme.error),
+                    style: TextStyle(fontSize: 12, color: c.error),
                   ),
                 ),
               ],
@@ -1298,20 +1302,20 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: AppTheme.error.withValues(alpha: 0.1),
+                color: c.error.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                    color: AppTheme.error.withValues(alpha: 0.3)),
+                    color: c.error.withValues(alpha: 0.3)),
               ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(Icons.error_outline, color: AppTheme.error, size: 18),
+                  Icon(Icons.error_outline, color: c.error, size: 18),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       _error!,
-                      style: TextStyle(color: AppTheme.error, fontSize: 13),
+                      style: TextStyle(color: c.error, fontSize: 13),
                     ),
                   ),
                 ],
@@ -1326,11 +1330,11 @@ class _EditLeaveSheetState extends State<_EditLeaveSheet> {
                   ? null
                   : _submit,
               child: _submitting
-                  ? const SizedBox(
+                  ? SizedBox(
                       height: 20,
                       width: 20,
                       child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white))
+                          strokeWidth: 2, color: c.onButton))
                   : const Text('Save changes'),
             ),
           ),
