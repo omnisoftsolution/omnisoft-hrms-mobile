@@ -1,4 +1,2 @@
-Team leave: tap a day to see who is off; clearer calendar colours (Sundays and public holidays in red).
-Team overview: Who's out lists each person once for the next 7 days; switching day or department keeps the page while it updates.
-Check-in: if your face isn't recognised, try again right away (up to 3 tries).
-Home and Leave reload with less waiting.
+Dark mode: Omni HR now follows your phone's light or dark setting.
+Foldable phones: the layout adapts when the phone is folded or open.
