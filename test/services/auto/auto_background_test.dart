@@ -510,6 +510,83 @@ void main() {
     });
   });
 
+  group('wake: refresh vs flush order (F2)', () {
+    late List<String> order;
+
+    setUp(() => order = []);
+
+    Future<void> orderedWake({
+      required bool due,
+      Future<void> Function()? refresh,
+      Duration refreshLimit = const Duration(seconds: 8),
+      Duration timeout = const Duration(seconds: 25),
+    }) => handleAutoWake(
+      kind: AutoKind.arrive,
+      source: AutoSource.geofence,
+      ctx: _ctx(),
+      sampler: () async => _sample,
+      queue: queue,
+      prefs: prefs,
+      refreshDue: () async => due,
+      refresh:
+          refresh ??
+          () async {
+            order.add('refresh');
+          },
+      refreshLimit: refreshLimit,
+      apiBuilder: (c, token, client) => _OrderApi(order),
+      notifyDropped: (_) async {},
+      now: () => now,
+      timeout: timeout,
+    );
+
+    test('due: refresh, then post (AA-F06)', () async {
+      await orderedWake(due: true);
+      expect(order, ['refresh', 'post']);
+    });
+
+    test('not due: post without a refresh', () async {
+      await orderedWake(due: false);
+      expect(order, ['post']);
+    });
+
+    test('a hanging refresh is cut short and the flush still runs within '
+        'the wake', () async {
+      final watch = Stopwatch()..start();
+      await orderedWake(
+        due: true,
+        refresh: () {
+          order.add('refresh');
+          return Completer<void>().future;
+        },
+        refreshLimit: const Duration(milliseconds: 50),
+        timeout: const Duration(seconds: 5),
+      );
+      expect(order, ['refresh', 'post']);
+      expect(watch.elapsed, lessThan(const Duration(seconds: 2)));
+      expect(await queue.ordered(), isEmpty);
+    });
+
+    test('the default refresh bound is 8 s', () {
+      expect(autoWakeRefreshLimit, const Duration(seconds: 8));
+    });
+
+    test('autoRefreshDue: within 7 days of expiry or expired', () async {
+      Future<bool> dueIn(Duration d) {
+        SharedPreferences.setMockInitialValues({
+          SessionService.expiresAtPrefsKey: now.add(d).toIso8601String(),
+        });
+        return autoRefreshDue(now: () => now);
+      }
+
+      expect(await dueIn(const Duration(days: 8)), isFalse);
+      expect(await dueIn(const Duration(days: 6)), isTrue);
+      expect(await dueIn(const Duration(hours: -1)), isTrue);
+      SharedPreferences.setMockInitialValues({});
+      expect(await autoRefreshDue(now: () => now), isFalse);
+    });
+  });
+
   group('refreshIfExpiringSoon (AA-F06)', () {
     late _FakeSession session;
     late int loads;
@@ -628,6 +705,19 @@ class _RefusingApi extends OmniMobileApi {
     required String refreshToken,
     required String deviceId,
   }) async => throw ApiException('refresh_invalid');
+}
+
+/// Records each post in a shared [order] list.
+class _OrderApi extends AutoApi {
+  _OrderApi(this.order) : super(baseUrl: 'http://localhost', db: 'acme');
+
+  final List<String> order;
+
+  @override
+  Future<AutoPostResult> postEvent(AutoEvent e) async {
+    order.add('post');
+    return const AutoAccepted('checked_in');
+  }
 }
 
 class _TrackingClient extends http.BaseClient {

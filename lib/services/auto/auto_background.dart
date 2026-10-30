@@ -47,6 +47,10 @@ String autoRegionId(String db, int employeeId) =>
 /// How long one wake may run (iOS gives a woken app ~30 s).
 const autoWakeLimit = Duration(seconds: 25);
 
+/// How long a wake waits for the session refresh before it sends the queue
+/// anyway (F2): the refresh's own HTTP timeout is 30 s, longer than a wake.
+const autoWakeRefreshLimit = Duration(seconds: 8);
+
 /// What a background wake needs, read back from storage.
 class AutoBackgroundContext {
   const AutoBackgroundContext({
@@ -136,6 +140,10 @@ typedef AutoWakeApiBuilder =
 /// session when it is about to expire (AA-F06), then send the queue. The
 /// whole wake is bounded by [timeout] and never throws.
 ///
+/// The refresh runs only when [refreshDue] says so, and is waited for at
+/// most [refreshLimit] (F2): a slow tenant must not eat the wake before the
+/// queue is sent. When it is not due the queue is sent straight away.
+///
 /// Without an auto key it posts with the bearer access token when one can
 /// be read; with neither, the event just waits in the queue for the
 /// foreground. It never fetches a key (AA-F02: a fetch can sign the user
@@ -148,7 +156,9 @@ Future<void> handleAutoWake({
   Future<AutoSample> Function()? sampler,
   AutoEventQueue? queue,
   SharedPreferencesAsync? prefs,
+  Future<bool> Function()? refreshDue,
   Future<void> Function()? refresh,
+  Duration refreshLimit = autoWakeRefreshLimit,
   Future<String?> Function()? bearer,
   AutoWakeApiBuilder? apiBuilder,
   http.Client Function()? clientFactory,
@@ -198,10 +208,21 @@ Future<void> handleAutoWake({
         ),
       );
 
+      bool due;
       try {
-        await (refresh ?? () => refreshIfExpiringSoon(prefs: p, now: clock))();
+        due = await (refreshDue ?? () => autoRefreshDue(now: clock))();
       } catch (_) {
-        // Best effort; the foreground refreshes too.
+        due = false;
+      }
+      if (due) {
+        try {
+          // A cut-short refresh goes on in the background; its lease is
+          // released by its own `finally`.
+          await (refresh ?? () => refreshIfExpiringSoon(prefs: p, now: clock))()
+              .timeout(refreshLimit);
+        } catch (_) {
+          // Best effort; the foreground refreshes too.
+        }
       }
 
       String? token;
@@ -259,6 +280,28 @@ Future<SessionService?> _loadSessionQuietly() async {
   }
 }
 
+/// True when the access session expires within [within] or already has
+/// (AA-F06); false when no expiry is known. Reads [session] when given,
+/// else the stored expiry (reloaded: this isolate's cache may be old).
+Future<bool> autoRefreshDue({
+  Duration within = const Duration(days: 7),
+  SessionService? session,
+  Future<SharedPreferences> Function()? openPrefs,
+  DateTime Function()? now,
+}) async {
+  final clock = now ?? DateTime.now;
+  var expiresAt = session?.expiresAt;
+  if (expiresAt == null) {
+    final legacy = await (openPrefs ?? SharedPreferences.getInstance)();
+    await legacy.reload();
+    expiresAt = DateTime.tryParse(
+      legacy.getString(SessionService.expiresAtPrefsKey) ?? '',
+    );
+  }
+  if (expiresAt == null) return false;
+  return !expiresAt.isAfter(clock().add(within));
+}
+
 /// AA-F06: when the access session expires within [within] (or already
 /// has), trade the device refresh token for a new one before posting.
 /// Best effort, one isolate at a time (lease [autoRefreshLeaseKey], 60 s).
@@ -281,15 +324,15 @@ Future<RefreshOutcome?> refreshIfExpiringSoon({
 }) async {
   final clock = now ?? DateTime.now;
   try {
-    final legacy = await (openPrefs ?? SharedPreferences.getInstance)();
-    await legacy.reload();
-    final expiresAt =
-        session?.expiresAt ??
-        DateTime.tryParse(
-          legacy.getString(SessionService.expiresAtPrefsKey) ?? '',
-        );
-    if (expiresAt == null) return null;
-    if (expiresAt.isAfter(clock().add(within))) return null;
+    final open = openPrefs ?? SharedPreferences.getInstance;
+    final due = await autoRefreshDue(
+      within: within,
+      session: session,
+      openPrefs: open,
+      now: clock,
+    );
+    if (!due) return null;
+    final legacy = await open();
     final deviceId = legacy.getString(DeviceService.prefsKey) ?? '';
     if (deviceId.isEmpty) return null;
 
