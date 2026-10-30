@@ -50,6 +50,10 @@ const autoStatusSentKey = 'omni_auto_status_sent';
 /// The app version the regions were last armed under (Android, Ruling R9).
 const autoArmedAppVersionKey = 'omni_auto_armed_app_version';
 
+/// `true` once HR's switch was seen on for this phone's sign-in: a region, a
+/// key or a status may exist that the off path has to clean (Ruling R21).
+const autoEngagedKey = 'omni_auto_engaged';
+
 /// Every `omni_auto_*` pref (all in [SharedPreferencesAsync]).
 const _autoPrefix = 'omni_auto_';
 
@@ -273,11 +277,18 @@ class AutoAttendanceService extends ChangeNotifier {
     if (_stale(epoch)) return;
 
     if (config == null || optedOut) {
-      await _disarm(db, epoch, permission);
+      await _retract(db, epoch, permission);
       if (_stale(epoch)) return;
       _setState(optedOut ? AutoPhoneState.optedOut : AutoPhoneState.off);
       return;
     }
+
+    // From here on a region, a key or a status may exist (R21).
+    if (await _prefs.getBool(autoEngagedKey) != true) {
+      if (_stale(epoch)) return;
+      await _prefs.setBool(autoEngagedKey, true);
+    }
+    if (_stale(epoch)) return;
 
     // AA-F02: refresh first, then fetch the key — never both at once.
     try {
@@ -339,8 +350,41 @@ class AutoAttendanceService extends ChangeNotifier {
     _setState(waiting ? AutoPhoneState.waitingWifi : armedState);
   }
 
-  /// Off or opted out: no region, no key, and the server told once.
+  /// HR's switch is off or the employee opted out (Ruling R21): a
+  /// retraction only. With nothing stored from an earlier "on" (no status
+  /// signature, no engaged / armed-version / last-state pref) this is a
+  /// no-op — no plugin, keychain or network call, so the many employees HR
+  /// never switched on cost nothing on start and resume. Otherwise the
+  /// region and the key go, and `enabled: false` is posted only when the
+  /// server was told something earlier; once it has it, the signature is
+  /// dropped so later runs are no-ops too.
+  Future<void> _retract(String db, int epoch, String permission) async {
+    _key = null;
+    final sent = await _prefs.getString(autoStatusSentKey);
+    final engaged = await _prefs.getBool(autoEngagedKey) == true;
+    final armed = await _prefs.getString(autoArmedAppVersionKey);
+    final last = await _prefs.getString(autoLastStateKey);
+    if (sent == null && !engaged && armed == null && last == null) return;
+    if (_stale(epoch)) return;
+    await _cleanUp(db, epoch);
+    if (_stale(epoch) || sent == null) return;
+    if (await _postStatus(permission, false, epoch: epoch, force: false) &&
+        !_stale(epoch)) {
+      await _prefs.remove(autoStatusSentKey);
+    }
+  }
+
+  /// `not_enabled` on the key route (HR switched off since the last `/me`):
+  /// no region, no key, and the server told once.
   Future<void> _disarm(String db, int epoch, String permission) async {
+    await _cleanUp(db, epoch);
+    if (_stale(epoch)) return;
+    await _postStatus(permission, false, epoch: epoch, force: false);
+  }
+
+  /// Removes this db's region and the key, then the prefs that said there
+  /// was something to clean.
+  Future<void> _cleanUp(String db, int epoch) async {
     try {
       await _fence.removeAll(db);
     } catch (e) {
@@ -349,7 +393,11 @@ class AutoAttendanceService extends ChangeNotifier {
     _key = null;
     await _keyStore.delete();
     if (_stale(epoch)) return;
-    await _postStatus(permission, false, epoch: epoch, force: false);
+    await Future.wait([
+      _prefs.remove(autoEngagedKey),
+      _prefs.remove(autoArmedAppVersionKey),
+      _prefs.remove(autoLastStateKey),
+    ]);
   }
 
   /// The stored key, else one fetched with the bearer session.
@@ -401,16 +449,20 @@ class AutoAttendanceService extends ChangeNotifier {
   }
 
   /// Posts `{permission, enabled, platform}` (bearer, Ruling R1) when it
-  /// differs from the last accepted one, or always when [force].
-  Future<void> _postStatus(
+  /// differs from the last accepted one, or always when [force]. True when
+  /// the server has this status (already had it, took it, or refused it
+  /// for good).
+  Future<bool> _postStatus(
     String permission,
     bool enabled, {
     required int epoch,
     required bool force,
   }) async {
     final sig = '$permission|$enabled|$_platform';
-    if (!force && await _prefs.getString(autoStatusSentKey) == sig) return;
-    if (_stale(epoch)) return;
+    if (!force && await _prefs.getString(autoStatusSentKey) == sig) {
+      return true;
+    }
+    if (_stale(epoch)) return false;
     final result = await _autoApi(
       _session,
       null,
@@ -419,13 +471,15 @@ class AutoAttendanceService extends ChangeNotifier {
       case AutoAccepted():
       case AutoFinal():
         // A final refusal will not change by asking again for the same.
-        if (_stale(epoch)) return;
+        if (_stale(epoch)) return false;
         await _prefs.setString(autoStatusSentKey, sig);
+        return true;
       case AutoRetry(:final why):
         _log('status not sent ($why)');
       case AutoKeyInvalid():
         _log('status not sent (401)');
     }
+    return false;
   }
 
   /// Lead decision L4: opening the app checks in only when the phone has no

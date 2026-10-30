@@ -83,10 +83,14 @@ class _FakeMobileApi extends OmniMobileApi {
 
 /// Records status posts (and the key each client was built with).
 class _FakeAutoApi extends AutoApi {
-  _FakeAutoApi(this.statuses, {super.autoKey})
-    : super(baseUrl: 'http://localhost', db: 'acme', bearer: 'tok');
+  _FakeAutoApi(
+    this.statuses, {
+    super.autoKey,
+    this.answer = const AutoAccepted('ok'),
+  }) : super(baseUrl: 'http://localhost', db: 'acme', bearer: 'tok');
 
   final List<Map<String, dynamic>> statuses;
+  final AutoPostResult answer;
 
   @override
   Future<AutoPostResult> postStatus({
@@ -100,7 +104,60 @@ class _FakeAutoApi extends AutoApi {
       'platform': platform,
       'key': autoKey,
     });
-    return const AutoAccepted('ok');
+    return answer;
+  }
+}
+
+/// In-memory secure storage that records every call.
+class _RecordingSecure extends FlutterSecureStorage {
+  final Map<String, String> data = {};
+  final List<String> calls = [];
+
+  @override
+  Future<String?> read({
+    required String key,
+    IOSOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    MacOsOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    calls.add('read $key');
+    return data[key];
+  }
+
+  @override
+  Future<void> write({
+    required String key,
+    required String? value,
+    IOSOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    MacOsOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    calls.add('write $key');
+    if (value == null) {
+      data.remove(key);
+    } else {
+      data[key] = value;
+    }
+  }
+
+  @override
+  Future<void> delete({
+    required String key,
+    IOSOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    MacOsOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    calls.add('delete $key');
+    data.remove(key);
   }
 }
 
@@ -142,24 +199,31 @@ class _FakePort implements GeofencePort {
   final List<String> removed = [];
   int reCreated = 0;
 
+  /// Every plugin call, in order.
+  final List<String> calls = [];
+
   /// When set, [create] waits for it (the plugin call on the wire).
   Completer<void>? holdCreate;
   final createCalled = Completer<void>();
 
   @override
-  Future<List<ActiveGeofence>> registered() async => [
-    for (final g in store.values)
-      ActiveGeofence(
-        id: g.id,
-        location: g.location,
-        radiusMeters: g.radiusMeters,
-        triggers: g.triggers,
-        androidSettings: null,
-      ),
-  ];
+  Future<List<ActiveGeofence>> registered() async {
+    calls.add('registered');
+    return [
+      for (final g in store.values)
+        ActiveGeofence(
+          id: g.id,
+          location: g.location,
+          radiusMeters: g.radiusMeters,
+          triggers: g.triggers,
+          androidSettings: null,
+        ),
+    ];
+  }
 
   @override
   Future<void> create(Geofence g) async {
+    calls.add('create');
     if (!createCalled.isCompleted) createCalled.complete();
     final h = holdCreate;
     if (h != null) await h.future;
@@ -169,12 +233,16 @@ class _FakePort implements GeofencePort {
 
   @override
   Future<void> removeById(String id) async {
+    calls.add('remove');
     removed.add(id);
     store.remove(id);
   }
 
   @override
-  Future<void> reCreateAll() async => reCreated++;
+  Future<void> reCreateAll() async {
+    calls.add('reCreate');
+    reCreated++;
+  }
 
   void seed(String id) {
     store[id] = Geofence(
@@ -204,6 +272,7 @@ void main() {
   late AutoSample sample;
   late int samples;
   ApiException? keyError;
+  late AutoPostResult statusAnswer;
 
   setUp(() {
     SharedPreferencesAsyncPlatform.instance =
@@ -222,6 +291,7 @@ void main() {
     sample = _inside;
     samples = 0;
     keyError = null;
+    statusAnswer = const AutoAccepted('ok');
   });
 
   AutoAttendanceService service({
@@ -244,7 +314,8 @@ void main() {
     fence: fence ?? AutoFence(port: port, isAndroid: android),
     keyStore: keyStore,
     apiBuilder: (_) => _FakeMobileApi(log, error: keyError),
-    autoApiBuilder: (_, key) => _FakeAutoApi(statuses, autoKey: key),
+    autoApiBuilder: (_, key) =>
+        _FakeAutoApi(statuses, autoKey: key, answer: statusAnswer),
     sender: sender,
     sampler:
         samplerSeam ??
@@ -270,32 +341,105 @@ void main() {
         ),
       );
 
-  test(
-    'config null → removes fence, deletes key, posts enabled false',
-    () async {
+  group('HR switch off (R21: the off path only retracts)', () {
+    test('never switched on → no plugin, keychain or status call, on start '
+        'and on resume', () async {
       session.config = null;
-      port.seed(_region);
-      await keyStore.write('K0', 'dev-1');
+      final secure = _RecordingSecure();
+      keyStore = AutoKeyStore(storage: secure);
 
       final auto = service();
       await auto.sync(appStart: true);
+      await auto.sync();
+      await auto.sync();
+
+      expect(auto.state, AutoPhoneState.off);
+      expect(port.calls, isEmpty);
+      expect(secure.calls, isEmpty);
+      expect(statuses, isEmpty);
+      expect(log, isNot(contains('fetchKey')));
+      expect(log, isNot(contains('flush')));
+    });
+
+    test('status was sent, then HR switches off → one enabled:false post, '
+        'region removed, key deleted', () async {
+      final auto = service();
+      await auto.sync(appStart: true);
+      expect(port.store.keys, [_region]);
+      expect(await keyStore.read(), 'K1');
+      expect(statuses.single['enabled'], true);
+
+      session.config = null;
+      await auto.sync();
+      await auto.sync(appStart: true);
+      await auto.sync();
 
       expect(auto.state, AutoPhoneState.off);
       expect(port.store, isEmpty);
       expect(port.removed, [_region]);
       expect(await keyStore.read(), isNull);
-      expect(statuses, [
-        {
-          'permission': 'always',
-          'enabled': false,
-          'platform': 'ios',
-          'key': null,
-        },
-      ]);
-      expect(log, isNot(contains('fetchKey')));
-      expect(log, isNot(contains('flush')));
-    },
-  );
+      expect(statuses, hasLength(2));
+      expect(statuses.last, {
+        'permission': 'always',
+        'enabled': false,
+        'platform': 'ios',
+        'key': null,
+      });
+      // Retracted: nothing left to clean or tell.
+      expect(await prefs.getString(autoStatusSentKey), isNull);
+      final keys = await prefs.getKeys();
+      expect(
+        keys.where((k) => k.startsWith('omni_auto_')),
+        isNot(contains(autoEngagedKey)),
+      );
+    });
+
+    test('a retraction the server did not take is sent again next time, '
+        'until it lands', () async {
+      await prefs.setString(autoStatusSentKey, 'always|true|ios');
+      session.config = null;
+      statusAnswer = const AutoRetry('http_503');
+      final auto = service();
+      await auto.sync();
+      await auto.sync();
+      expect(statuses, hasLength(2));
+
+      statusAnswer = const AutoAccepted('ok');
+      await auto.sync();
+      await auto.sync();
+      expect(statuses, hasLength(3));
+      expect(await prefs.getString(autoStatusSentKey), isNull);
+    });
+
+    test('older connector (status route answers HTML 404) → not re-posted on '
+        'every resume', () async {
+      session.config = null;
+      statusAnswer = const AutoRetry('http_404');
+      final auto = service();
+      await auto.sync(appStart: true);
+      for (var i = 0; i < 3; i++) {
+        await auto.sync();
+      }
+      expect(statuses, isEmpty);
+      expect(port.calls, isEmpty);
+    });
+
+    test('a region armed without a status (status post failed) is still '
+        'removed when HR switches off', () async {
+      statusAnswer = const AutoRetry('timeout');
+      final auto = service();
+      await auto.sync(appStart: true);
+      expect(port.store.keys, [_region]);
+      expect(await prefs.getString(autoStatusSentKey), isNull);
+
+      session.config = null;
+      await auto.sync();
+      expect(port.store, isEmpty);
+      expect(await keyStore.read(), isNull);
+      // No signature: nothing to retract, so no enabled:false post.
+      expect(statuses.where((s) => s['enabled'] == false), isEmpty);
+    });
+  });
 
   test('refresh runs before the key fetch', () async {
     final auto = service();
