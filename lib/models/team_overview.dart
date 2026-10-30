@@ -495,10 +495,6 @@ class OverviewRow {
   final String? kioskName;
   final String? location;
 
-  /// The first punch was made by the phone itself (connector 2.66.0; false
-  /// when the server hides the source or does not send it).
-  final bool auto;
-
   /// part_day_leave | came_in_on_leave | later_today | flexible | null.
   final String? note;
   final OverviewRowLeave? leave;
@@ -520,7 +516,6 @@ class OverviewRow {
     this.source = '',
     this.kioskName,
     this.location,
-    this.auto = false,
     this.note,
     this.leave,
   });
@@ -545,7 +540,6 @@ class OverviewRow {
       source: _str(json['source']),
       kioskName: _optStr(json['kiosk_name']),
       location: _optStr(json['location']),
-      auto: json['auto'] == true,
       note: _noteKind(json['note']),
       leave: leave == null ? null : OverviewRowLeave.fromJson(leave),
     );

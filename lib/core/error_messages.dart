@@ -231,9 +231,10 @@ String friendlyError(
     return 'It is too late to undo this punch. Ask HR to correct it.';
   }
   if (raw.contains('undo_not_last')) {
-    // The Undo names its action (AA-F03); the server answers this when that
-    // punch is no longer the latest one, i.e. it was already undone.
-    return 'That punch was already undone.';
+    // The Undo names its action (AA-F03); the server answers this when the
+    // punch was already undone and when it is simply no longer the latest
+    // one (a later punch, or a row HR added).
+    return "That punch can't be undone any more.";
   }
   if (raw.contains('bad_time')) {
     return "That time doesn't fit this punch. Pick another time.";

@@ -532,8 +532,6 @@ void main() {
         ];
         final p = OverviewPerson.fromJson(body);
         expect(p.punches.map((x) => x.auto), [false, true]);
-        expect(OverviewRow.fromJson({'id': 1, 'auto': true}).auto, isTrue);
-        expect(OverviewRow.fromJson({'id': 1}).auto, isFalse);
       },
     );
 

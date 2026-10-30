@@ -9,7 +9,7 @@ void main() {
       text('undo_expired'),
       'It is too late to undo this punch. Ask HR to correct it.',
     );
-    expect(text('undo_not_last'), 'That punch was already undone.');
+    expect(text('undo_not_last'), "That punch can't be undone any more.");
     expect(
       text('bad_time'),
       "That time doesn't fit this punch. Pick another time.",
@@ -42,7 +42,7 @@ void main() {
         ApiException('undo_not_last'),
         context: ErrorContext.attendance,
       ),
-      'That punch was already undone.',
+      "That punch can't be undone any more.",
     );
   });
 }

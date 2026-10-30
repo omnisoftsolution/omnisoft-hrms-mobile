@@ -1532,7 +1532,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('UNDO'));
       await tester.pumpAndSettle();
-      expect(find.text('That punch was already undone.'), findsOneWidget);
+      expect(find.text("That punch can't be undone any more."), findsOneWidget);
       expect(find.text('Punch undone'), findsNothing);
       expect(api.undos, [812]); // one call, no resend
     });
@@ -1635,7 +1635,7 @@ void main() {
       await tester.tap(find.text('UNDO'));
       await tester.pumpAndSettle();
       expect(auto.undone, 0);
-      expect(find.text('That punch was already undone.'), findsOneWidget);
+      expect(find.text("That punch can't be undone any more."), findsOneWidget);
     });
 
     testWidgets('an expired window, null or no auto_undo shows nothing', (
