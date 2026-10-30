@@ -70,6 +70,26 @@ const reminderPushKinds = {'remind_check_in', 'remind_check_out'};
 
 bool isReminderKind(String kind) => reminderPushKinds.contains(kind);
 
+/// Push-only confirmations of an automatic punch (connector 2.66.0): no
+/// bell row either. They are not reminders ([isReminderKind] stays false),
+/// but a tap and a foreground arrival go to Home like a reminder's
+/// ([opensHomeKind]). `auto_recheck` is silent and never shown.
+const autoConfirmationPushKinds = {'auto_checked_in', 'auto_checked_out'};
+
+bool isAutoConfirmationKind(String kind) =>
+    autoConfirmationPushKinds.contains(kind);
+
+/// Push-only kinds whose tap opens Home and whose foreground arrival is a
+/// snackbar with "Open": the reminders and the automatic-punch
+/// confirmations.
+bool opensHomeKind(String kind) =>
+    isReminderKind(kind) || isAutoConfirmationKind(kind);
+
+/// The title of an automatic-punch confirmation when the push carries none.
+String autoConfirmationTitle(String kind) => kind == 'auto_checked_out'
+    ? 'Checked out automatically'
+    : 'Checked in automatically';
+
 /// A reminder's title when the push carries none: the connector's own
 /// wording (omni_mobile_push_reminder.py `TITLES`).
 String reminderTitle(String kind) =>

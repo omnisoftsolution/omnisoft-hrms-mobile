@@ -3,6 +3,7 @@
 /// ("yyyy-MM-dd HH:mm:ss"); widgets format them with DateTimeUtils.
 library;
 
+import '../core/datetime_utils.dart';
 import 'attendance_ask.dart';
 
 String _str(Object? v) => v is String ? v : '';
@@ -161,11 +162,16 @@ class MyDayPunch {
   /// Kiosk device name, or '' when unknown.
   final String place;
 
+  /// The phone made this punch by itself (automatic check-in, connector
+  /// 2.66.0). Always false when HR hides the source.
+  final bool auto;
+
   const MyDayPunch({
     required this.kind,
     required this.at,
     required this.source,
     required this.place,
+    this.auto = false,
   });
 
   factory MyDayPunch.fromJson(Map<String, dynamic> json) => MyDayPunch(
@@ -173,6 +179,7 @@ class MyDayPunch {
     at: _str(json['at']),
     source: _str(json['source']),
     place: _str(json['place']),
+    auto: json['auto'] == true,
   );
 
   String get label {
@@ -192,10 +199,41 @@ class MyDayPunch {
 
   /// Where the punch was made, for the timeline's second line.
   String get placeLabel {
+    if (auto) return 'Automatic';
     if (place.isNotEmpty) return place;
     if (source == 'kiosk') return 'Kiosk';
     if (source == 'mobile') return 'Phone';
     return '';
+  }
+}
+
+/// The automatic punch that can still be undone (`today.auto_undo`,
+/// connector 2.66.0). [action] is `check_in` or `check_out`; the Undo call
+/// names it (AA-F03). [undoUntil] is UTC.
+class MyDayAutoUndo {
+  final int attendanceId;
+  final String action;
+  final DateTime undoUntil;
+
+  const MyDayAutoUndo({
+    required this.attendanceId,
+    required this.action,
+    required this.undoUntil,
+  });
+
+  /// Null when the body is not a usable offer (a missing id, an unknown
+  /// action or an unreadable time): no Undo is shown for it.
+  static MyDayAutoUndo? tryParse(Map<String, dynamic>? json) {
+    if (json == null) return null;
+    final id = _int(json['attendance_id']);
+    final action = _str(json['action']);
+    final until = DateTimeUtils.parseOdooUtc(_str(json['undo_until']));
+    if (id <= 0 ||
+        (action != 'check_in' && action != 'check_out') ||
+        until == null) {
+      return null;
+    }
+    return MyDayAutoUndo(attendanceId: id, action: action, undoUntil: until);
   }
 }
 
@@ -326,6 +364,10 @@ class MyDay {
   final List<MyDayWeekDay> week;
   final MyDayNextShift? nextShift;
 
+  /// The automatic punch Undo is still offered for (connector 2.66.0), or
+  /// null: no offer, an older connector, or a body that cannot be used.
+  final MyDayAutoUndo? autoUndo;
+
   const MyDay({
     required this.date,
     required this.tz,
@@ -345,6 +387,7 @@ class MyDay {
     this.off,
     this.week = const [],
     this.nextShift,
+    this.autoUndo,
   });
 
   factory MyDay.fromJson(Map<String, dynamic> json) {
@@ -375,6 +418,7 @@ class MyDay {
       off: off == null ? null : MyDayOff.fromJson(off),
       week: _maps(json['week']).map(MyDayWeekDay.fromJson).toList(),
       nextShift: nextShift == null ? null : MyDayNextShift.fromJson(nextShift),
+      autoUndo: MyDayAutoUndo.tryParse(_map(today['auto_undo'])),
     );
   }
 }

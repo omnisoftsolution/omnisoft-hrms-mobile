@@ -642,9 +642,16 @@ class OmniMobileApi {
 
   /// Undoes the punch [attendanceId] inside the server's window and returns
   /// the fresh attendance status, so no second call is needed (spec §3.5).
-  Future<AttendanceStatus> undoPunch(int attendanceId) async {
+  /// [action] (`check_in` | `check_out`) names the punch being undone; the
+  /// server answers 409 `undo_not_last` when it is no longer the latest
+  /// one, and the caller must not resend (AA-F03).
+  Future<AttendanceStatus> undoPunch(
+    int attendanceId, {
+    required String action,
+  }) async {
     final data = await _post('/attendance/undo', {
       'attendance_id': attendanceId,
+      'action': action,
     });
     final status = data['status'];
     return AttendanceStatus.fromJson(

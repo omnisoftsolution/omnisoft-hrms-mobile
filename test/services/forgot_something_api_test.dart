@@ -88,28 +88,34 @@ void main() {
     });
   });
 
-  test('undoPunch posts the id and parses the returned status', () async {
-    final seen = <http.Request>[];
-    final status = await _withServer(
-      () => _api().undoPunch(812),
-      reply: {
-        'success': true,
-        'undone': 'check_in',
-        'status': {
+  test(
+    'undoPunch posts the id and action and parses the returned status',
+    () async {
+      final seen = <http.Request>[];
+      final status = await _withServer(
+        () => _api().undoPunch(812, action: 'check_in'),
+        reply: {
           'success': true,
-          'checked_in': false,
-          'hours_today': 1.5,
-          'employee_id': 4,
+          'undone': 'check_in',
+          'status': {
+            'success': true,
+            'checked_in': false,
+            'hours_today': 1.5,
+            'employee_id': 4,
+          },
         },
-      },
-      seen: seen,
-    );
-    expect(seen.single.url.path, '/api/v1/omni_mobile/attendance/undo');
-    expect(jsonDecode(seen.single.body), {'attendance_id': 812});
-    expect(status.checkedIn, isFalse);
-    expect(status.hoursToday, 1.5);
-    expect(status.employeeId, 4);
-  });
+        seen: seen,
+      );
+      expect(seen.single.url.path, '/api/v1/omni_mobile/attendance/undo');
+      expect(jsonDecode(seen.single.body), {
+        'attendance_id': 812,
+        'action': 'check_in',
+      });
+      expect(status.checkedIn, isFalse);
+      expect(status.hoursToday, 1.5);
+      expect(status.employeeId, 4);
+    },
+  );
 
   test(
     'answerReview sends a corrected time as UTC (connector 2.55.0)',

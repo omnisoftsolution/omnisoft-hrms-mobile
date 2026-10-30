@@ -495,6 +495,10 @@ class OverviewRow {
   final String? kioskName;
   final String? location;
 
+  /// The first punch was made by the phone itself (connector 2.66.0; false
+  /// when the server hides the source or does not send it).
+  final bool auto;
+
   /// part_day_leave | came_in_on_leave | later_today | flexible | null.
   final String? note;
   final OverviewRowLeave? leave;
@@ -516,6 +520,7 @@ class OverviewRow {
     this.source = '',
     this.kioskName,
     this.location,
+    this.auto = false,
     this.note,
     this.leave,
   });
@@ -540,6 +545,7 @@ class OverviewRow {
       source: _str(json['source']),
       kioskName: _optStr(json['kiosk_name']),
       location: _optStr(json['location']),
+      auto: json['auto'] == true,
       note: _noteKind(json['note']),
       leave: leave == null ? null : OverviewRowLeave.fromJson(leave),
     );
@@ -583,12 +589,17 @@ class OverviewPunch {
   final String? kioskName;
   final String? location;
 
+  /// The phone made this punch by itself (connector 2.66.0). The server
+  /// sends false whenever HR hides the source.
+  final bool auto;
+
   const OverviewPunch({
     required this.at,
     required this.kind,
     this.source = '',
     this.kioskName,
     this.location,
+    this.auto = false,
   });
 
   factory OverviewPunch.fromJson(Map<String, dynamic> json) => OverviewPunch(
@@ -597,6 +608,7 @@ class OverviewPunch {
     source: _str(json['source']),
     kioskName: _optStr(json['kiosk_name']),
     location: _optStr(json['location']),
+    auto: json['auto'] == true,
   );
 }
 

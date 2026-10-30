@@ -521,9 +521,13 @@ class AttendanceActionController extends ChangeNotifier {
         if (e.errorCode == 'outside_geofence' && e.distanceFromOffice != null) {
           distanceMeters = e.distanceFromOffice;
         }
-        return AttendanceActionOutcome.failure(friendlyError(e));
+        return AttendanceActionOutcome.failure(
+          friendlyError(e, context: ErrorContext.attendance),
+        );
       } catch (e) {
-        return AttendanceActionOutcome.failure(friendlyError(e));
+        return AttendanceActionOutcome.failure(
+          friendlyError(e, context: ErrorContext.attendance),
+        );
       }
       await refreshStatus();
       step(PunchStep.record, PunchStepState.done);

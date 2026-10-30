@@ -91,6 +91,7 @@ class _FakeApi extends OmniMobileApi {
   }
 
   int checkOuts = 0;
+  Map<String, dynamic> checkOutResponse = const {};
 
   @override
   Future<Map<String, dynamic>> checkOut({
@@ -105,11 +106,15 @@ class _FakeApi extends OmniMobileApi {
     String? wifiBssid,
   }) async {
     checkOuts++;
-    return const {};
+    return checkOutResponse;
   }
 
   final declares = <Map<String, Object?>>[];
   final undos = <int>[];
+  final undoActions = <String>[];
+
+  /// When set, undoPunch throws it (after recording the call).
+  Object? undoError;
 
   @override
   Future<bool> declare({
@@ -130,8 +135,14 @@ class _FakeApi extends OmniMobileApi {
   }
 
   @override
-  Future<AttendanceStatus> undoPunch(int attendanceId) async {
+  Future<AttendanceStatus> undoPunch(
+    int attendanceId, {
+    required String action,
+  }) async {
     undos.add(attendanceId);
+    undoActions.add(action);
+    final error = undoError;
+    if (error != null) throw error;
     attendance = AttendanceStatus.fromJson({
       'checked_in': false,
       'hours_today': 0,
@@ -1388,6 +1399,7 @@ void main() {
         await tester.tap(find.text('UNDO'));
         await tester.pumpAndSettle();
         expect(api.undos, [812]);
+        expect(api.undoActions, ['check_in']);
         expect(find.text('Punch undone'), findsOneWidget);
         expect(api.calls, 3);
         expect(find.text('Check out'), findsNothing);
@@ -1464,6 +1476,194 @@ void main() {
       expect(api.undos, [812]);
       expect(api.declares, isEmpty);
       expect(find.text('Punch undone'), findsOneWidget);
+    });
+  });
+
+  group('Undo names its action (AA-F03)', () {
+    String until(Duration d) => DateTime.now().toUtc().add(d).toIso8601String();
+
+    testWidgets('UNDO after a check-out sends check_out', (tester) async {
+      _tallScreen(tester);
+      final api =
+          _FakeApi([
+              sampleMyDay(kioskOnly: false),
+              sampleMyDay(state: 'checked_out', kioskOnly: false),
+            ])
+            ..attendance = AttendanceStatus.fromJson({
+              'checked_in': true,
+              'hours_today': 1,
+              'employee_id': 1,
+              'auth_type': 'app',
+              'office_latitude': 1.3,
+              'office_longitude': 103.8,
+              'office_radius_meters': 200,
+              'flexible_location': false,
+            })
+            ..checkOutResponse = {
+              'attendance_id': 813,
+              'undo_until': until(const Duration(minutes: 2)),
+            };
+      await tester.pumpWidget(_host(api));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('status-action')));
+      await tester.pumpAndSettle();
+      expect(api.checkOuts, 1);
+      await tester.tap(find.text('UNDO'));
+      await tester.pumpAndSettle();
+      expect(api.undos, [813]);
+      expect(api.undoActions, ['check_out']);
+    });
+
+    testWidgets('undo_not_last: its own text, nothing resent', (tester) async {
+      _tallScreen(tester);
+      final api =
+          _FakeApi([
+              sampleMyDay(state: 'not_in', punches: [], kioskOnly: false),
+              sampleMyDay(kioskOnly: false),
+            ])
+            ..checkInResponse = {
+              'attendance_id': 812,
+              'undo_until': until(const Duration(minutes: 2)),
+            }
+            ..undoError = ApiException('undo_not_last');
+      await tester.pumpWidget(_host(api));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('status-action')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('UNDO'));
+      await tester.pumpAndSettle();
+      expect(find.text('That punch was already undone.'), findsOneWidget);
+      expect(find.text('Punch undone'), findsNothing);
+      expect(api.undos, [812]); // one call, no resend
+    });
+
+    testWidgets('a busy_retry on the punch reads Please try again.', (
+      tester,
+    ) async {
+      _tallScreen(tester);
+      final api = _FakeApi([
+        sampleMyDay(state: 'not_in', punches: [], kioskOnly: false),
+      ])..checkInError = ApiException('busy_retry');
+      await tester.pumpWidget(_host(api));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('status-action')));
+      await tester.pumpAndSettle();
+      expect(find.text('Please try again.'), findsOneWidget);
+    });
+  });
+
+  group('auto_undo on My day (connector 2.66.0)', () {
+    Map<String, dynamic> offer({
+      int id = 900,
+      String action = 'check_in',
+      Duration left = const Duration(minutes: 3),
+    }) => {
+      'attendance_id': id,
+      'action': action,
+      'undo_until': DateTime.now()
+          .toUtc()
+          .add(left)
+          .toIso8601String()
+          .substring(0, 19)
+          .replaceFirst('T', ' '),
+    };
+
+    setUp(() {
+      SharedPreferences.setMockInitialValues({});
+      SharedPreferencesAsyncPlatform.instance =
+          InMemorySharedPreferencesAsync.empty();
+    });
+
+    testWidgets('auto_undo shows Undo once and sends action', (tester) async {
+      _tallScreen(tester);
+      final auto = FakeAuto();
+      final key = GlobalKey<MyDayScreenState>();
+      final api = _FakeApi([
+        sampleMyDay(autoUndo: offer(action: 'check_out')),
+        sampleMyDay(autoUndo: offer(action: 'check_out')),
+        sampleMyDay(autoUndo: offer(id: 901)),
+      ]);
+      await tester.pumpWidget(_host(api, key: key, auto: auto));
+      await tester.pumpAndSettle();
+      expect(find.text('Checked out automatically'), findsOneWidget);
+      expect(find.text('UNDO'), findsOneWidget);
+
+      // The same offer on the next load does not announce itself again.
+      ScaffoldMessenger.of(
+        tester.element(find.byType(MyDayScreen)),
+      ).removeCurrentSnackBar();
+      await tester.pumpAndSettle();
+      await key.currentState!.refresh();
+      await tester.pumpAndSettle();
+      expect(find.text('UNDO'), findsNothing);
+
+      // A different row is a new offer.
+      await key.currentState!.refresh();
+      await tester.pumpAndSettle();
+      expect(find.text('Checked in automatically'), findsOneWidget);
+      await tester.tap(find.text('UNDO'));
+      await tester.pumpAndSettle();
+      expect(api.undos, [901]);
+      expect(api.undoActions, ['check_in']);
+    });
+
+    testWidgets('UNDO sends id + action and tells auto attendance', (
+      tester,
+    ) async {
+      _tallScreen(tester);
+      final auto = FakeAuto();
+      final api = _FakeApi([sampleMyDay(autoUndo: offer(id: 905))]);
+      await tester.pumpWidget(_host(api, auto: auto));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('UNDO'));
+      await tester.pumpAndSettle();
+      expect(api.undos, [905]);
+      expect(api.undoActions, ['check_in']);
+      expect(auto.undone, 1);
+      expect(find.text('Punch undone'), findsOneWidget);
+    });
+
+    testWidgets('an Undo that fails does not tell auto attendance', (
+      tester,
+    ) async {
+      _tallScreen(tester);
+      final auto = FakeAuto();
+      final api = _FakeApi([sampleMyDay(autoUndo: offer())])
+        ..undoError = ApiException('undo_not_last');
+      await tester.pumpWidget(_host(api, auto: auto));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('UNDO'));
+      await tester.pumpAndSettle();
+      expect(auto.undone, 0);
+      expect(find.text('That punch was already undone.'), findsOneWidget);
+    });
+
+    testWidgets('an expired window, null or no auto_undo shows nothing', (
+      tester,
+    ) async {
+      _tallScreen(tester);
+      final api = _FakeApi([
+        sampleMyDay(autoUndo: offer(left: const Duration(minutes: -1))),
+      ]);
+      await tester.pumpWidget(_host(api));
+      await tester.pumpAndSettle();
+      expect(find.text('UNDO'), findsNothing);
+
+      final api2 = _FakeApi([sampleMyDay()]);
+      await tester.pumpWidget(_host(api2, key: UniqueKey()));
+      await tester.pumpAndSettle();
+      expect(find.text('UNDO'), findsNothing);
+    });
+
+    testWidgets('works without the auto attendance provider', (tester) async {
+      _tallScreen(tester);
+      final api = _FakeApi([sampleMyDay(autoUndo: offer())]);
+      await tester.pumpWidget(_host(api));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('UNDO'));
+      await tester.pumpAndSettle();
+      expect(api.undos, [900]);
+      expect(tester.takeException(), isNull);
     });
   });
 

@@ -19,12 +19,16 @@ String _join(Iterable<String> parts) =>
     parts.where((p) => p.isNotEmpty).join(' · ');
 
 /// Where a punch came from (connector L3): "Phone", "Kiosk · Front door",
-/// or nothing for any other source.
-String punchSourceLabel(String source, String kioskName) => switch (source) {
-  'mobile' => 'Phone',
-  'kiosk' => kioskName.isEmpty ? 'Kiosk' : 'Kiosk · $kioskName',
-  _ => '',
-};
+/// "Automatic" for a punch the phone made by itself ([auto], connector
+/// 2.66.0, before the source), or nothing for any other source.
+String punchSourceLabel(String source, String kioskName, {bool auto = false}) {
+  if (auto) return 'Automatic';
+  return switch (source) {
+    'mobile' => 'Phone',
+    'kiosk' => kioskName.isEmpty ? 'Kiosk' : 'Kiosk · $kioskName',
+    _ => '',
+  };
+}
 
 /// The sheet's Today box.
 String personStatusLabel(String bucket, int lateMinutes) => switch (bucket) {
@@ -55,7 +59,7 @@ String _punchKind(String kind) => switch (kind) {
 /// One "Punches today" line after the time: "Check in · Phone · Office".
 String punchLine(OverviewPunch p) => _join([
   _punchKind(p.kind),
-  punchSourceLabel(p.source, p.kioskName ?? ''),
+  punchSourceLabel(p.source, p.kioskName ?? '', auto: p.auto),
   p.location ?? '',
 ]);
 

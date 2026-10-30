@@ -97,6 +97,33 @@ void main() {
     expect(bell.refreshes, 0);
   });
 
+  test('auto_checked_in in the foreground is queued like a reminder', () async {
+    final push = await started();
+    for (final kind in ['auto_checked_in', 'auto_checked_out']) {
+      await push.handleForeground(
+        {
+          'kind': kind,
+          'push_group': 'attendance',
+          'company_code': 'ACME',
+          'notification_id': '',
+        },
+        title: kind == 'auto_checked_in' ? 'Checked in at 08:58' : null,
+        body: 'Tap to open My day.',
+      );
+    }
+    final arrivals = push.consumeArrivals();
+    // Newest first; a missing title falls back to the kind's own.
+    expect(arrivals.map((a) => a.kind), [
+      'auto_checked_out',
+      'auto_checked_in',
+    ]);
+    expect(arrivals.map((a) => a.title), [
+      'Checked out automatically',
+      'Checked in at 08:58',
+    ]);
+    expect(bell.refreshes, 0);
+  });
+
   test('a foreground auto_recheck goes to the automatic check-in and shows '
       'nothing', () async {
     final rechecks = <Map<String, dynamic>>[];

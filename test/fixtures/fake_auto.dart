@@ -23,6 +23,7 @@ class FakeAuto extends AutoAttendanceService {
   AutoPhoneState? afterTurnOn;
   int syncs = 0;
   int turnOns = 0;
+  int undone = 0;
 
   @override
   AutoPhoneState get state => _state;
@@ -41,6 +42,9 @@ class FakeAuto extends AutoAttendanceService {
     final next = afterSync;
     if (next != null) setState(next);
   }
+
+  @override
+  void onAutoUndone() => undone++;
 
   @override
   Future<void> turnOnAgain() async {

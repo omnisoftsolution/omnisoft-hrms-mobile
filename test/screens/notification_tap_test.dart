@@ -363,6 +363,20 @@ void main() {
       expect(opened, 'home');
     });
 
+    test('auto_checked_in / auto_checked_out tap opens My day', () async {
+      for (final kind in ['auto_checked_in', 'auto_checked_out']) {
+        var opened = '';
+        await openPushTap(
+          {'kind': kind, 'notification_id': ''},
+          fetch: (_) async => throw StateError('no fetch expected'),
+          openHome: () async => opened = 'home',
+          openBell: () async => opened = 'bell',
+          runHandler: (_) async => opened = 'handler',
+        );
+        expect(opened, 'home', reason: kind);
+      }
+    });
+
     testWidgets('pages below the shell stay; with the shell on top nothing '
         'is popped', (tester) async {
       late BuildContext shell;

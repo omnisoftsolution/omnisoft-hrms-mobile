@@ -212,9 +212,10 @@ bool pushTapRefreshesApprovals(Map<String, dynamic> data) =>
     data['kind']?.toString() == 'leave_approval_requested';
 
 /// A tap on a system notification (spec §6.4, push data per the contract):
-/// a reminder opens Home; a notice is fetched with `notifications/get` and
-/// run through the bell's handler, or opens the bell when it has nowhere
-/// else to go, is gone (404) or cannot be fetched (offline).
+/// a reminder or an automatic-punch confirmation opens Home; a notice is
+/// fetched with `notifications/get` and run through the bell's handler, or
+/// opens the bell when it has nowhere else to go, is gone (404) or cannot
+/// be fetched (offline).
 ///
 /// [stillCurrent] is asked once the fetch is over: false (a sign-out or a
 /// new access token while it ran) opens nothing — the answer belongs to a
@@ -227,7 +228,7 @@ Future<void> openPushTap(
   required Future<void> Function(NotificationRecord n) runHandler,
   bool Function()? stillCurrent,
 }) async {
-  if (isReminderKind(data['kind']?.toString() ?? '')) return openHome();
+  if (opensHomeKind(data['kind']?.toString() ?? '')) return openHome();
   final id = int.tryParse(data['notification_id']?.toString() ?? '');
   if (id == null) return openBell();
   NotificationRecord? n;

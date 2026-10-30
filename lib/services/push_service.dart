@@ -759,9 +759,10 @@ class PushService extends ChangeNotifier {
   /// A push that arrived while the app is open (spec §6.4). Only this
   /// tenant's pushes count, and only while a push session is active (not
   /// signed out, no sign-out running). No system banner: a notice re-polls
-  /// the bell (its arrival snackbar follows), a reminder is queued for
-  /// HomeShell's snackbar, a `remove` takes the notification off, applies
-  /// the badge and re-polls the bell. A silent `auto_recheck` goes to
+  /// the bell (its arrival snackbar follows), a reminder or an
+  /// automatic-punch confirmation is queued for HomeShell's snackbar, a
+  /// `remove` takes the notification off, applies the badge and re-polls
+  /// the bell. A silent `auto_recheck` goes to
   /// [handleAutoRecheck] (as in the background) and shows nothing.
   Future<void> handleForeground(
     Map<String, dynamic> data, {
@@ -796,9 +797,11 @@ class PushService extends ChangeNotifier {
       return;
     }
     final kind = data['kind']?.toString() ?? '';
-    if (isReminderKind(kind)) {
+    if (opensHomeKind(kind)) {
       final heading = title == null || title.trim().isEmpty
-          ? reminderTitle(kind)
+          ? (isReminderKind(kind)
+                ? reminderTitle(kind)
+                : autoConfirmationTitle(kind))
           : title;
       _arrivals = [
         PushArrival(kind: kind, title: heading, body: body ?? ''),

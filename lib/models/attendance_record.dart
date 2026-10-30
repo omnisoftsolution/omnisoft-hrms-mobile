@@ -37,10 +37,21 @@ class AttendanceRecord {
 
   bool get isOpen => checkOut == null;
 
-  /// 'Mobile' / 'Kiosk' / 'Manual' / 'Auto check-out' / '—' — surfaced
-  /// as a small pill so the user can spot HR-corrected entries vs
-  /// in-app check-ins.
+  /// 'Mobile' / 'Kiosk' / 'Manual' / 'Auto check-out' / 'Automatic' / '—' —
+  /// surfaced as a small pill so the user can spot HR-corrected entries vs
+  /// in-app check-ins. A record whose both legs were automatic reads
+  /// 'Automatic'; one that came in by hand and went out automatically adds
+  /// ' · Automatic out' to the check-in's label (AA-F09).
   String get modeLabel {
+    final base = _inLabel;
+    if (inMode == 'auto') return 'Automatic';
+    if (outMode == 'auto') {
+      return base == '—' ? 'Automatic' : '$base · Automatic out';
+    }
+    return base;
+  }
+
+  String get _inLabel {
     switch (inMode) {
       case 'mobile':
         return 'Mobile';

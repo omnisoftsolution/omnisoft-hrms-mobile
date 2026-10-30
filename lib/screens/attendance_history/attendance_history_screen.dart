@@ -59,6 +59,9 @@ class AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
         return c.secondary;
       case 'auto_check_out':
         return c.error;
+      case 'auto':
+        // Same colour as the phone: an automatic punch is a phone punch.
+        return _modeColor(c, 'mobile');
       default:
         return c.textMuted;
     }

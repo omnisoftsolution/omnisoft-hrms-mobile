@@ -38,6 +38,10 @@ enum ErrorContext {
   /// `not_allowed` means the grant was taken away, and `not_found` means
   /// the person left the viewer's overview.
   team,
+
+  /// A punch or its Undo (check in / out, Undo of a punch): the server
+  /// answers `busy_retry` when two requests hit the same attendance row.
+  attendance,
 }
 
 /// App Identity error codes that [friendlyErrorCode] owns.
@@ -131,7 +135,9 @@ String friendlyError(
   if (e is ApiException && context == ErrorContext.team) {
     final text = _teamMessage(e);
     if (text != null) return text;
-  } else if (e is ApiException && context != ErrorContext.general) {
+  } else if (e is ApiException &&
+      context != ErrorContext.general &&
+      context != ErrorContext.attendance) {
     final text = _addPhoneMessage(e, context, addPhoneCompany);
     if (text != null) return text;
   }
@@ -225,7 +231,9 @@ String friendlyError(
     return 'It is too late to undo this punch. Ask HR to correct it.';
   }
   if (raw.contains('undo_not_last')) {
-    return 'Only your latest punch can be undone.';
+    // The Undo names its action (AA-F03); the server answers this when that
+    // punch is no longer the latest one, i.e. it was already undone.
+    return 'That punch was already undone.';
   }
   if (raw.contains('bad_time')) {
     return "That time doesn't fit this punch. Pick another time.";
@@ -270,6 +278,7 @@ String friendlyError(
 
   // --- Two requests changed the same record at once (connector 2.56.3) ---
   if (raw.contains('busy_retry')) {
+    if (context == ErrorContext.attendance) return 'Please try again.';
     return 'Someone else is updating this request. Try again.';
   }
 

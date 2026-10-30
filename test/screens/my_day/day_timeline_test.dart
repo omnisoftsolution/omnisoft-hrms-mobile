@@ -32,6 +32,20 @@ final _open = DateTime.utc(2026, 10, 5, 4, 24);
 final _done = DateTime.utc(2026, 10, 5, 11, 0);
 
 void main() {
+  test('auto punch shows Automatic in the timeline', () {
+    final ev = buildTimeline(
+      sampleMyDay(
+        punches: [
+          {..._p('check_in', '2026-10-05 01:02:00'), 'auto': true},
+          {..._p('check_out', '2026-10-05 10:05:00'), 'auto': false},
+        ],
+      ),
+      now: _done,
+    );
+    expect(ev.firstWhere((e) => e.title == 'Check in').sub, 'Automatic');
+    expect(ev.firstWhere((e) => e.title == 'Check out').sub, 'Front desk');
+  });
+
   test('on time: anchors, punches, planned lunch, rail segments', () {
     final ev = buildTimeline(sampleMyDay(punches: _onTime), now: _open);
     expect(ev.map((e) => e.title), [

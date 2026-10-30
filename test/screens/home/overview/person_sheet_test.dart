@@ -263,6 +263,25 @@ void main() {
       expect(punchSourceLabel('other', ''), '');
       expect(punchSourceLabel('', ''), '');
     });
+
+    test('overview auto punch -> Automatic (AA-F09), before the source', () {
+      expect(punchSourceLabel('mobile', '', auto: true), 'Automatic');
+      expect(punchSourceLabel('', '', auto: true), 'Automatic');
+      expect(punchSourceLabel('kiosk', 'Front door', auto: true), 'Automatic');
+      expect(punchSourceLabel('mobile', '', auto: false), 'Phone');
+      expect(
+        punchLine(
+          const OverviewPunch(
+            at: '17:31',
+            kind: 'check_out',
+            source: 'mobile',
+            location: 'Office',
+            auto: true,
+          ),
+        ),
+        'Check out · Automatic · Office',
+      );
+    });
   });
 
   testWidgets('header, Today, Shift, punches, leave and the footer', (

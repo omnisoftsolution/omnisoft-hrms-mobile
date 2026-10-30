@@ -244,11 +244,13 @@ void main() {
       String kind, {
       String source = 'kiosk',
       String place = '',
+      Object? auto,
     }) => MyDayPunch.fromJson({
       'kind': kind,
       'at': '2026-10-05 00:54:00',
       'source': source,
       'place': place,
+      'auto': ?auto,
     });
 
     test('label per kind', () {
@@ -267,6 +269,70 @@ void main() {
       expect(punch('check_in').placeLabel, 'Kiosk');
       expect(punch('check_in', source: 'mobile').placeLabel, 'Phone');
       expect(punch('check_in', source: 'other').placeLabel, '');
+    });
+
+    test('an automatic punch reads Automatic, before place and source', () {
+      expect(punch('check_in', auto: true).placeLabel, 'Automatic');
+      expect(
+        punch(
+          'check_out',
+          source: 'mobile',
+          place: 'HQ',
+          auto: true,
+        ).placeLabel,
+        'Automatic',
+      );
+      expect(punch('check_in', auto: false).placeLabel, 'Kiosk');
+      expect(punch('check_in', auto: 'yes').auto, isFalse);
+      expect(punch('check_in').auto, isFalse);
+    });
+  });
+
+  group('today.auto_undo (connector 2.66.0)', () {
+    MyDay day(Object? autoUndo) {
+      final json = sampleMyDayJson();
+      (json['today'] as Map)['auto_undo'] = autoUndo;
+      return MyDay.fromJson(json);
+    }
+
+    test('parses id, action and the UTC time', () {
+      final u = day({
+        'attendance_id': 812,
+        'action': 'check_out',
+        'undo_until': '2026-10-05 09:30:00',
+      }).autoUndo!;
+      expect(u.attendanceId, 812);
+      expect(u.action, 'check_out');
+      expect(u.undoUntil, DateTime.utc(2026, 10, 5, 9, 30));
+    });
+
+    test('null, missing and unusable bodies give no offer', () {
+      expect(day(null).autoUndo, isNull);
+      expect(MyDay.fromJson(sampleMyDayJson()).autoUndo, isNull);
+      expect(
+        day({
+          'attendance_id': 0,
+          'action': 'check_in',
+          'undo_until': '2026-10-05 09:30:00',
+        }).autoUndo,
+        isNull,
+      );
+      expect(
+        day({
+          'attendance_id': 5,
+          'action': 'break_start',
+          'undo_until': '2026-10-05 09:30:00',
+        }).autoUndo,
+        isNull,
+      );
+      expect(
+        day({
+          'attendance_id': 5,
+          'action': 'check_in',
+          'undo_until': 'nope',
+        }).autoUndo,
+        isNull,
+      );
     });
   });
 

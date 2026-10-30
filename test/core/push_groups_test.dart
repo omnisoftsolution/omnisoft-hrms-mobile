@@ -31,4 +31,23 @@ void main() {
     expect(isReminderKind('leave_approved'), isFalse);
     expect(isReminderKind(''), isFalse);
   });
+
+  test('automatic-punch confirmations open Home but are not reminders', () {
+    for (final k in ['auto_checked_in', 'auto_checked_out']) {
+      expect(isAutoConfirmationKind(k), isTrue);
+      expect(isReminderKind(k), isFalse);
+      expect(opensHomeKind(k), isTrue);
+    }
+    expect(opensHomeKind('remind_check_out'), isTrue);
+    expect(opensHomeKind('auto_recheck'), isFalse);
+    expect(opensHomeKind('leave_approved'), isFalse);
+    expect(
+      autoConfirmationTitle('auto_checked_out'),
+      'Checked out automatically',
+    );
+    expect(
+      autoConfirmationTitle('auto_checked_in'),
+      'Checked in automatically',
+    );
+  });
 }

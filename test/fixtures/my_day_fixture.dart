@@ -104,6 +104,8 @@ MyDay sampleMyDay({
   bool withNextShift = true,
   // false = a 2.51.0 body: the connector sends no minute counters.
   bool withMinutes = true,
+  // Connector 2.66.0 `today.auto_undo`: {attendance_id, action, undo_until}.
+  Map<String, dynamic>? autoUndo,
 }) {
   final json = sampleMyDayJson();
   final today = Map<String, dynamic>.from(json['today'] as Map);
@@ -125,6 +127,7 @@ MyDay sampleMyDay({
       ..remove('overtime_minutes');
   }
   if (punches != null) today['punches'] = punches;
+  if (autoUndo != null) today['auto_undo'] = autoUndo;
   json['today'] = today;
   if (forYou != null) json['for_you'] = forYou;
   if (week != null) json['week'] = week;

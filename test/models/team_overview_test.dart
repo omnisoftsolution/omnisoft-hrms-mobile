@@ -517,6 +517,26 @@ void main() {
           'sections': {'attendance': true, 'leave': true},
         };
 
+    test(
+      'an automatic punch (connector 2.66.0): auto parsed, default false',
+      () {
+        final body = person();
+        body['punches'] = <Object?>[
+          ...(body['punches'] as List),
+          <String, dynamic>{
+            'at': '17:31',
+            'kind': 'check_out',
+            'source': 'mobile',
+            'auto': true,
+          },
+        ];
+        final p = OverviewPerson.fromJson(body);
+        expect(p.punches.map((x) => x.auto), [false, true]);
+        expect(OverviewRow.fromJson({'id': 1, 'auto': true}).auto, isTrue);
+        expect(OverviewRow.fromJson({'id': 1}).auto, isFalse);
+      },
+    );
+
     test('the contract sample', () {
       final p = OverviewPerson.fromJson(person());
       expect(p.id, 40);

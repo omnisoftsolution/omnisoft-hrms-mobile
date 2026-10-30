@@ -135,6 +135,10 @@ class MyDayScreenState extends State<MyDayScreen> {
   final Set<int> _undoneAttendanceIds = {};
   final Set<int> _undoingAttendanceIds = {};
 
+  /// Automatic punches whose Undo snackbar was already shown by this
+  /// screen: each `auto_undo` offer is shown once.
+  final Set<int> _autoUndoShown = {};
+
   @override
   void initState() {
     super.initState();
@@ -216,6 +220,7 @@ class MyDayScreenState extends State<MyDayScreen> {
         unawaited(_refreshSession());
       }
       await _syncController(day);
+      if (mounted) _offerAutoUndo(day);
     } catch (e) {
       if (!mounted) return;
       // The employee, the session or the access is gone: the remembered
@@ -434,7 +439,7 @@ class MyDayScreenState extends State<MyDayScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(friendlyError(e)),
+          content: Text(friendlyError(e, context: ErrorContext.attendance)),
           backgroundColor: context.omni.errorFill,
         ),
       );
@@ -496,8 +501,44 @@ class MyDayScreenState extends State<MyDayScreen> {
     return SnackBarAction(
       label: 'UNDO',
       textColor: Colors.white,
-      onPressed: () => _undo(id),
+      onPressed: () =>
+          _undo(id, action: outcome.checkedIn ? 'check_in' : 'check_out'),
     );
+  }
+
+  /// The Undo of an automatic punch (`today.auto_undo`, connector 2.66.0):
+  /// the same snackbar a manual punch gets, once per attendance row and
+  /// only while the window is open. The phone's own check-in/out is
+  /// confirmed by a push; this is for the employee who opens the app after.
+  void _offerAutoUndo(MyDay day) {
+    final offer = day.autoUndo;
+    if (offer == null ||
+        !DateTime.now().toUtc().isBefore(offer.undoUntil) ||
+        _undoneAttendanceIds.contains(offer.attendanceId) ||
+        _undoingAttendanceIds.contains(offer.attendanceId) ||
+        !_autoUndoShown.add(offer.attendanceId)) {
+      return;
+    }
+    ScaffoldMessenger.of(context)
+      ..removeCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(
+            offer.action == 'check_out'
+                ? 'Checked out automatically'
+                : 'Checked in automatically',
+          ),
+          backgroundColor: context.omni.brandFill,
+          persist: false,
+          duration: _undoDuration(offer.undoUntil),
+          action: SnackBarAction(
+            label: 'UNDO',
+            textColor: Colors.white,
+            onPressed: () =>
+                _undo(offer.attendanceId, action: offer.action, auto: true),
+          ),
+        ),
+      );
   }
 
   /// min(time left in the undo window, 10 s).
@@ -509,20 +550,30 @@ class MyDayScreenState extends State<MyDayScreen> {
 
   /// Spec §4.4: the server deletes the stray check-in (or reopens the
   /// check-out) and answers with the status, applied before the reload.
-  Future<void> _undo(int attendanceId) async {
+  /// [action] (`check_in` | `check_out`) is the punch being undone (AA-F03);
+  /// [auto] marks an automatic punch, so the phone's auto attendance knows
+  /// the next app open may check in again. A 409 `undo_not_last` is final:
+  /// the text says so and nothing is resent.
+  Future<void> _undo(
+    int attendanceId, {
+    required String action,
+    bool auto = false,
+  }) async {
     final messenger = ScaffoldMessenger.of(context);
     final api = _api();
+    final autoService = auto ? context.read<AutoAttendanceService?>() : null;
     _undoingAttendanceIds.add(attendanceId);
     try {
-      final status = await api.undoPunch(attendanceId);
+      final status = await api.undoPunch(attendanceId, action: action);
       _undoneAttendanceIds.add(attendanceId);
       _controller?.applyStatus(status);
+      autoService?.onAutoUndone();
     } catch (e) {
       if (!mounted) return;
       messenger.removeCurrentSnackBar();
       messenger.showSnackBar(
         SnackBar(
-          content: Text(friendlyError(e)),
+          content: Text(friendlyError(e, context: ErrorContext.attendance)),
           backgroundColor: context.omni.errorFill,
         ),
       );
@@ -557,7 +608,7 @@ class MyDayScreenState extends State<MyDayScreen> {
     );
     if (!mounted || answer == null) return;
     if (answer.code == 'undo') {
-      await _undo(ask.attendanceId);
+      await _undo(ask.attendanceId, action: 'check_in');
       return;
     }
     if (nothingToDeclare.contains(answer.code)) return;

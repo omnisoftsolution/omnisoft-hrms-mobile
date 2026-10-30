@@ -9,7 +9,7 @@ void main() {
       text('undo_expired'),
       'It is too late to undo this punch. Ask HR to correct it.',
     );
-    expect(text('undo_not_last'), 'Only your latest punch can be undone.');
+    expect(text('undo_not_last'), 'That punch was already undone.');
     expect(
       text('bad_time'),
       "That time doesn't fit this punch. Pick another time.",
@@ -23,6 +23,26 @@ void main() {
     expect(
       text('invalid_answer'),
       'That answer is no longer available. Pull down to refresh.',
+    );
+  });
+
+  test('busy_retry: attendance context says Please try again.', () {
+    final e = ApiException('busy_retry');
+    expect(
+      friendlyError(e, context: ErrorContext.attendance),
+      'Please try again.',
+    );
+    // Every other screen keeps its wording.
+    expect(
+      friendlyError(e),
+      'Someone else is updating this request. Try again.',
+    );
+    expect(
+      friendlyError(
+        ApiException('undo_not_last'),
+        context: ErrorContext.attendance,
+      ),
+      'That punch was already undone.',
     );
   });
 }

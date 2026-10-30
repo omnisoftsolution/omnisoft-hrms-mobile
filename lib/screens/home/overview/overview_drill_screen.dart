@@ -57,7 +57,7 @@ DrillRowText drillRowText(OverviewRow r, {DateTime? today}) {
       return DrillRowText(
         line: _join([
           r.department,
-          punchSourceLabel(r.source, r.kioskName ?? ''),
+          punchSourceLabel(r.source, r.kioskName ?? '', auto: r.auto),
           r.location ?? '',
         ]),
         time: r.firstIn ?? '',
