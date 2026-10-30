@@ -725,6 +725,11 @@ class MyDayScreenState extends State<MyDayScreen> {
                   : (_controller!.hasPlace && !_controller!.isOutside),
             ),
           ),
+        if (attendanceOn && autoService != null)
+          ListenableBuilder(
+            listenable: autoService,
+            builder: (context, _) => _autoLine(context, autoService),
+          ),
         Expanded(
           child: RefreshIndicator(
             onRefresh: refresh,
@@ -792,6 +797,56 @@ class MyDayScreenState extends State<MyDayScreen> {
   }
 
   /// Holiday / leave / day-off facts in place of the timeline (spec §4.4).
+  /// One line under the status tile: what automatic check-in is doing.
+  /// Nothing while it is off, turned off here or not set up (the setup card
+  /// covers those).
+  Widget _autoLine(BuildContext context, AutoAttendanceService auto) {
+    final c = context.omni;
+    final office = auto.config?.office.name ?? '';
+    final String text;
+    final bool paused;
+    switch (auto.state) {
+      case AutoPhoneState.on:
+        text = office.isEmpty
+            ? 'Auto check-in on'
+            : 'Auto check-in on · $office';
+        paused = false;
+      case AutoPhoneState.waitingWifi:
+        text = 'Waiting for office Wi-Fi';
+        paused = false;
+      case AutoPhoneState.needsAlways:
+        text = 'Paused';
+        paused = true;
+      case AutoPhoneState.off:
+      case AutoPhoneState.optedOut:
+      case AutoPhoneState.needsSetup:
+        return const SizedBox.shrink();
+    }
+    final color = paused ? c.warning : c.textSub;
+    return Padding(
+      key: const ValueKey('auto-line'),
+      padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+      child: Row(
+        children: [
+          Icon(
+            paused ? Icons.pause_circle_outline_rounded : Icons.my_location,
+            size: 14,
+            color: color,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              text,
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: color),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _offCard(BuildContext context, MyDay day) {
     final text = Theme.of(context).textTheme;
     final off = day.off!;

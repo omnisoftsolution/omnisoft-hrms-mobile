@@ -8,6 +8,7 @@ import '../../core/constants.dart';
 import '../../core/datetime_utils.dart';
 import '../../core/error_messages.dart';
 import '../../core/omni_colors.dart';
+import '../../services/auto/auto_attendance_service.dart';
 import '../../services/biometric_auth_service.dart';
 import '../../services/face_recognition_service.dart';
 import '../../services/omni_mobile_api.dart';
@@ -17,6 +18,7 @@ import '../../services/session_service.dart';
 import '../../widgets/employee_avatar.dart';
 import '../../widgets/primary_button.dart';
 import '../../widgets/security_privacy_card.dart';
+import '../auto/auto_checkin_screen.dart';
 import '../login/company_settings_screen.dart';
 import '../login/login_screen.dart';
 import '../payroll/payslips_screen.dart';
@@ -37,6 +39,8 @@ class ProfileScreen extends StatelessWidget {
     final face = context.watch<FaceRecognitionService>();
     // Profile → Notifications only when the tenant sends pushes (§6.6).
     final push = context.watch<PushService>();
+    // Automatic check-in: only for employees HR switched it on for.
+    final auto = context.watch<AutoAttendanceService?>();
     final c = context.omni;
     return Scaffold(
       appBar: AppBar(
@@ -72,6 +76,10 @@ class ProfileScreen extends StatelessWidget {
           if (push.available) ...[
             const SizedBox(height: 16),
             _notificationsCard(context),
+          ],
+          if (auto != null && auto.config != null) ...[
+            const SizedBox(height: 16),
+            _autoCheckinCard(context, auto),
           ],
           if (_hasAnyApprover(session)) ...[
             const SizedBox(height: 16),
@@ -612,6 +620,68 @@ class ProfileScreen extends StatelessWidget {
                 Icons.chevron_right_rounded,
                 color: c.textSub,
               ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _autoCheckinCard(BuildContext context, AutoAttendanceService auto) {
+    final c = context.omni;
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        key: const ValueKey('profile-auto-checkin'),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => AutoCheckinScreen(auto: auto)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: c.button.withValues(alpha: 0.15),
+                ),
+                child: Icon(
+                  Icons.my_location_rounded,
+                  size: 22,
+                  color: c.accent,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Automatic check-in',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      autoStateWord(
+                        auto.state,
+                        office: auto.config?.office.name,
+                      ),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: c.textSub,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(Icons.chevron_right_rounded, color: c.textSub),
             ],
           ),
         ),
