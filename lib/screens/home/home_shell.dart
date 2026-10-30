@@ -16,6 +16,7 @@ import '../leave/leave_screen.dart';
 import '../notifications/notification_tap.dart';
 import '../notifications/notifications_screen.dart';
 import '../../core/omni_colors.dart';
+import '../../core/push_groups.dart';
 import '../../models/notification_record.dart';
 import '../../services/face_recognition_service.dart';
 import '../../services/holiday_service.dart';
@@ -183,15 +184,21 @@ class HomeShellState extends State<HomeShell> {
       // ignore: discarded_futures — fire-and-forget
       context.read<SessionService>().refreshMe();
     }
-    final arrivals = push.consumeArrivals();
+    final myDay = _myDayKey.currentState;
+    final plan = arrivalPlan(
+      push.consumeArrivals(),
+      myDayOnScreen: _index == 0 && myDay != null,
+    );
+    if (plan.refreshMyDay) unawaited(myDay?.refresh());
+    final snack = plan.snack;
     final messenger = _scaffoldMessengerKey.currentState;
-    if (arrivals.isNotEmpty && messenger != null) {
+    if (snack != null && messenger != null) {
       _arrivalSnack.replaced();
       messenger
         ..removeCurrentSnackBar()
         ..showSnackBar(
           pushArrivalSnackBar(
-            arrivals.first,
+            snack,
             onOpen: () => unawaited(navigateToMyDay()),
             colors: context.omni,
           ),
@@ -620,6 +627,32 @@ SnackBar notificationArrivalSnackBar(
         )
       : null,
 );
+
+/// What HomeShell does with the pushes that arrived while the app is open
+/// ([arrivals] newest first): reload My day and/or show [snack].
+class ArrivalPlan {
+  const ArrivalPlan({this.refreshMyDay = false, this.snack});
+
+  final bool refreshMyDay;
+  final PushArrival? snack;
+}
+
+/// An automatic punch's confirmation with My day on screen reloads My day,
+/// which then offers its own Undo (device test 2026-10-30: My day kept
+/// "No check-in" and the Undo window ran out unseen); its "Open" snackbar
+/// is left out, the Undo bar takes its place. Elsewhere, and for
+/// reminders, the newest arrival's snackbar as before.
+ArrivalPlan arrivalPlan(
+  List<PushArrival> arrivals, {
+  required bool myDayOnScreen,
+}) {
+  if (arrivals.isEmpty) return const ArrivalPlan();
+  final refresh =
+      myDayOnScreen && arrivals.any((a) => isAutoConfirmationKind(a.kind));
+  final newest = arrivals.first;
+  final skip = myDayOnScreen && isAutoConfirmationKind(newest.kind);
+  return ArrivalPlan(refreshMyDay: refresh, snack: skip ? null : newest);
+}
 
 /// The snackbar for a push-only notice (a check-in / check-out reminder)
 /// that arrives while the app is open (spec 2026-10-11 §6.4): the push's

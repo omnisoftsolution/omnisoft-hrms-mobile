@@ -70,10 +70,12 @@ const reminderPushKinds = {'remind_check_in', 'remind_check_out'};
 
 bool isReminderKind(String kind) => reminderPushKinds.contains(kind);
 
-/// Push-only confirmations of an automatic punch (connector 2.66.0): no
-/// bell row either. They are not reminders ([isReminderKind] stays false),
-/// but a tap and a foreground arrival go to Home like a reminder's
-/// ([opensHomeKind]). `auto_recheck` is silent and never shown.
+/// Confirmations of an automatic punch (connector 2.66.0). The connector
+/// also writes a bell row for them (its tap opens My day). They are not
+/// reminders ([isReminderKind] stays false), but a tap and a foreground
+/// arrival go to Home like a reminder's ([opensHomeKind]; on My day the
+/// arrival reloads it instead, [arrivalPlan]). `auto_recheck` is silent and
+/// never shown.
 const autoConfirmationPushKinds = {'auto_checked_in', 'auto_checked_out'};
 
 bool isAutoConfirmationKind(String kind) =>

@@ -40,6 +40,46 @@ void main() {
     expect(opened, 1);
   });
 
+  // Device test 2026-10-30: an automatic check-in arrived while My day was
+  // open; My day kept "No check-in" and its Undo window ran out unseen.
+  group('arrivalPlan', () {
+    const auto = PushArrival(
+      kind: 'auto_checked_in',
+      title: 'Checked in automatically · 16:57',
+      body: '',
+    );
+
+    test('automatic punch with My day on screen: reload it, no snackbar', () {
+      final plan = arrivalPlan([auto], myDayOnScreen: true);
+      expect(plan.refreshMyDay, isTrue);
+      expect(plan.snack, isNull);
+    });
+
+    test('automatic punch elsewhere: the Open snackbar, no reload', () {
+      final plan = arrivalPlan([auto], myDayOnScreen: false);
+      expect(plan.refreshMyDay, isFalse);
+      expect(plan.snack, same(auto));
+    });
+
+    test('a reminder keeps its snackbar on My day', () {
+      final plan = arrivalPlan([_arrival], myDayOnScreen: true);
+      expect(plan.refreshMyDay, isFalse);
+      expect(plan.snack, same(_arrival));
+    });
+
+    test('a newer reminder over an automatic punch: reload and snackbar', () {
+      final plan = arrivalPlan([_arrival, auto], myDayOnScreen: true);
+      expect(plan.refreshMyDay, isTrue);
+      expect(plan.snack, same(_arrival));
+    });
+
+    test('nothing arrived: nothing to do', () {
+      final plan = arrivalPlan(const [], myDayOnScreen: true);
+      expect(plan.refreshMyDay, isFalse);
+      expect(plan.snack, isNull);
+    });
+  });
+
   testWidgets('it goes away by itself', (tester) async {
     await tester.pumpWidget(_host(() {}));
     await tester.tap(find.text('ARRIVE'));

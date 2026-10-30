@@ -170,6 +170,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       'expense_refused' => Icons.receipt_long_rounded,
       'attendance_query' => Icons.help_outline,
       'attendance_declaration_applied' => Icons.event_available,
+      'auto_checked_in' || 'auto_checked_out' => Icons.my_location_rounded,
       _ => Icons.notifications_rounded,
     };
     final iconColor = switch (n.kind) {
@@ -181,6 +182,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       'expense_refused' => c.error,
       'attendance_query' => c.secondary,
       'attendance_declaration_applied' => c.accent,
+      'auto_checked_in' || 'auto_checked_out' => c.accent,
       _ => c.textMuted,
     };
     final created = n.createDate;

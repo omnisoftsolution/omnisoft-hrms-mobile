@@ -88,6 +88,23 @@ void main() {
       expect(taps, ['myday']);
     });
 
+    // Device test 2026-10-30: connector 2.66.0 also writes a bell row for
+    // an automatic punch ("Not right? Open My day to undo…"); its tap only
+    // marked it read.
+    testWidgets('an automatic check-in or check-out opens My day', (
+      tester,
+    ) async {
+      await tap(
+        tester,
+        _n(16, 'auto_checked_in', payload: const {'attendance_id': 68}),
+      );
+      await tap(
+        tester,
+        _n(17, 'auto_checked_out', payload: const {'attendance_id': 68}),
+      );
+      expect(taps, ['myday', 'myday']);
+    });
+
     testWidgets('an announcement is only marked read', (tester) async {
       await tap(tester, _n(15, 'announcement', payload: const {'announcement_id': 4}));
       expect(bell.marked, [15]);

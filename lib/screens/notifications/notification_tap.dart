@@ -83,7 +83,7 @@ Future<void> handleNotificationTap(
       );
     return;
   }
-  if (n.isDeclarationApplied) {
+  if (n.isDeclarationApplied || n.isAutoPunch) {
     targets.onMyDayTap?.call();
     return;
   }

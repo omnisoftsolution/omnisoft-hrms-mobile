@@ -30,6 +30,11 @@ class NotificationRecord {
   /// HR applied the employee's declared time (connector 2.54.0).
   bool get isDeclarationApplied => kind == 'attendance_declaration_applied';
 
+  /// "Checked in / out automatically" (connector 2.66.0): its Undo is on
+  /// My day.
+  bool get isAutoPunch =>
+      kind == 'auto_checked_in' || kind == 'auto_checked_out';
+
   /// Tap-through hint: where the app should send the user.
   ///
   /// Returns the leave id when this is a leave_* notification, else null.
