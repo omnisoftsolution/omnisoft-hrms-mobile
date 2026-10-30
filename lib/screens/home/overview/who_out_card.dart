@@ -224,19 +224,24 @@ class WhoOutCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.baseline,
             textBaseline: TextBaseline.alphabetic,
             children: [
-              Expanded(
-                child: Text(
-                  OverviewCopy.whoOut,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: c.textSub,
-                  ),
+              Text(
+                OverviewCopy.whoOut,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: c.textSub,
                 ),
               ),
-              Text(
-                OverviewCopy.everyoneIn(scopeLabel),
-                style: TextStyle(fontSize: 12, color: c.textMuted),
+              const SizedBox(width: 12),
+              // A long company name shortens itself; the title keeps its line.
+              Expanded(
+                child: Text(
+                  OverviewCopy.everyoneIn(scopeLabel),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.end,
+                  style: TextStyle(fontSize: 12, color: c.textMuted),
+                ),
               ),
             ],
           ),
