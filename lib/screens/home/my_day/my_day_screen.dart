@@ -725,10 +725,6 @@ class MyDayScreenState extends State<MyDayScreen> {
                   : (_controller!.hasPlace && !_controller!.isOutside),
             ),
           ),
-        // Automatic check-in setup (1.36.0); nothing without the service
-        // (older tests) and gone once it is on.
-        if (attendanceOn && autoService != null)
-          AutoSetupCard(auto: autoService),
         Expanded(
           child: RefreshIndicator(
             onRefresh: refresh,
@@ -741,6 +737,11 @@ class MyDayScreenState extends State<MyDayScreen> {
                 16 + MediaQuery.of(context).viewPadding.bottom,
               ),
               children: [
+                // Automatic check-in setup (1.36.0); nothing without the
+                // service (older tests) and gone once it is on. In the list,
+                // so a short screen scrolls instead of overflowing.
+                if (attendanceOn && autoService != null)
+                  AutoSetupCard(auto: autoService),
                 if (!attendanceOn) ...[
                   const FeatureLockedPane(
                     featureName: 'Attendance',

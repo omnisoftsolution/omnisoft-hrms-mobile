@@ -83,6 +83,27 @@ void main() {
       }
     });
 
+    testWidgets('needsSetup says it needs this phone: no button, no request', (
+      tester,
+    ) async {
+      final perm = _Perm([]);
+      await tester.pumpWidget(
+        _cardApp(FakeAuto(initial: AutoPhoneState.needsSetup), perm),
+      );
+      expect(find.byKey(_card), findsOneWidget);
+      expect(find.text('Automatic check-in'), findsOneWidget);
+      expect(find.text(autoNeedsThisPhoneText), findsOneWidget);
+      expect(
+        autoNeedsThisPhoneText,
+        'Automatic check-in needs this phone to be your signed-in phone. Sign '
+        'out and sign in again on this phone, then come back here.',
+      );
+      expect(find.byKey(const ValueKey('auto-setup-button')), findsNothing);
+      expect(find.byType(FilledButton), findsNothing);
+      expect(find.textContaining('Always'), findsNothing);
+      expect(perm.steps, isEmpty);
+    });
+
     testWidgets('hides for on, waitingWifi and off', (tester) async {
       for (final s in [
         AutoPhoneState.on,
@@ -281,26 +302,88 @@ void main() {
   });
 
   group('result', () {
-    testWidgets('paused when Always is denied; Try again asks again', (
+    testWidgets('Try again goes back to the disclosure, then asks again', (
       tester,
     ) async {
       final auto = FakeAuto(); // stays needsAlways after sync
-      final perm = _Perm(['while_using', 'denied', 'always']);
+      final perm = _Perm(['denied', 'always']);
+      await tester.pumpWidget(_screenApp(auto, perm));
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
+      expect(find.text('Automatic check-in is paused'), findsOneWidget);
+      expect(find.text('Open settings'), findsNothing);
+
+      await tester.tap(find.text('Try again'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(_disclosure), findsOneWidget);
+      expect(perm.steps, ['while_using']); // nothing asked before Continue
+
+      auto.afterSync = AutoPhoneState.on;
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
+      expect(perm.steps, ['while_using', 'while_using']);
+      expect(find.textContaining("You're set"), findsOneWidget);
+    });
+
+    testWidgets('while using blocked offers Open settings, not Try again', (
+      tester,
+    ) async {
+      final auto = FakeAuto();
+      final perm = _Perm(['blocked']);
+      await tester.pumpWidget(_screenApp(auto, perm));
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
+      expect(find.text('Automatic check-in is paused'), findsOneWidget);
+      expect(find.text('Try again'), findsNothing);
+      expect(find.text('Open settings'), findsOneWidget);
+
+      auto.afterSync = AutoPhoneState.on;
+      await tester.tap(find.text('Open settings'));
+      await tester.pumpAndSettle();
+      expect(perm.steps, ['while_using', 'settings']);
+      expect(auto.syncs, 1); // waits for the user to come back
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+      expect(auto.syncs, 2);
+      expect(find.textContaining("You're set"), findsOneWidget);
+    });
+
+    testWidgets('iPhone: Always declined offers Open settings; still paused '
+        'after a resume keeps it', (tester) async {
+      final auto = FakeAuto();
+      final perm = _Perm(['while_using', 'while_using']);
       await tester.pumpWidget(_screenApp(auto, perm));
       await tester.tap(find.text('Continue'));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('auto-always-button')));
       await tester.pumpAndSettle();
       expect(find.text('Automatic check-in is paused'), findsOneWidget);
-      expect(find.textContaining("You're set"), findsNothing);
+      expect(find.text('Try again'), findsNothing);
+      expect(find.text('Open settings'), findsOneWidget);
       expect(auto.syncs, 1);
 
-      auto.afterSync = AutoPhoneState.on;
-      await tester.tap(find.text('Try again'));
+      await tester.tap(find.text('Open settings'));
       await tester.pumpAndSettle();
-      expect(perm.steps, ['while_using', 'always', 'while_using']);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
       expect(auto.syncs, 2);
-      expect(find.textContaining("You're set"), findsOneWidget);
+      expect(find.text('Open settings'), findsOneWidget);
+      expect(find.textContaining("You're set"), findsNothing);
+    });
+
+    testWidgets('a session that is not this phone\'s says so, with no retry', (
+      tester,
+    ) async {
+      final auto = FakeAuto()..afterSync = AutoPhoneState.needsSetup;
+      await tester.pumpWidget(_screenApp(auto, _Perm(['always'])));
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
+      expect(find.text('Automatic check-in is paused'), findsOneWidget);
+      expect(find.text(autoNeedsThisPhoneText), findsOneWidget);
+      expect(find.textContaining('set to Always'), findsNothing);
+      expect(find.text('Try again'), findsNothing);
+      expect(find.text('Open settings'), findsNothing);
     });
 
     testWidgets('waiting for Wi-Fi counts as set', (tester) async {
@@ -350,10 +433,25 @@ void main() {
       expect(find.text('Automatic check-in is paused'), findsOneWidget);
       expect(tester.takeException(), isNull);
 
+      // Declined for good: Open settings, then back from the settings.
+      expect(find.text('Open settings'), findsOneWidget);
       auto.afterSync = AutoPhoneState.on;
-      await tester.tap(find.text('Try again'));
+      await tester.tap(find.text('Open settings'));
+      await tester.pumpAndSettle();
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await tester.pumpAndSettle();
       expect(find.textContaining("You're set"), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      // The needs-this-phone card and result under the dark theme too.
+      await tester.pumpWidget(
+        _cardApp(
+          FakeAuto(initial: AutoPhoneState.needsSetup),
+          _Perm([]),
+          mode: ThemeMode.dark,
+        ),
+      );
+      expect(find.text(autoNeedsThisPhoneText), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   });

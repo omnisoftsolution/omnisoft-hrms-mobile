@@ -17,6 +17,7 @@ import 'package:omni_hr/models/my_day.dart';
 import 'package:omni_hr/screens/home/my_day/check_in_out_screen.dart';
 import 'package:omni_hr/screens/home/my_day/declaration_sheet.dart';
 import 'package:omni_hr/screens/home/my_day/my_day_screen.dart';
+import 'package:omni_hr/screens/home/my_day/week_strip.dart';
 import 'package:omni_hr/services/attendance_action_controller.dart';
 import 'package:omni_hr/services/auto/auto_attendance_service.dart';
 import 'package:omni_hr/services/face_recognition_service.dart';
@@ -387,27 +388,51 @@ void main() {
     expect(find.text(_banner), findsNothing);
   });
 
-  testWidgets('automatic check-in card sits right below the status tile', (
-    tester,
-  ) async {
+  testWidgets('automatic check-in card is the list\'s first row, below the '
+      'status tile', (tester) async {
     _tallScreen(tester);
     SharedPreferencesAsyncPlatform.instance =
         InMemorySharedPreferencesAsync.empty();
     final auto = FakeAuto();
     await tester.pumpWidget(_host(_FakeApi([sampleMyDay()]), auto: auto));
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('auto-setup-card')), findsOneWidget);
+    final cardFinder = find.byKey(const ValueKey('auto-setup-card'));
+    expect(
+      find.descendant(of: find.byType(ListView), matching: cardFinder),
+      findsOneWidget,
+    );
     final tile = tester.getBottomLeft(
       find.byKey(const ValueKey('status-tile')),
     );
-    final card = tester.getTopLeft(
-      find.byKey(const ValueKey('auto-setup-card')),
-    );
+    final card = tester.getTopLeft(cardFinder);
     expect(card.dy, greaterThan(tile.dy));
     expect(card.dy - tile.dy, lessThan(40));
+    // Above the week strip, which follows in the same list.
+    expect(
+      card.dy,
+      lessThan(tester.getTopLeft(find.byType(WeekStrip)).dy),
+    );
     auto.setState(AutoPhoneState.on);
     await tester.pump();
-    expect(find.byKey(const ValueKey('auto-setup-card')), findsNothing);
+    expect(cardFinder, findsNothing);
+  });
+
+  testWidgets('a short, narrow screen with the card shows no overflow', (
+    tester,
+  ) async {
+    // Short enough that a card in the fixed column above the list would
+    // push the list out; the card is in the list, so it scrolls.
+    tester.view.physicalSize = const Size(360, 400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    SharedPreferencesAsyncPlatform.instance =
+        InMemorySharedPreferencesAsync.empty();
+    await tester.pumpWidget(
+      _host(_FakeApi([sampleMyDay()]), auto: FakeAuto()),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(const ValueKey('auto-setup-card')), findsOneWidget);
   });
 
   testWidgets('sections in order: tile, week, timeline, for you', (

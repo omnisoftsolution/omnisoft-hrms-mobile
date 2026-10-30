@@ -6,10 +6,17 @@ import '../../services/auto/auto_attendance_service.dart';
 import 'auto_setup_screen.dart';
 
 /// Asks the system for one location step and answers the permission the
-/// phone has afterwards: `always`, `while_using` or `denied`. [step] is
-/// `while_using`, `always` or `settings` (opens the app's system settings,
-/// Android's only way to "Allow all the time").
+/// phone has afterwards: `always`, `while_using`, `denied` (may be asked
+/// again) or `blocked` (denied for good: only the system settings can
+/// change it). [step] is `while_using`, `always` or `settings` (opens the
+/// app's system settings, Android's only way to "Allow all the time").
 typedef AutoPermissionRequest = Future<String> Function(String step);
+
+/// What the card and the result say when the session is not this phone's
+/// (`needsSetup`, `device_required`): a location permission cannot fix it.
+const autoNeedsThisPhoneText =
+    'Automatic check-in needs this phone to be your signed-in phone. Sign '
+    'out and sign in again on this phone, then come back here.';
 
 /// The real [AutoPermissionRequest]; widget tests pass a fake instead so
 /// nothing touches a platform channel.
@@ -25,13 +32,16 @@ Future<String> requestAutoPermission(String step) async {
     }
     if (await Permission.locationAlways.isGranted) return 'always';
     if (await Permission.locationWhenInUse.isGranted) return 'while_using';
+    if (await Permission.locationWhenInUse.isPermanentlyDenied) {
+      return 'blocked';
+    }
   } catch (_) {
     // Treated as not granted; the sync after the flow reads the truth.
   }
   return 'denied';
 }
 
-/// "Automatic check-in" card on My day, right below the status tile. Shows
+/// "Automatic check-in" card at the top of My day's list. Shows
 /// while the phone still needs setting up (or the employee turned it off
 /// here) and is gone once it is on.
 class AutoSetupCard extends StatelessWidget {
@@ -66,8 +76,9 @@ class AutoSetupCard extends StatelessWidget {
         final text = Theme.of(context).textTheme;
         final office = auto.config?.office.name ?? 'your office';
         final optedOut = state == AutoPhoneState.optedOut;
+        final needsPhone = state == AutoPhoneState.needsSetup;
         return Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+          padding: const EdgeInsets.only(bottom: 16),
           child: Container(
             key: const ValueKey('auto-setup-card'),
             width: double.infinity,
@@ -87,33 +98,40 @@ class AutoSetupCard extends StatelessWidget {
                       color: c.onAccentTint,
                     ),
                     const SizedBox(width: 8),
-                    Text(
-                      'Automatic check-in',
-                      style: text.titleMedium?.copyWith(
-                        color: c.onAccentTint,
-                        fontWeight: FontWeight.w700,
+                    Expanded(
+                      child: Text(
+                        'Automatic check-in',
+                        style: text.titleMedium?.copyWith(
+                          color: c.onAccentTint,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  optedOut
+                  needsPhone
+                      ? autoNeedsThisPhoneText
+                      : optedOut
                       ? 'Automatic check-in is off on this phone. Turn it on '
                             'and Omni HR checks you in and out at $office.'
                       : 'Your HR turned it on. Set it up once and Omni HR '
                             'checks you in and out at $office.',
                   style: text.bodyMedium?.copyWith(color: c.onAccentTint),
                 ),
-                const SizedBox(height: 16),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: FilledButton(
-                    key: const ValueKey('auto-setup-button'),
-                    onPressed: () => _onPressed(context, optedOut),
-                    child: Text(optedOut ? 'Turn on' : 'Set up'),
+                // A permission cannot fix a session that is not this phone's.
+                if (!needsPhone) ...[
+                  const SizedBox(height: 16),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: FilledButton(
+                      key: const ValueKey('auto-setup-button'),
+                      onPressed: () => _onPressed(context, optedOut),
+                      child: Text(optedOut ? 'Turn on' : 'Set up'),
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ),
@@ -126,11 +144,9 @@ class AutoSetupCard extends StatelessWidget {
     final navigator = Navigator.of(context);
     if (optedOut) {
       await auto.turnOnAgain();
-      // On again: nothing more to do unless the permission is missing.
-      final s = auto.state;
-      if (s != AutoPhoneState.needsAlways && s != AutoPhoneState.needsSetup) {
-        return;
-      }
+      // On again: nothing more to do unless the permission is missing (a
+      // session that is not this phone's shows its own card text).
+      if (auto.state != AutoPhoneState.needsAlways) return;
     }
     await navigator.push<void>(
       MaterialPageRoute(

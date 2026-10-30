@@ -37,6 +37,12 @@ class _AutoSetupScreenState extends State<AutoSetupScreen>
   _Step _step = _Step.disclosure;
   bool _set = false;
 
+  /// The session is not this phone's (`needsSetup`): no permission helps.
+  bool _needsPhone = false;
+
+  /// Location is denied for good: only the phone's settings can change it.
+  bool _blocked = false;
+
   /// Android: the phone's settings were opened, so a resume re-checks.
   bool _openedSettings = false;
 
@@ -59,13 +65,14 @@ class _AutoSetupScreenState extends State<AutoSetupScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed &&
         _openedSettings &&
-        _step == _Step.alwaysAndroid) {
+        (_step == _Step.alwaysAndroid || _step == _Step.result)) {
       _openedSettings = false;
-      _finish();
+      // Back from the settings and still not Always: they stay on offer.
+      _finish(blocked: true);
     }
   }
 
-  /// Continue / Try again: the while-in-use request, then the Always step.
+  /// Continue: the while-in-use request, then the Always step.
   Future<void> _ask() async {
     setState(() => _step = _Step.checking);
     final word = await widget.requestPermission('while_using');
@@ -73,16 +80,25 @@ class _AutoSetupScreenState extends State<AutoSetupScreen>
     if (word == 'while_using') {
       setState(() => _step = _ios ? _Step.alwaysIos : _Step.alwaysAndroid);
     } else {
-      await _finish();
+      await _finish(blocked: word == 'blocked');
     }
   }
 
   Future<void> _askAlways() async {
     setState(() => _step = _Step.checking);
-    await widget.requestPermission('always');
+    final word = await widget.requestPermission('always');
     if (!mounted) return;
-    await _finish();
+    // Asked once and not Always: the phone does not ask again, so only the
+    // settings are left.
+    await _finish(blocked: word != 'always');
   }
+
+  /// Try again goes back to the disclosure, so it is read before every
+  /// request (Play's prominent disclosure).
+  void _again() => setState(() {
+    _blocked = false;
+    _step = _Step.disclosure;
+  });
 
   Future<void> _openSettings() async {
     _openedSettings = true;
@@ -91,13 +107,15 @@ class _AutoSetupScreenState extends State<AutoSetupScreen>
 
   /// The permission changed (or the user gave up): tell the service and
   /// show what it says.
-  Future<void> _finish() async {
+  Future<void> _finish({bool blocked = false}) async {
     if (mounted) setState(() => _step = _Step.checking);
     await widget.auto.sync();
     if (!mounted) return;
     final s = widget.auto.state;
     setState(() {
       _set = s == AutoPhoneState.on || s == AutoPhoneState.waitingWifi;
+      _needsPhone = s == AutoPhoneState.needsSetup;
+      _blocked = blocked;
       _step = _Step.result;
     });
   }
@@ -235,16 +253,28 @@ class _AutoSetupScreenState extends State<AutoSetupScreen>
                 Text('Automatic check-in is paused', style: title),
                 const SizedBox(height: 12),
                 Text(
-                  'Omni HR needs your location set to Always to check you '
-                  'in at $_office. You can still check in yourself.',
+                  _needsPhone
+                      ? autoNeedsThisPhoneText
+                      : 'Omni HR needs your location set to Always to check '
+                            'you in at $_office. You can still check in '
+                            'yourself.',
                   style: sub,
                 ),
                 const SizedBox(height: 32),
-                FilledButton(
-                  key: const ValueKey('auto-retry-button'),
-                  onPressed: _ask,
-                  child: const Text('Try again'),
-                ),
+                if (_needsPhone)
+                  const SizedBox.shrink()
+                else if (_blocked)
+                  FilledButton(
+                    key: const ValueKey('auto-settings-button'),
+                    onPressed: _openSettings,
+                    child: const Text('Open settings'),
+                  )
+                else
+                  FilledButton(
+                    key: const ValueKey('auto-retry-button'),
+                    onPressed: _again,
+                    child: const Text('Try again'),
+                  ),
                 const SizedBox(height: 8),
                 TextButton(
                   onPressed: () => Navigator.of(context).maybePop(),
