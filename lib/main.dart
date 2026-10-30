@@ -8,6 +8,7 @@ import 'core/constants.dart';
 import 'core/theme.dart';
 import 'services/face_recognition_service.dart';
 import 'services/holiday_service.dart';
+import 'services/auto/auto_attendance_service.dart';
 import 'services/notification_service.dart';
 import 'services/omni_mobile_api.dart';
 import 'services/push_service.dart';
@@ -55,7 +56,15 @@ void main() async {
     messaging: await _startFirebase(),
     notifications: notifications,
   );
-  session.onSessionClearing = push.onSessionCleared;
+  // Automatic check-in (1.36.0): it syncs itself on every sign-in (session
+  // listener); app start and resume call sync() below.
+  final auto = AutoAttendanceService(session: session);
+  // Before every sign-out, while the session is intact: push unregisters
+  // and automatic check-in disarms. Both run at once, each best effort.
+  session.onSessionClearing = () => Future.wait([
+    _quietly(push.onSessionCleared),
+    _quietly(auto.onSessionClearing),
+  ]);
   unawaited(push.onSignedIn(session));
   // Channels and listeners only; the launch message (a tapped push) is
   // looked up in the background, so a stalled lookup never holds the
@@ -68,6 +77,7 @@ void main() async {
       biometric: biometric,
       push: push,
       notifications: notifications,
+      auto: auto,
     ),
   );
   // iPhone Duo fold / camera / hinge (ios/Runner/DuoPlugin.swift): the
@@ -75,6 +85,13 @@ void main() async {
   WidgetsBinding.instance.addPostFrameCallback(
     (_) => unawaited(DuoService.instance.start()),
   );
+}
+
+/// Runs one sign-out step; its failure never stops the others.
+Future<void> _quietly(Future<void> Function() step) async {
+  try {
+    await step();
+  } catch (_) {}
 }
 
 /// Firebase for push notifications (spec 2026-10-11 §6.1). A failure
@@ -96,12 +113,14 @@ class OmniHrApp extends StatefulWidget {
   final BiometricAuthService biometric;
   final PushService push;
   final NotificationService notifications;
+  final AutoAttendanceService auto;
   const OmniHrApp({
     super.key,
     required this.session,
     required this.biometric,
     required this.push,
     required this.notifications,
+    required this.auto,
   });
 
   @override
@@ -125,7 +144,7 @@ class _OmniHrAppState extends State<OmniHrApp> with WidgetsBindingObserver {
     // the admin/HR made while the app was closed. Fire-and-forget;
     // we don't block the first frame on a network round-trip.
     _refreshSubscriptionInBackground();
-    _refreshMeInBackground();
+    _refreshMeThenSyncAuto(appStart: true);
   }
 
   void _openActivation(ActivationArgs a) {
@@ -153,7 +172,7 @@ class _OmniHrAppState extends State<OmniHrApp> with WidgetsBindingObserver {
       // while admin toggled a feature or HR updated the employee
       // record" case.
       _refreshSubscriptionInBackground();
-      _refreshMeInBackground();
+      _refreshMeThenSyncAuto();
       unawaited(widget.push.onResumed());
     }
   }
@@ -179,6 +198,17 @@ class _OmniHrAppState extends State<OmniHrApp> with WidgetsBindingObserver {
     await s.refreshMe();
   }
 
+  /// `/me` first (it carries HR's automatic check-in switch), then brings
+  /// automatic check-in in step with it — also when `/me` failed.
+  Future<void> _refreshMeThenSyncAuto({bool appStart = false}) async {
+    try {
+      await _refreshMeInBackground();
+    } catch (_) {
+      // Cached fields stay; sync with what the session has.
+    }
+    await widget.auto.sync(appStart: appStart);
+  }
+
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
@@ -189,6 +219,7 @@ class _OmniHrAppState extends State<OmniHrApp> with WidgetsBindingObserver {
         ChangeNotifierProvider(create: (_) => HolidayService()),
         ChangeNotifierProvider(create: (_) => FaceRecognitionService()),
         ChangeNotifierProvider.value(value: widget.notifications),
+        ChangeNotifierProvider.value(value: widget.auto),
       ],
       child: MaterialApp(
         navigatorKey: _navigatorKey,

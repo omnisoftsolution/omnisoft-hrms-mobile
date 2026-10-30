@@ -279,6 +279,7 @@ PushService pushService({
   Duration signOutCap = const Duration(seconds: 2),
   Duration teardownWaitCap = const Duration(seconds: 30),
   Duration initialMessageTimeout = const Duration(seconds: 3),
+  Future<void> Function(Map<String, dynamic> data)? autoRecheck,
 }) => PushService(
   messaging: messaging,
   pushNative: pushNative ?? FakeNative(),
@@ -293,6 +294,7 @@ PushService pushService({
   signOutCap: signOutCap,
   teardownWaitCap: teardownWaitCap,
   initialMessageTimeout: initialMessageTimeout,
+  autoRecheck: autoRecheck ?? (_) async {},
 );
 
 /// The bell as PushService sees it: counts re-polls, fixed unread count.

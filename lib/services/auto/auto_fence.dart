@@ -11,6 +11,10 @@ abstract class GeofencePort {
   Future<List<ActiveGeofence>> registered();
   Future<void> create(Geofence g);
   Future<void> removeById(String id);
+
+  /// Registers every region the plugin has persisted with the OS again
+  /// (Android drops them on an app update; Ruling R9).
+  Future<void> reCreateAll();
 }
 
 /// The real plugin. A thin wrapper (platform channel), not unit-tested.
@@ -46,6 +50,12 @@ class NativeGeofencePort implements GeofencePort {
   Future<void> removeById(String id) async {
     await _ready();
     await NativeGeofenceManager.instance.removeGeofenceById(id);
+  }
+
+  @override
+  Future<void> reCreateAll() async {
+    await _ready();
+    await NativeGeofenceManager.instance.reCreateAfterReboot();
   }
 }
 
@@ -113,6 +123,10 @@ class AutoFence {
       if (_isOurs(g.id, db)) await _port.removeById(g.id);
     }
   }
+
+  /// Re-registers the plugin's persisted regions with the OS (Android after
+  /// an app update; Ruling R9). Throws what the plugin throws.
+  Future<void> reCreateAll() => _port.reCreateAll();
 
   static double _round6(double v) => double.parse(v.toStringAsFixed(6));
 

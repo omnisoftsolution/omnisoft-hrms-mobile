@@ -97,6 +97,33 @@ void main() {
     expect(bell.refreshes, 0);
   });
 
+  test('a foreground auto_recheck goes to the automatic check-in and shows '
+      'nothing', () async {
+    final rechecks = <Map<String, dynamic>>[];
+    final s = await signedInSession();
+    final push = pushService(
+      messaging: fcm,
+      log: log,
+      pushNative: native,
+      notifications: bell,
+      autoRecheck: (data) async => rechecks.add(data),
+    );
+    await push.onSignedIn(s);
+    await push.init();
+    native.calls.clear();
+
+    final data = <String, dynamic>{
+      'kind': 'auto_recheck',
+      'company_code': 'ACME',
+    };
+    await push.handleForeground(data);
+
+    expect(rechecks, [data]);
+    expect(push.consumeArrivals(), isEmpty);
+    expect(bell.refreshes, 0);
+    expect(native.calls, isEmpty);
+  });
+
   // Review fix round 1 (ledger A3): the connector always sends a title,
   // but an empty one must not leave an empty bold line.
   test('a reminder without a title gets its kind\'s title (the connector '

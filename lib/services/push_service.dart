@@ -125,7 +125,9 @@ class PushService extends ChangeNotifier {
     Duration signOutCap = const Duration(seconds: 2),
     Duration teardownWaitCap = const Duration(seconds: 30),
     Duration initialMessageTimeout = const Duration(seconds: 3),
+    Future<void> Function(Map<String, dynamic> data)? autoRecheck,
   }) : _messaging = messaging,
+       _autoRecheck = autoRecheck ?? handleAutoRecheck,
        _native = pushNative ?? PushNative.instance,
        _apiBuilder = apiBuilder ?? _targetApi,
        _notifications = notifications,
@@ -151,6 +153,9 @@ class PushService extends ChangeNotifier {
   static const signedInKey = 'push_signed_in';
 
   final PushMessaging? _messaging;
+
+  /// A foreground `auto_recheck` push ([handleAutoRecheck]; test seam).
+  final Future<void> Function(Map<String, dynamic> data) _autoRecheck;
   final PushNative _native;
   final PushApiBuilder _apiBuilder;
   final String _platform;
@@ -756,12 +761,17 @@ class PushService extends ChangeNotifier {
   /// signed out, no sign-out running). No system banner: a notice re-polls
   /// the bell (its arrival snackbar follows), a reminder is queued for
   /// HomeShell's snackbar, a `remove` takes the notification off, applies
-  /// the badge and re-polls the bell.
+  /// the badge and re-polls the bell. A silent `auto_recheck` goes to
+  /// [handleAutoRecheck] (as in the background) and shows nothing.
   Future<void> handleForeground(
     Map<String, dynamic> data, {
     String? title,
     String? body,
   }) async {
+    if (data['kind'] == 'auto_recheck') {
+      await _autoRecheck(data);
+      return;
+    }
     final s = _session;
     if (s == null ||
         !s.isLoggedIn ||

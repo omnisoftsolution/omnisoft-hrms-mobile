@@ -34,6 +34,11 @@ class _FakePort implements GeofencePort {
     store.remove(id);
   }
 
+  int reCreated = 0;
+
+  @override
+  Future<void> reCreateAll() async => reCreated++;
+
   /// A region the plugin knows without this fake having created it.
   void seed(String id, {double lat = 1.3, double lng = 103.8, double r = 100}) {
     store[id] = Geofence(
