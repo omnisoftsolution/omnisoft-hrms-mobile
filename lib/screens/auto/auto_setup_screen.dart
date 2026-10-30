@@ -53,22 +53,40 @@ class _AutoSetupScreenState extends State<AutoSetupScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    widget.auto.addListener(_onAuto);
   }
 
   @override
   void dispose() {
+    widget.auto.removeListener(_onAuto);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
+  bool get _pausedResult => _step == _Step.result && !_set && !_needsPhone;
+
+  /// iOS may answer the Always request before "Change to Always Allow" is
+  /// tapped (device test 2026-10-30): a later sync that finds the phone set
+  /// turns the paused result into the set one.
+  void _onAuto() {
+    final s = widget.auto.state;
+    if (_pausedResult &&
+        (s == AutoPhoneState.on || s == AutoPhoneState.waitingWifi)) {
+      setState(() => _set = true);
+    }
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed &&
-        _openedSettings &&
+    if (state != AppLifecycleState.resumed) return;
+    if (_openedSettings &&
         (_step == _Step.alwaysAndroid || _step == _Step.result)) {
       _openedSettings = false;
       // Back from the settings and still not Always: they stay on offer.
       _finish(blocked: true);
+    } else if (_pausedResult) {
+      // Back from a system dialog answered after the request returned.
+      _finish(blocked: _blocked);
     }
   }
 

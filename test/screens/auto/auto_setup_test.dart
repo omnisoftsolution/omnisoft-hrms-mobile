@@ -372,6 +372,44 @@ void main() {
       expect(find.textContaining("You're set"), findsNothing);
     });
 
+    // Device test 2026-10-30 (iPhone 12, iOS 26.5): the Always request
+    // returned before "Change to Always Allow" was tapped, so the screen
+    // showed paused while the phone was in fact set.
+    testWidgets('iPhone: Always granted after the request returned — the '
+        'paused result follows the service', (tester) async {
+      final auto = FakeAuto();
+      final perm = _Perm(['while_using', 'while_using']);
+      await tester.pumpWidget(_screenApp(auto, perm));
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('auto-always-button')));
+      await tester.pumpAndSettle();
+      expect(find.text('Automatic check-in is paused'), findsOneWidget);
+
+      auto.setState(AutoPhoneState.on); // another sync saw Always
+      await tester.pumpAndSettle();
+      expect(find.text("You're set. Omni HR checks you in at HQ."), findsOneWidget);
+    });
+
+    testWidgets('iPhone: a resume on the paused result re-checks', (
+      tester,
+    ) async {
+      final auto = FakeAuto();
+      final perm = _Perm(['while_using', 'while_using']);
+      await tester.pumpWidget(_screenApp(auto, perm));
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('auto-always-button')));
+      await tester.pumpAndSettle();
+      expect(auto.syncs, 1);
+
+      auto.afterSync = AutoPhoneState.on; // the dialog was answered late
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+      expect(auto.syncs, 2);
+      expect(find.textContaining("You're set"), findsOneWidget);
+    });
+
     testWidgets('a session that is not this phone\'s says so, with no retry', (
       tester,
     ) async {
