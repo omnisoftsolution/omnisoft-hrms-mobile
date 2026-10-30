@@ -97,8 +97,12 @@ class SessionService extends ChangeNotifier {
   /// Read by the push background handler, which has no SessionService.
   static const companyCodePrefsKey = 'company_code';
   static const _keyCompanyCode = companyCodePrefsKey;
-  static const _keyClientUrl = 'client_url';
-  static const _keyClientDb = 'client_db';
+  /// Read by the automatic check-in background wake (no SessionService
+  /// there either), like [companyCodePrefsKey].
+  static const clientUrlPrefsKey = 'client_url';
+  static const clientDbPrefsKey = 'client_db';
+  static const _keyClientUrl = clientUrlPrefsKey;
+  static const _keyClientDb = clientDbPrefsKey;
   // SaaS-side subscription feature flags. Persisted with company
   // routing — they come from /resolve_company, not from /login.
   // Default true so a fresh install (or upgrade from a previous build
@@ -121,11 +125,14 @@ class SessionService extends ChangeNotifier {
 
   // Keys: login session (cleared on logout)
   static const _keyAccessToken = 'access_token';
-  static const _keyExpiresAt = 'expires_at';
+  /// Read by the automatic check-in background wake (see [clientUrlPrefsKey]).
+  static const expiresAtPrefsKey = 'expires_at';
+  static const employeeIdPrefsKey = 'employee_id';
+  static const _keyExpiresAt = expiresAtPrefsKey;
   static const _keyUserId = 'user_id';
   static const _keyUserLogin = 'user_login';
   static const _keyUserName = 'user_name';
-  static const _keyEmployeeId = 'employee_id';
+  static const _keyEmployeeId = employeeIdPrefsKey;
   static const _keyEmployeeName = 'employee_name';
   static const _keyEmployeeAvatarB64 = 'employee_avatar_b64';
   static const _keyEmployeeJobTitle = 'employee_job_title';
@@ -154,7 +161,8 @@ class SessionService extends ChangeNotifier {
   // (connector 2.66.0+), as JSON. Part of the login session: cleared by
   // clearSession(). A background isolate reads this pref, so the key and
   // the JSON shape (AutoAttendanceConfig.toJson) are a contract.
-  static const _kAutoAttendance = 'employee_auto_attendance';
+  static const autoAttendancePrefsKey = 'employee_auto_attendance';
+  static const _kAutoAttendance = autoAttendancePrefsKey;
 
   // Keys: team leave + Team overview flags from the /login and /me
   // `employee` block (connector 2.65.0+). Part of the login session:
@@ -427,7 +435,7 @@ class SessionService extends ChangeNotifier {
     _authSource = prefs.getString(_kAuthSource) ?? '';
     _deviceLabel = prefs.getString(_kDeviceLabel) ?? '';
     _attendanceKioskOnly = prefs.getBool(_kAttendanceKioskOnly) ?? false;
-    _autoAttendance = _decodeAutoAttendance(prefs.getString(_kAutoAttendance));
+    _autoAttendance = decodeAutoAttendance(prefs.getString(_kAutoAttendance));
     _attendanceTracked = prefs.getBool(_kAttendanceTracked) ?? false;
     _overviewAccess =
         _oneOf(prefs.getString(_kOverviewAccess), _overviewAccessValues, 'none');
@@ -954,8 +962,9 @@ class SessionService extends ChangeNotifier {
     if (changed) notifyListeners();
   }
 
-  /// The stored block, or null when absent or not parseable.
-  static AutoAttendanceConfig? _decodeAutoAttendance(String? raw) {
+  /// The stored block, or null when absent or not parseable. Also used by
+  /// the automatic check-in background wake.
+  static AutoAttendanceConfig? decodeAutoAttendance(String? raw) {
     if (raw == null || raw.isEmpty) return null;
     try {
       return AutoAttendanceConfig.fromJson(jsonDecode(raw));
@@ -1143,7 +1152,10 @@ class SessionService extends ChangeNotifier {
   ///   persisted as the session refresh token.
   /// - [RefreshOutcome.invalid]: the server refused it (`refresh_invalid`,
   ///   e.g. device revoked or token expired) or there was no token to
-  ///   use; the session refresh token is forgotten.
+  ///   use; the session refresh token is forgotten — unless
+  ///   [forgetOnRefusal] is false (the automatic check-in background wake:
+  ///   it never changes the session on a refusal; the foreground deals
+  ///   with it).
   /// - [RefreshOutcome.failed]: any other error (network, timeout,
   ///   server error); the refresh token is kept so a retry can succeed.
   ///
@@ -1151,15 +1163,16 @@ class SessionService extends ChangeNotifier {
   /// [refreshAccessTokenWith], which holds all the logic and is
   /// unit-testable with a fake api (no real HTTP).
   Future<RefreshOutcome> refreshAccessToken(String deviceId,
-      {String? refreshToken}) {
+      {String? refreshToken, bool forgetOnRefusal = true}) {
     final api = OmniMobileApi(baseUrl: _clientUrl, db: _clientDb, token: '');
-    return refreshAccessTokenWith(api, deviceId, refreshToken: refreshToken);
+    return refreshAccessTokenWith(api, deviceId,
+        refreshToken: refreshToken, forgetOnRefusal: forgetOnRefusal);
   }
 
   @visibleForTesting
   Future<RefreshOutcome> refreshAccessTokenWith(
       OmniMobileApi api, String deviceId,
-      {String? refreshToken}) async {
+      {String? refreshToken, bool forgetOnRefusal = true}) async {
     final token = (refreshToken != null && refreshToken.isNotEmpty)
         ? refreshToken
         : _refreshToken;
@@ -1206,6 +1219,7 @@ class SessionService extends ChangeNotifier {
       return RefreshOutcome.ok;
     } on ApiException catch (e) {
       if (e.errorCode != 'refresh_invalid') return RefreshOutcome.failed;
+      if (!forgetOnRefusal) return RefreshOutcome.invalid;
       await _persisting(() async {
         _refreshToken = '';
         try {

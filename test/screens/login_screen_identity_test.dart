@@ -52,9 +52,10 @@ class _Session extends SessionService {
 
   @override
   Future<RefreshOutcome> refreshAccessToken(String deviceId,
-      {String? refreshToken}) {
+      {String? refreshToken, bool forgetOnRefusal = true}) {
     calls.add('refresh');
-    return refreshAccessTokenWith(api, deviceId, refreshToken: refreshToken);
+    return refreshAccessTokenWith(api, deviceId,
+        refreshToken: refreshToken, forgetOnRefusal: forgetOnRefusal);
   }
 
   @override

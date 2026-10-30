@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../core/push_groups.dart';
 import '../models/notification_record.dart';
 import '../models/push_prefs.dart';
+import 'auto/auto_background.dart';
 import 'notification_service.dart';
 import 'omni_mobile_api.dart';
 import 'push_native.dart';
@@ -1085,14 +1086,21 @@ Future<bool> storedSignedIn({
 /// `remove` needs work (the system shows `show` pushes itself), and only
 /// for this phone's tenant — checked before anything is cancelled. Its
 /// badge is applied only while a session is signed in (checked again
-/// after the removal, with the tenant).
+/// after the removal, with the tenant). A silent `auto_recheck` (automatic
+/// check-in, connector 2.66.0) goes to [handleAutoRecheck] and shows
+/// nothing; [autoRecheck] is its test seam.
 @visibleForTesting
 Future<void> handleBackgroundData(
   Map<String, dynamic> data, {
   PushNative? pushNative,
   Future<String> Function()? companyCode,
   Future<bool> Function()? signedIn,
+  Future<void> Function(Map<String, dynamic> data)? autoRecheck,
 }) async {
+  if (data['kind'] == 'auto_recheck') {
+    await (autoRecheck ?? handleAutoRecheck)(data);
+    return;
+  }
   if (data['action'] != 'remove') return;
   final code = companyCode ?? storedCompanyCode;
   if (!isForThisTenant(data, await code())) return;

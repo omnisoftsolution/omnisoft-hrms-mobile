@@ -6,7 +6,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// each attendance entry. Falls back to a generated UUID stored in
 /// SharedPreferences when the OS-provided id isn't available.
 class DeviceService {
-  static const _prefKey = 'omni_hr_device_id';
+  /// Read by the automatic check-in background wake, which must use the id
+  /// already stored (never mint a new one there).
+  static const prefsKey = 'omni_hr_device_id';
+  static const _prefKey = prefsKey;
   static String? _cached;
 
   Future<String> getDeviceId() async {
