@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/constants.dart';
+import '../models/auto_attendance_config.dart';
 import '../models/company_info.dart';
 import 'my_day_memory.dart';
 import 'omni_mobile_api.dart';
@@ -148,6 +150,12 @@ class SessionService extends ChangeNotifier {
   static const _kDeviceLabel = 'device_label';
   static const _kAttendanceKioskOnly = 'attendance_kiosk_only';
 
+  // Automatic check-in/out block of the /login and /me `employee` payload
+  // (connector 2.66.0+), as JSON. Part of the login session: cleared by
+  // clearSession(). A background isolate reads this pref, so the key and
+  // the JSON shape (AutoAttendanceConfig.toJson) are a contract.
+  static const _kAutoAttendance = 'employee_auto_attendance';
+
   // Keys: team leave + Team overview flags from the /login and /me
   // `employee` block (connector 2.65.0+). Part of the login session:
   // cleared by clearSession(). A missing key (older connector) means
@@ -207,6 +215,7 @@ class SessionService extends ChangeNotifier {
   String _employeeAttendanceApprover = '';
   String _employeeExpenseApprover = '';
   bool _attendanceKioskOnly = false;
+  AutoAttendanceConfig? _autoAttendance;
   bool _attendanceTracked = false;
   String _overviewAccess = 'none';
   String _teamLeaveSource = 'off';
@@ -286,6 +295,11 @@ class SessionService extends ChangeNotifier {
   /// 2.51.0+). The Home tab then shows My day instead of the check-in
   /// home. A connector that does not send the key reads as false.
   bool get attendanceKioskOnly => _attendanceKioskOnly;
+
+  /// HR switched automatic check-in/out on for this employee and an office
+  /// is set (`employee.auto_attendance`, connector 2.66.0+). Null = off,
+  /// also for a connector that does not send the block.
+  AutoAttendanceConfig? get autoAttendance => _autoAttendance;
 
   /// The employee punches attendance at all (`employee.attendance_tracked`
   /// = the connector's `kiosk_enabled`, 2.65.0+). False when the key is
@@ -413,6 +427,7 @@ class SessionService extends ChangeNotifier {
     _authSource = prefs.getString(_kAuthSource) ?? '';
     _deviceLabel = prefs.getString(_kDeviceLabel) ?? '';
     _attendanceKioskOnly = prefs.getBool(_kAttendanceKioskOnly) ?? false;
+    _autoAttendance = _decodeAutoAttendance(prefs.getString(_kAutoAttendance));
     _attendanceTracked = prefs.getBool(_kAttendanceTracked) ?? false;
     _overviewAccess =
         _oneOf(prefs.getString(_kOverviewAccess), _overviewAccessValues, 'none');
@@ -626,6 +641,7 @@ class SessionService extends ChangeNotifier {
     await _persisting(() async {
       if (_authEpoch != epoch) return;
       await _writeAttendanceKioskOnly(employee);
+      await _writeAutoAttendance(employee);
       await _writeTeamFlags(employee);
       _authSource = res['auth_source']?.toString() ?? '';
       _deviceLabel = _labelOf(res);
@@ -919,6 +935,35 @@ class SessionService extends ChangeNotifier {
     if (changed) notifyListeners();
   }
 
+  /// `employee.auto_attendance` from a /login or /me body. A missing,
+  /// null or unusable block (an older connector, or automatic attendance
+  /// off for this employee) removes the stored one. The caller holds the
+  /// persistence lock.
+  Future<void> _writeAutoAttendance(Map<String, dynamic> employee) async {
+    final config = AutoAttendanceConfig.fromJson(employee['auto_attendance']);
+    final encoded = config == null ? null : jsonEncode(config.toJson());
+    final changed = encoded !=
+        (_autoAttendance == null ? null : jsonEncode(_autoAttendance!.toJson()));
+    _autoAttendance = config;
+    final prefs = await SharedPreferences.getInstance();
+    if (encoded == null) {
+      await prefs.remove(_kAutoAttendance);
+    } else {
+      await prefs.setString(_kAutoAttendance, encoded);
+    }
+    if (changed) notifyListeners();
+  }
+
+  /// The stored block, or null when absent or not parseable.
+  static AutoAttendanceConfig? _decodeAutoAttendance(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      return AutoAttendanceConfig.fromJson(jsonDecode(raw));
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// The team leave + Team overview keys of a /login or /me `employee`
   /// block (connector 2.65.0+). A missing key (an older connector, or one
   /// rolled back) resets to false / 'none' / 'off'; an unknown value
@@ -1032,6 +1077,7 @@ class SessionService extends ChangeNotifier {
     _authSource = '';
     _deviceLabel = '';
     _attendanceKioskOnly = false;
+    _autoAttendance = null;
     _attendanceTracked = false;
     _overviewAccess = 'none';
     _teamLeaveSource = 'off';
@@ -1057,6 +1103,7 @@ class SessionService extends ChangeNotifier {
     await prefs.remove(_kAuthSource);
     await prefs.remove(_kDeviceLabel);
     await prefs.remove(_kAttendanceKioskOnly);
+    await prefs.remove(_kAutoAttendance);
     await prefs.remove(_kAttendanceTracked);
     await prefs.remove(_kOverviewAccess);
     await prefs.remove(_kTeamLeaveSource);
@@ -1249,6 +1296,7 @@ class SessionService extends ChangeNotifier {
         );
         await _writeLeaveApprovalsFromMe(res);
         await _writeAttendanceKioskOnly(employee);
+        await _writeAutoAttendance(employee);
         await _writeTeamFlags(employee);
         await _writeFromMe(res);
         return true;
