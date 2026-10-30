@@ -184,10 +184,28 @@ void main() {
       expect((await api.postEvent(_event) as AutoFinal).error, 'not_enabled');
     });
 
-    test('4xx without a code -> AutoFinal(http_<status>)', () async {
-      final api = _api((_) async => http.Response('nope', 400));
+    test('JSON 4xx without a code -> AutoFinal(http_<status>)', () async {
+      final api = _api((_) async => _json({'success': false}, 400));
       expect((await api.postEvent(_event) as AutoFinal).error, 'http_400');
     });
+
+    for (final status in [400, 401, 403, 404, 408, 429]) {
+      test('non-JSON $status (proxy / old connector) -> AutoRetry', () async {
+        final api = _api(
+          (_) async => http.Response('<html>nginx</html>', status),
+        );
+        expect(await api.postEvent(_event), isA<AutoRetry>());
+      });
+    }
+
+    for (final status in [408, 429]) {
+      test('JSON $status -> AutoRetry', () async {
+        final api = _api(
+          (_) async => _json({'success': false, 'error': 'slow_down'}, status),
+        );
+        expect(await api.postEvent(_event), isA<AutoRetry>());
+      });
+    }
 
     for (final code in ['invalid_key', 'invalid_session', 'invalid_token']) {
       test('401 $code -> AutoKeyInvalid', () async {
@@ -198,8 +216,10 @@ void main() {
       });
     }
 
-    test('401 non-JSON -> AutoKeyInvalid', () async {
-      final api = _api((_) async => http.Response('', 401));
+    test('JSON 401 with any code -> AutoKeyInvalid', () async {
+      final api = _api(
+        (_) async => _json({'success': false, 'error': 'whatever'}, 401),
+      );
       expect(await api.postEvent(_event), isA<AutoKeyInvalid>());
     });
 

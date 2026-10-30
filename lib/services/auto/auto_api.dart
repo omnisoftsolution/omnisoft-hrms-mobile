@@ -124,13 +124,19 @@ class AutoApi {
     }
     final error = data?['error']?.toString();
 
-    if (status == 401) return const AutoKeyInvalid();
-    if (status == 409 || status == 422 || status >= 500) {
-      return AutoRetry(error ?? 'http_$status');
-    }
     if (data == null) {
-      // 2xx or 4xx that is not a JSON object: a proxy or error page.
-      return status >= 400 ? AutoFinal('http_$status') : AutoRetry('non_json');
+      // Not a JSON object, whatever the status (a proxy or error page, a bare
+      // 404 from a connector without the route): never a verdict on the
+      // event, so keep it and resend later.
+      return AutoRetry(status >= 400 ? 'http_$status' : 'non_json');
+    }
+    if (status == 401) return const AutoKeyInvalid();
+    if (status == 408 ||
+        status == 409 ||
+        status == 422 ||
+        status == 429 ||
+        status >= 500) {
+      return AutoRetry(error ?? 'http_$status');
     }
     if (status >= 400) return AutoFinal(error ?? 'http_$status');
     if (data['success'] == true) {
