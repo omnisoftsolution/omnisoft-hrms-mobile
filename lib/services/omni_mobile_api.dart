@@ -507,6 +507,22 @@ class OmniMobileApi {
     return NotificationRecord.fromJson(Map<String, dynamic>.from(n));
   }
 
+  // -- Automatic check-in (connector 2.66.0) --
+
+  /// Asks for this phone's automatic check-in key. Needs a device-bound
+  /// bearer session. Errors as on every route, e.g. `device_required`,
+  /// `not_enabled`, `feature_unavailable`, `busy_retry`. The events and the
+  /// status themselves go through `AutoApi`, not this class.
+  Future<({String key, String deviceId})> fetchAutoKey() async {
+    final data = await _post('/attendance/auto/key', const {});
+    final key = data['key'];
+    final deviceId = data['device_id'];
+    if (key is! String || key.isEmpty || deviceId is! String) {
+      throw ApiException('server_error', data: data);
+    }
+    return (key: key, deviceId: deviceId);
+  }
+
   // -- Push notifications (connector 2.63.0, spec 2026-10-11 §4.1) --
   //
   // All four are quiet (no onInvalidSession / onKioskOnly): PushService
