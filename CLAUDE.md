@@ -723,16 +723,19 @@ Release checklist (all steps need Willy, nothing is uploaded yet): `docs/auto-ch
   only when it is due (`autoRefreshDue`) and waits at most 8 s (`autoWakeRefreshLimit`) before sending the queue (F2).
   `OmniMobileApi.refresh` never fires `onInvalidSession`.
 - Play: the prominent disclosure must contain "location" and "even when the app is closed or not in use" (it does, `auto_setup_screen.dart`). The disclosure comes before the system permission prompt, also on "Try again".
-- Testing on a phone. iPhone: `xcrun devicectl device simulate location coordinate --device <udid> <lat> <lng>` and
-  `... simulate location clear`; **wait more than 1 minute after arming** before simulating a crossing (iOS initial-
+- Testing on a phone. iPhone: `xcrun devicectl device simulate location coordinate --device <udid> --latitude <lat>
+  --longitude <lng>` and `... simulate location clear --device <udid>` (after a clear the phone keeps the simulated
+  position until a real fix comes; indoors it may show "GPS unavailable"); **wait more than 1 minute after arming**
+  before simulating a crossing (iOS initial-
   state window, L3). Samsung: `adb shell appops set com.android.shell android:mock_location allow`, then
   `adb shell cmd location providers add-test-provider gps|network|fused` (add `enable-test-provider`) and
   `adb shell cmd location providers set-test-provider-location gps --location <lat>,<lng> --accuracy 5`; clean up with
   `remove-test-provider` for each and `appops set com.android.shell android:mock_location deny`. Mock location is a
   **hard deny** for automatic events (spec §4.4, whatever the tenant's mock setting): an `adb` test-provider fix reports
   `isMocked`, so every such event comes back `rejected / mock_location` — it proves only wake → server; real walks are
-  the proof on Android. On iPhone geolocator reports `isMocked` false for `devicectl simulate location`, so simulated
-  walks can run end to end (confirm on the first try).
+  the proof on Android. **Same on iPhone** (device test 2026-10-30, iOS 26.5): a `devicectl simulate location` fix
+  reports `isMocked` true and comes back `rejected / mock_location`, so the punch, push and Undo need real walks on
+  both phones; simulated crossings still prove wake → server, the offline queue and the drop notice.
   Unit tests: `test/services/auto/`, `test/screens/auto/`, `test/models/auto_attendance_config_test.dart` (fakes by
   subclassing / implementing `GeofencePort`, `AutoApi`, `AutoKeyStore`; queue tests use the in-memory `SharedPreferencesAsync`
   platform).

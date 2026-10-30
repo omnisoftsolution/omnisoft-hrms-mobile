@@ -44,9 +44,9 @@ events (spec §4.4):
 - Samsung: a fix from an `adb` test provider reports `isMocked`, so every such event comes back `rejected /
   mock_location`. It proves only the wake → server path (the event row with that answer); real walks are the only
   proof of an automatic punch on Android.
-- iPhone: `devicectl ... simulate location` — geolocator reports `isMocked` false on iOS, so simulated walks can run
-  end to end (punch, push, Undo). Confirm that on the first try; if the event comes back `mock_location`, fall back to
-  real walks like Android.
+- iPhone: `devicectl ... simulate location` fixes are mocked too (checked 2026-10-30: `rejected / mock_location`), so
+  the punch, push and Undo need real walks on both phones. Simulated crossings still prove wake → server, the offline
+  queue and the drop notice.
 
 ## 3. A week on omnihrdemo
 - [ ] One week with real use by Willy (and any volunteer) on omnihrdemo; no missing / double punches, no battery
