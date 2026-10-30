@@ -339,12 +339,15 @@ class OmniMobileApi {
     ),
   );
 
+  /// Quiet (`fireHooks: false`): callers read the outcome, and the
+  /// background session refresh (AA-F06) must never sign the user out.
   Future<Map<String, dynamic>> refresh({
     required String refreshToken,
     required String deviceId,
-  }) => _post(
+  }) => _send(
     '/auth/refresh',
     buildRefreshBody(refreshToken: refreshToken, deviceId: deviceId),
+    fireHooks: false,
   );
 
   Future<List<Map<String, dynamic>>> devicesList() async {

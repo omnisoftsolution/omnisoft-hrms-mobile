@@ -273,6 +273,19 @@ void main() {
       expect(apiAuth, ['bearer:T']);
     });
 
+    test('an unreadable app version still gives a context (M4)', () async {
+      signedIn();
+      await AutoKeyStore().write('KEY', 'ios-dev-1', owner: 'acme|7');
+      final c = await AutoBackgroundContext.load(
+        asyncPrefs: prefs,
+        keyStore: AutoKeyStore(),
+        appVersion: () async => throw StateError('package_info'),
+      );
+      expect(c, isNotNull);
+      expect(c!.appVersion, '');
+      expect(c.autoKey, 'KEY');
+    });
+
     test('signed out → no context, nothing queued', () async {
       SharedPreferences.setMockInitialValues({
         // Company routing survives a sign-out; the employee does not.

@@ -158,13 +158,14 @@ class AutoAttendanceService extends ChangeNotifier {
   /// Bumped by [onSessionClearing]: a run that started before stops writing.
   int _epoch = 0;
 
-  /// `db|employee` while signed in, else ''. A change to a non-empty value
-  /// is a sign-in.
+  /// `db|employee|<HR's config>` while signed in, else ''. A change to a
+  /// non-empty value is a sign-in, or HR switching this employee on / off /
+  /// moving the office while the app is open (M2).
   String _seenSignIn = '';
 
   static String _signInOf(SessionService s) =>
       s.isLoggedIn && !s.isClearing && s.employeeId > 0
-      ? '${s.clientDb}|${s.employeeId}'
+      ? '${s.clientDb}|${s.employeeId}|${s.autoAttendance?.signature ?? '-'}'
       : '';
 
   void _onSessionChanged() {
@@ -556,18 +557,32 @@ class AutoAttendanceService extends ChangeNotifier {
   }
 
   /// Turns automatic check-in off on this phone only (lead decision L7).
+  /// Events still queued are dropped (M3): the employee switched them off,
+  /// so they are neither sent nor reported as dropped later. Never throws
+  /// (M6): a failed write leaves the state as it was.
   Future<void> turnOffOnThisPhone() async {
     final id = _session.employeeId;
     if (id <= 0) return;
-    await _prefs.setBool(autoOptedOutKey(id), true);
+    try {
+      await _prefs.setBool(autoOptedOutKey(id), true);
+      await _queue.clear();
+    } catch (e) {
+      _log('turn off not saved (${e.runtimeType})');
+      return;
+    }
     await sync();
   }
 
-  /// Undoes [turnOffOnThisPhone].
+  /// Undoes [turnOffOnThisPhone]. Never throws (M6).
   Future<void> turnOnAgain() async {
     final id = _session.employeeId;
     if (id <= 0) return;
-    await _prefs.remove(autoOptedOutKey(id));
+    try {
+      await _prefs.remove(autoOptedOutKey(id));
+    } catch (e) {
+      _log('turn on not saved (${e.runtimeType})');
+      return;
+    }
     await sync();
   }
 

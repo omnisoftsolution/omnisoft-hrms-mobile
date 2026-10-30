@@ -66,6 +66,27 @@ void main() {
     },
   );
 
+  test('refresh never fires onInvalidSession, even on invalid_session '
+      '(M1: it also runs from a background wake)', () async {
+    var signedOut = 0;
+    OmniMobileApi.onInvalidSession = () => signedOut++;
+    addTearDown(() => OmniMobileApi.onInvalidSession = null);
+    for (final code in [
+      'invalid_session',
+      'invalid_token',
+      'refresh_invalid',
+    ]) {
+      await expectLater(
+        withServer(
+          (_) async => json({'success': false, 'error': code}, 401),
+          () => api().refresh(refreshToken: 'R', deviceId: 'dev-1'),
+        ),
+        throwsA(isA<ApiException>().having((e) => e.errorCode, 'code', code)),
+      );
+    }
+    expect(signedOut, 0);
+  });
+
   test('a reply without a key or device id is an ApiException', () async {
     await expectLater(
       withServer(

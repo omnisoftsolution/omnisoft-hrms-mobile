@@ -102,7 +102,7 @@ class AutoBackgroundContext {
       baseUrl: baseUrl,
       db: db,
       deviceId: deviceId,
-      appVersion: await (appVersion ?? _appVersion)(),
+      appVersion: await _versionOrEmpty(appVersion ?? _appVersion),
       employeeId: employeeId,
       // Only this employee's key (F4); another one's (a sign-out whose
       // delete failed) is left for the foreground to delete and replace.
@@ -117,6 +117,16 @@ class AutoBackgroundContext {
 Future<String> _appVersion() async {
   await AppConstants.initAppVersion();
   return AppConstants.appVersion;
+}
+
+/// [read]'s answer, or '' when it throws (M4): a missing version must not
+/// cost the wake its event.
+Future<String> _versionOrEmpty(Future<String> Function() read) async {
+  try {
+    return await read();
+  } catch (_) {
+    return '';
+  }
 }
 
 /// Starts one wake: [handleAutoWake] itself, or a test fake.

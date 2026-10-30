@@ -62,6 +62,23 @@ class _FakeSession extends SessionService {
   int get employeeId => 7;
   @override
   AutoAttendanceConfig? get autoAttendance => config;
+
+  void changed() => notifyListeners();
+}
+
+/// Prefs whose opt-out writes throw (a full disk, a broken platform).
+class _OptOutThrowingPrefs extends SharedPreferencesAsync {
+  @override
+  Future<void> setBool(String key, bool value) {
+    if (key.startsWith('omni_auto_opted_out')) throw StateError('disk');
+    return super.setBool(key, value);
+  }
+
+  @override
+  Future<void> remove(String key) {
+    if (key.startsWith('omni_auto_opted_out')) throw StateError('disk');
+    return super.remove(key);
+  }
 }
 
 /// The key route only; answers [key] or throws [error].
@@ -303,6 +320,7 @@ void main() {
     Future<String> Function()? deviceIdSeam,
     AutoFence? fence,
     Duration clearingCap = const Duration(seconds: 2),
+    SharedPreferencesAsync? prefsOverride,
   }) => AutoAttendanceService(
     session: session,
     permission:
@@ -325,7 +343,7 @@ void main() {
         },
     platform: platform,
     queue: queue,
-    prefs: prefs,
+    prefs: prefsOverride ?? prefs,
     refresh: () async => log.add('refresh'),
     deviceId: deviceIdSeam ?? () async => 'dev-1',
     appVersion: () => appVersion,
@@ -731,6 +749,65 @@ void main() {
     expect(auto.state, AutoPhoneState.on);
     expect(port.store.keys, [_region]);
     expect(statuses.last['enabled'], true);
+  });
+
+  test('turning off on this phone drops the queued events (M3)', () async {
+    final auto = service();
+    await auto.sync(appStart: true);
+    await queue.add(
+      AutoEvent(
+        eventUid: 'a-1',
+        kind: AutoKind.leave,
+        eventAt: now,
+        isMocked: false,
+        deviceId: 'dev-1',
+        appVersion: '1.36.0',
+        source: AutoSource.geofence,
+      ),
+    );
+
+    await auto.turnOffOnThisPhone();
+    expect(await queue.ordered(), isEmpty);
+    expect(auto.state, AutoPhoneState.optedOut);
+  });
+
+  test('a prefs failure in turn off / turn on never reaches the button '
+      '(M6)', () async {
+    final auto = service(prefsOverride: _OptOutThrowingPrefs());
+    await auto.sync(appStart: true);
+    await expectLater(auto.turnOffOnThisPhone(), completes);
+    await expectLater(auto.turnOnAgain(), completes);
+  });
+
+  test('HR switching on / off while the app is open runs sync (M2)', () async {
+    session.config = null;
+    final auto = service();
+    await auto.sync(appStart: true);
+    expect(auto.state, AutoPhoneState.off);
+
+    // Only the session listener may start a run here.
+    Future<void> settle(AutoPhoneState want) async {
+      for (var i = 0; i < 200 && auto.state != want; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+    }
+
+    session.config = _config;
+    session.changed();
+    await settle(AutoPhoneState.on);
+    expect(auto.state, AutoPhoneState.on);
+    expect(port.store.keys, [_region]);
+
+    final runs = log.where((c) => c == 'permission').length;
+    session.changed(); // nothing changed: no extra run
+    await Future<void>.delayed(Duration.zero);
+    expect(log.where((c) => c == 'permission').length, runs);
+
+    session.config = null;
+    session.changed();
+    await settle(AutoPhoneState.off);
+    expect(auto.state, AutoPhoneState.off);
+    expect(port.store, isEmpty);
   });
 
   group('sign-out while a sync runs (review round 1)', () {

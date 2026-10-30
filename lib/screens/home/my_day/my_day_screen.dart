@@ -847,7 +847,6 @@ class MyDayScreenState extends State<MyDayScreen> {
     );
   }
 
-  /// Holiday / leave / day-off facts in place of the timeline (spec §4.4).
   /// One line under the status tile: what automatic check-in is doing.
   /// Nothing while it is off, turned off here or not set up (the setup card
   /// covers those).
@@ -898,6 +897,7 @@ class MyDayScreenState extends State<MyDayScreen> {
     );
   }
 
+  /// Holiday / leave / day-off facts in place of the timeline (spec §4.4).
   Widget _offCard(BuildContext context, MyDay day) {
     final text = Theme.of(context).textTheme;
     final off = day.off!;
