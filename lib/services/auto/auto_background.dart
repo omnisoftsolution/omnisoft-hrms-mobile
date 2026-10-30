@@ -100,7 +100,9 @@ class AutoBackgroundContext {
       deviceId: deviceId,
       appVersion: await (appVersion ?? _appVersion)(),
       employeeId: employeeId,
-      autoKey: await (keyStore ?? AutoKeyStore()).read(),
+      // Only this employee's key (F4); another one's (a sign-out whose
+      // delete failed) is left for the foreground to delete and replace.
+      autoKey: await (keyStore ?? AutoKeyStore()).readFor(db, employeeId),
       config: config,
     );
   }

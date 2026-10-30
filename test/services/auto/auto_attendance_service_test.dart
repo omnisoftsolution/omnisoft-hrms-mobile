@@ -456,9 +456,42 @@ void main() {
   });
 
   test('a stored key is not fetched again', () async {
-    await keyStore.write('K0', 'dev-1');
+    await keyStore.write('K0', 'dev-1', owner: 'acme|7');
     await service().sync();
     expect(log, isNot(contains('fetchKey')));
+  });
+
+  test('a fetched key is stored with its owner <db>|<employee>', () async {
+    await service().sync();
+    expect(await keyStore.read(), 'K1');
+    expect(await keyStore.owner(), 'acme|7');
+  });
+
+  group('a stored key of someone else (F4)', () {
+    for (final (what, owner) in [
+      ('another employee', 'acme|8'),
+      ('another company', 'other|7'),
+      ('no owner', null),
+    ]) {
+      test('$what → deleted, a new key is fetched and used', () async {
+        if (owner == null) {
+          // A key written before owners existed.
+          await const FlutterSecureStorage().write(
+            key: AutoKeyStore.keyName,
+            value: 'K0',
+          );
+        } else {
+          await keyStore.write('K0', 'dev-0', owner: owner);
+        }
+        final auto = service();
+        await auto.sync();
+
+        expect(log.where((c) => c == 'fetchKey'), hasLength(1));
+        expect(await keyStore.read(), 'K1');
+        expect(await keyStore.owner(), 'acme|7');
+        expect(auto.state, AutoPhoneState.on);
+      });
+    }
   });
 
   test('not_enabled on key fetch → state off', () async {
@@ -507,7 +540,7 @@ void main() {
   test('session clearing wipes queue, key and fence', () async {
     port.seed(_region);
     port.seed('omni_office_other_7');
-    await keyStore.write('K0', 'dev-1');
+    await keyStore.write('K0', 'dev-1', owner: 'acme|7');
     await queue.add(
       AutoEvent(
         eventUid: 'a-1',
@@ -673,7 +706,7 @@ void main() {
   });
 
   test('an invalid key is deleted and fetched once more', () async {
-    await keyStore.write('K0', 'dev-1');
+    await keyStore.write('K0', 'dev-1', owner: 'acme|7');
     sender.outcomes.add(FlushOutcome.keyInvalid);
     await service().sync();
 
@@ -785,7 +818,7 @@ void main() {
 
     test('a stalled plugin holds the sign-out no longer than the cap; the '
         'rest is still wiped', () async {
-      await keyStore.write('K0', 'dev-1');
+      await keyStore.write('K0', 'dev-1', owner: 'acme|7');
       await prefs.setString(autoLastStateKey, autoStateInside);
       final stalled = _StalledPort();
       final auto = service(

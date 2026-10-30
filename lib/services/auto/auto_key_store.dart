@@ -13,6 +13,10 @@ class AutoKeyStore {
 
   static const keyName = 'omni_auto_key';
   static const deviceKeyName = 'omni_auto_key_device';
+  static const ownerKeyName = 'omni_auto_key_owner';
+
+  /// Whose key it is: `<db>|<employeeId>`.
+  static String ownerOf(String db, int employeeId) => '$db|$employeeId';
 
   static const _ios = IOSOptions(
     accessibility: KeychainAccessibility.first_unlock,
@@ -27,12 +31,33 @@ class AutoKeyStore {
   /// The device id the key was issued to, or null (same rules as [read]).
   Future<String?> deviceId() => _read(deviceKeyName);
 
-  Future<void> write(String key, String deviceId) async {
+  /// Whose key it is ([ownerOf]), or null (same rules as [read]).
+  Future<String?> owner() => _read(ownerKeyName);
+
+  /// The stored key when it belongs to employee [employeeId] of [db], else
+  /// null. A sign-out whose delete failed or stalled can leave the previous
+  /// employee's key behind; it must never post for the next one (F4). A key
+  /// without an owner counts as someone else's.
+  Future<String?> readFor(String db, int employeeId) async {
+    final key = await read();
+    if (key == null || key.isEmpty) return null;
+    return await owner() == ownerOf(db, employeeId) ? key : null;
+  }
+
+  /// Stores [key] for [owner] (see [ownerOf]). The owner is written last: a
+  /// reader in between sees no owner, which counts as "no key".
+  Future<void> write(
+    String key,
+    String deviceId, {
+    required String owner,
+  }) async {
     await _storage.write(key: keyName, value: key, iOptions: _ios);
     await _storage.write(key: deviceKeyName, value: deviceId, iOptions: _ios);
+    await _storage.write(key: ownerKeyName, value: owner, iOptions: _ios);
   }
 
   Future<void> delete() async {
+    await _storage.delete(key: ownerKeyName, iOptions: _ios);
     await _storage.delete(key: keyName, iOptions: _ios);
     await _storage.delete(key: deviceKeyName, iOptions: _ios);
   }

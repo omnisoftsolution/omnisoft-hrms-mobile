@@ -297,7 +297,7 @@ class AutoAttendanceService extends ChangeNotifier {
       _log('refresh failed (${e.runtimeType})');
     }
     if (_stale(epoch)) return;
-    final key = await _ensureKey(epoch);
+    final key = await _ensureKey(db, employeeId, epoch);
     if (_stale(epoch)) return;
     if (key == _KeyResult.notEnabled) {
       await _disarm(db, epoch, permission);
@@ -342,7 +342,7 @@ class AutoAttendanceService extends ChangeNotifier {
       if (_stale(epoch)) return;
     }
 
-    await _flush(epoch);
+    await _flush(db, employeeId, epoch);
     if (_stale(epoch)) return;
 
     final waiting = armedState == AutoPhoneState.on && await _waitingWifi();
@@ -400,18 +400,30 @@ class AutoAttendanceService extends ChangeNotifier {
     ]);
   }
 
-  /// The stored key, else one fetched with the bearer session.
-  Future<_KeyResult> _ensureKey(int epoch) async {
+  /// The stored key when it is this employee's, else one fetched with the
+  /// bearer session. A stored key of someone else (or without an owner) is
+  /// deleted first (F4).
+  Future<_KeyResult> _ensureKey(String db, int employeeId, int epoch) async {
     final stored = await _keyStore.read();
     if (stored != null && stored.isNotEmpty) {
-      _key = stored;
-      return _KeyResult.ok;
+      if (await _keyStore.owner() == AutoKeyStore.ownerOf(db, employeeId)) {
+        _key = stored;
+        return _KeyResult.ok;
+      }
+      if (_stale(epoch)) return _KeyResult.failed;
+      _log('stored key belongs to another sign-in; fetching a new one');
+      await _keyStore.delete();
     }
     _key = null;
+    if (_stale(epoch)) return _KeyResult.failed;
     try {
       final got = await _apiBuilder(_session).fetchAutoKey();
       if (_stale(epoch)) return _KeyResult.failed;
-      await _keyStore.write(got.key, got.deviceId);
+      await _keyStore.write(
+        got.key,
+        got.deviceId,
+        owner: AutoKeyStore.ownerOf(db, employeeId),
+      );
       if (_stale(epoch)) return _KeyResult.failed;
       _key = got.key;
       return _KeyResult.ok;
@@ -525,12 +537,13 @@ class AutoAttendanceService extends ChangeNotifier {
   }
 
   /// Sends the queue; a refused key is deleted and fetched once more.
-  Future<void> _flush(int epoch) async {
+  Future<void> _flush(String db, int employeeId, int epoch) async {
     final outcome = await _sender.flush();
     if (outcome != FlushOutcome.keyInvalid || _stale(epoch)) return;
     _key = null;
     await _keyStore.delete();
-    if (await _ensureKey(epoch) == _KeyResult.ok && !_stale(epoch)) {
+    if (await _ensureKey(db, employeeId, epoch) == _KeyResult.ok &&
+        !_stale(epoch)) {
       await _sender.flush();
     }
   }

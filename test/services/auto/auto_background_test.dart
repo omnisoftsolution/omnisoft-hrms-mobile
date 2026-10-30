@@ -234,7 +234,7 @@ void main() {
 
     test('a signed-in phone loads the context with the key', () async {
       signedIn();
-      await AutoKeyStore().write('KEY', 'ios-dev-1');
+      await AutoKeyStore().write('KEY', 'ios-dev-1', owner: 'acme|7');
       final c = await load();
       expect(c, isNotNull);
       expect(c!.baseUrl, 'https://acme.example');
@@ -244,6 +244,33 @@ void main() {
       expect(c.appVersion, '1.36.0');
       expect(c.autoKey, 'KEY');
       expect(c.config!.office.areaM, 150);
+    });
+
+    test('a key of another employee or company, or without an owner, is not '
+        'used (F4): no key, the wake falls back to bearer / queue', () async {
+      signedIn();
+      for (final owner in ['acme|8', 'other|7', null]) {
+        if (owner == null) {
+          await AutoKeyStore().delete();
+          await const FlutterSecureStorage().write(
+            key: AutoKeyStore.keyName,
+            value: 'KEY',
+          );
+        } else {
+          await AutoKeyStore().write('KEY', 'ios-dev-1', owner: owner);
+        }
+        final c = await load();
+        expect(c, isNotNull, reason: '$owner');
+        expect(c!.autoKey, isNull, reason: '$owner');
+      }
+
+      await wake(
+        kind: AutoKind.arrive,
+        source: AutoSource.geofence,
+        loadContext: load,
+        bearer: () async => 'T',
+      );
+      expect(apiAuth, ['bearer:T']);
     });
 
     test('signed out → no context, nothing queued', () async {
