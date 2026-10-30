@@ -54,6 +54,11 @@ const autoArmedAppVersionKey = 'omni_auto_armed_app_version';
 /// key or a status may exist that the off path has to clean (Ruling R21).
 const autoEngagedKey = 'omni_auto_engaged';
 
+/// `omni_auto_fence_pending_<db>`: a sign-out could not confirm removing that
+/// db's regions; the next sync (anyone signed in, or no one) retries it. It
+/// survives the sign-out wipe.
+const autoFencePendingPrefix = 'omni_auto_fence_pending_';
+
 /// Every `omni_auto_*` pref (all in [SharedPreferencesAsync]).
 const _autoPrefix = 'omni_auto_';
 
@@ -263,6 +268,7 @@ class AutoAttendanceService extends ChangeNotifier {
 
   Future<void> _syncOnce({required bool appStart}) async {
     final epoch = _epoch;
+    await _retryPendingRemovals(epoch);
     final s = _session;
     if (!s.isLoggedIn || s.isClearing || s.employeeId <= 0) {
       _setState(AutoPhoneState.off);
@@ -384,21 +390,64 @@ class AutoAttendanceService extends ChangeNotifier {
   }
 
   /// Removes this db's region and the key, then the prefs that said there
-  /// was something to clean.
+  /// was something to clean — those only when the region is gone. A failed
+  /// removal leaves [autoEngagedKey] set so the next sync tries again.
   Future<void> _cleanUp(String db, int epoch) async {
+    var removed = true;
     try {
       await _fence.removeAll(db);
     } catch (e) {
+      removed = false;
       _log('fence removal failed (${e.runtimeType})');
     }
     _key = null;
     await _keyStore.delete();
     if (_stale(epoch)) return;
+    if (!removed) {
+      await _prefs.setBool(autoEngagedKey, true);
+      return;
+    }
     await Future.wait([
       _prefs.remove(autoEngagedKey),
       _prefs.remove(autoArmedAppVersionKey),
       _prefs.remove(autoLastStateKey),
     ]);
+  }
+
+  /// Region removals a sign-out could not finish (failed, or still running
+  /// past the cap when the app died): `omni_auto_fence_pending_<db>`. Only
+  /// ever leads to a region removal — no status, no key work.
+  Future<void> _retryPendingRemovals(int epoch) async {
+    final Set<String> keys;
+    try {
+      keys = await _prefs.getKeys();
+    } catch (e) {
+      _log('pending removals not read (${e.runtimeType})');
+      return;
+    }
+    for (final k in keys.where((k) => k.startsWith(autoFencePendingPrefix))) {
+      final db = k.substring(autoFencePendingPrefix.length);
+      final s = _session;
+      // Keep the region of whoever is signed in now with HR's switch on;
+      // the sync that follows manages it.
+      final keep =
+          s.isLoggedIn &&
+              !s.isClearing &&
+              s.employeeId > 0 &&
+              s.clientDb == db &&
+              s.autoAttendance != null
+          ? autoRegionId(db, s.employeeId)
+          : null;
+      try {
+        await _fence.removeAll(db, keep: keep);
+      } catch (e) {
+        _log('pending region removal failed (${e.runtimeType})');
+        continue;
+      }
+      // A sign-out that began meanwhile may have set this marker anew.
+      if (epoch != _epoch) return;
+      await _prefs.remove(k);
+    }
   }
 
   /// The stored key when it is this employee's, else one fetched with the
@@ -559,16 +608,21 @@ class AutoAttendanceService extends ChangeNotifier {
   /// Turns automatic check-in off on this phone only (lead decision L7).
   /// Events still queued are dropped (M3): the employee switched them off,
   /// so they are neither sent nor reported as dropped later. Never throws
-  /// (M6): a failed write leaves the state as it was.
+  /// (M6): a failed opt-out write leaves the state as it was; once it is
+  /// saved, the phone disarms even if clearing the queue failed.
   Future<void> turnOffOnThisPhone() async {
     final id = _session.employeeId;
     if (id <= 0) return;
     try {
       await _prefs.setBool(autoOptedOutKey(id), true);
-      await _queue.clear();
     } catch (e) {
       _log('turn off not saved (${e.runtimeType})');
       return;
+    }
+    try {
+      await _queue.clear();
+    } catch (e) {
+      _log('queue not cleared (${e.runtimeType})');
     }
     await sync();
   }
@@ -602,18 +656,37 @@ class AutoAttendanceService extends ChangeNotifier {
   /// side by side; the sign-out waits at most [_clearingCap] (Ruling R10)
   /// and the rest finishes in the background. The region removal queues
   /// behind any fence operation still running, so it always comes last.
+  ///
+  /// The region removal is marked pending (`omni_auto_fence_pending_<db>`,
+  /// spared by the wipe) until it succeeds: a failed one, or one the app
+  /// died during, is retried by the next sync whoever signs in.
   Future<void> onSessionClearing() {
     _epoch++;
     _key = null;
     _setState(AutoPhoneState.off);
     final db = _session.clientDb;
+    final pendingKey = '$autoFencePendingPrefix$db';
+    final marked = _quietly(
+      'pending mark',
+      () => _prefs.setBool(pendingKey, true),
+    );
     final work = Future.wait([
-      _quietly('fence removal', () => _fence.removeAll(db)),
+      _quietly('fence removal', () async {
+        await _fence.removeAll(db);
+        await marked;
+        await _prefs.remove(pendingKey);
+      }),
       _quietly('key delete', _keyStore.delete),
       _quietly('prefs wipe', () async {
         await _queue.clear();
         final keys = await _prefs.getKeys();
-        final ours = keys.where((k) => k.startsWith(_autoPrefix)).toSet();
+        final ours = keys
+            .where(
+              (k) =>
+                  k.startsWith(_autoPrefix) &&
+                  !k.startsWith(autoFencePendingPrefix),
+            )
+            .toSet();
         if (ours.isNotEmpty) await _prefs.clear(allowList: ours);
       }),
     ]);

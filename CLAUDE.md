@@ -713,7 +713,11 @@ Release checklist (all steps need Willy, nothing is uploaded yet): `docs/auto-ch
   Willy at M4. **R21** HR switch off / opted out is a retraction only: with nothing stored from an earlier "on" (no
   `omni_auto_status_sent`, `omni_auto_engaged`, armed-version or last-state pref) `sync()` makes no plugin, keychain or
   network call (most employees are never switched on); otherwise it removes region + key once and posts
-  `enabled: false` only when a status signature exists, then drops the signature.
+  `enabled: false` only when a status signature exists, then drops the signature. A failed region removal keeps
+  `omni_auto_engaged` so the next sync retries. Sign-out marks its removal `omni_auto_fence_pending_<db>` (spared by
+  the prefs wipe, cleared when the removal succeeds); every `sync()` first retries such removals — whoever is signed
+  in, or no one — keeping only the current employee's region when HR's switch is on. A marker never leads to a status
+  post or key work.
 - Final-review fixes: the auto key is stored with its owner `<db>|<employeeId>` (`AutoKeyStore.readFor`); a key of
   another sign-in is deleted and re-fetched in the foreground and ignored by a wake (F4). A wake refreshes the session
   only when it is due (`autoRefreshDue`) and waits at most 8 s (`autoWakeRefreshLimit`) before sending the queue (F2).

@@ -47,9 +47,10 @@ class _FakeSession extends SessionService {
   _FakeSession({this.config});
 
   AutoAttendanceConfig? config;
+  bool loggedIn = true;
 
   @override
-  bool get isLoggedIn => true;
+  bool get isLoggedIn => loggedIn;
   @override
   String get token => 'tok';
   @override
@@ -64,6 +65,15 @@ class _FakeSession extends SessionService {
   AutoAttendanceConfig? get autoAttendance => config;
 
   void changed() => notifyListeners();
+}
+
+/// Prefs whose queue removal throws (the queue cannot be cleared).
+class _QueueThrowingPrefs extends SharedPreferencesAsync {
+  @override
+  Future<void> remove(String key) {
+    if (key == AutoEventQueue.storageKey) throw StateError('disk');
+    return super.remove(key);
+  }
 }
 
 /// Prefs whose opt-out writes throw (a full disk, a broken platform).
@@ -219,6 +229,12 @@ class _FakePort implements GeofencePort {
   /// Every plugin call, in order.
   final List<String> calls = [];
 
+  /// How many [registered] calls throw next (a failing plugin channel).
+  int failRegistered = 0;
+
+  /// When set, [registered] waits for it (a stalled plugin call).
+  Completer<void>? holdRegistered;
+
   /// When set, [create] waits for it (the plugin call on the wire).
   Completer<void>? holdCreate;
   final createCalled = Completer<void>();
@@ -226,6 +242,12 @@ class _FakePort implements GeofencePort {
   @override
   Future<List<ActiveGeofence>> registered() async {
     calls.add('registered');
+    if (failRegistered > 0) {
+      failRegistered--;
+      throw StateError('plugin');
+    }
+    final h = holdRegistered;
+    if (h != null) await h.future;
     return [
       for (final g in store.values)
         ActiveGeofence(
@@ -321,6 +343,7 @@ void main() {
     AutoFence? fence,
     Duration clearingCap = const Duration(seconds: 2),
     SharedPreferencesAsync? prefsOverride,
+    AutoEventQueue? queueOverride,
   }) => AutoAttendanceService(
     session: session,
     permission:
@@ -342,7 +365,7 @@ void main() {
           return sample;
         },
     platform: platform,
-    queue: queue,
+    queue: queueOverride ?? queue,
     prefs: prefsOverride ?? prefs,
     refresh: () async => log.add('refresh'),
     deviceId: deviceIdSeam ?? () async => 'dev-1',
@@ -909,9 +932,134 @@ void main() {
 
       expect(await keyStore.read(), isNull);
       final keys = await prefs.getKeys();
-      expect(keys.where((k) => k.startsWith('omni_auto_')), isEmpty);
+      // Only the retry marker of the unfinished region removal is left.
+      expect(keys.where((k) => k.startsWith('omni_auto_')), [
+        '${autoFencePendingPrefix}acme',
+      ]);
       expect(auto.state, AutoPhoneState.off);
     });
+  });
+
+  group('retry gap: a failed region removal is retried', () {
+    test('HR off, removeAll throws once → marker kept → next sync removes '
+        'the region', () async {
+      final auto = service();
+      await auto.sync(appStart: true);
+      expect(port.store.keys, [_region]);
+
+      session.config = null;
+      port.failRegistered = 1;
+      await auto.sync();
+      expect(port.store.keys, [_region]);
+      expect(await prefs.getBool(autoEngagedKey), isTrue);
+
+      await auto.sync();
+      expect(port.store, isEmpty);
+      expect(await prefs.getBool(autoEngagedKey), isNull);
+      // The retraction itself went out once.
+      expect(statuses.where((s) => s['enabled'] == false), hasLength(1));
+
+      final calls = port.calls.length;
+      await auto.sync();
+      expect(port.calls, hasLength(calls)); // nothing left to clean
+    });
+
+    test(
+      'sign-out removal fails → only a retry marker survives the wipe; the '
+      'next sign-in (HR off) removes the region and does nothing else',
+      () async {
+        final auto = service();
+        await auto.sync(appStart: true);
+        expect(port.store.keys, [_region]);
+        final posts = statuses.length;
+
+        port.failRegistered = 1;
+        await auto.onSessionClearing();
+        expect(port.store.keys, [_region]);
+        expect(await keyStore.read(), isNull);
+        expect(await queue.ordered(), isEmpty);
+        final keys = await prefs.getKeys();
+        expect(keys.where((k) => k.startsWith('omni_auto_')), [
+          '${autoFencePendingPrefix}acme',
+        ]);
+
+        // The next sign-in: HR's switch off for this employee.
+        session.config = null;
+        final secure = _RecordingSecure();
+        keyStore = AutoKeyStore(storage: secure);
+        log.clear();
+        final next = service();
+        await next.sync(appStart: true);
+
+        expect(port.store, isEmpty);
+        expect(
+          await prefs.getKeys(),
+          isNot(contains('${autoFencePendingPrefix}acme')),
+        );
+        expect(statuses, hasLength(posts)); // no status post
+        expect(secure.calls, isEmpty); // no key work
+        expect(log, isNot(contains('fetchKey')));
+        expect(next.state, AutoPhoneState.off);
+      },
+    );
+
+    test('a pending removal is retried with no one signed in', () async {
+      port.seed(_region);
+      await prefs.setBool('${autoFencePendingPrefix}acme', true);
+      session.loggedIn = false;
+      await service().sync();
+      expect(port.store, isEmpty);
+      expect(await prefs.getBool('${autoFencePendingPrefix}acme'), isNull);
+      expect(statuses, isEmpty);
+    });
+
+    test('a pending removal keeps the region of the employee now signed in '
+        'with HR on, and removes the previous one', () async {
+      port.seed('omni_office_acme_5'); // the previous employee's
+      port.seed(_region); // already the current one's, same office
+      await prefs.setBool('${autoFencePendingPrefix}acme', true);
+
+      final auto = service();
+      await auto.sync(appStart: true);
+
+      expect(port.store.keys, [_region]);
+      expect(port.removed, ['omni_office_acme_5']);
+      expect(port.created, isEmpty); // not re-registered (L3)
+      expect(auto.state, AutoPhoneState.on);
+    });
+
+    test('a removal still running at the cap keeps its marker until it '
+        'succeeds', () async {
+      port.seed(_region);
+      port.holdRegistered = Completer<void>();
+      final auto = service(clearingCap: const Duration(milliseconds: 20));
+      await auto.onSessionClearing();
+      expect(await prefs.getBool('${autoFencePendingPrefix}acme'), isTrue);
+
+      port.holdRegistered!.complete();
+      for (
+        var i = 0;
+        i < 200 && await prefs.getBool('${autoFencePendingPrefix}acme') != null;
+        i++
+      ) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(port.store, isEmpty);
+      expect(await prefs.getBool('${autoFencePendingPrefix}acme'), isNull);
+    });
+  });
+
+  test('turn off: a queue that cannot be cleared still disarms (opt-out '
+      'saved)', () async {
+    final auto = service();
+    await auto.sync(appStart: true);
+    final throwing = AutoEventQueue(prefs: _QueueThrowingPrefs());
+    final off = service(queueOverride: throwing);
+    await expectLater(off.turnOffOnThisPhone(), completes);
+    expect(await prefs.getBool(autoOptedOutKey(7)), isTrue);
+    expect(off.state, AutoPhoneState.optedOut);
+    expect(port.store, isEmpty);
+    auto.dispose();
   });
 
   group('Android app update (R9)', () {

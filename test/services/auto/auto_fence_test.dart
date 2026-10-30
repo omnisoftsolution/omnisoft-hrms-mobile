@@ -207,6 +207,13 @@ void main() {
     expect(port.store.keys.toSet(), {'omni_office_other_7', 'something_else'});
   });
 
+  test('removeAll(keep:) spares that one region', () async {
+    port.seed('omni_office_acme_7');
+    port.seed('omni_office_acme_9');
+    await fence.removeAll('acme', keep: 'omni_office_acme_7');
+    expect(port.store.keys.toSet(), {'omni_office_acme_7'});
+  });
+
   test('removeAll started during a sync runs after it (nothing stays armed)',
       () async {
     final armed = sync(_config());

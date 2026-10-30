@@ -129,11 +129,13 @@ class AutoFence {
     return true;
   });
 
-  /// Removes this [db]'s office regions (sign-out). Other tenants' and other
-  /// plugins' regions are left alone.
-  Future<void> removeAll(String db) => _serial(() async {
+  /// Removes this [db]'s office regions (sign-out), except the region id
+  /// [keep] when given (a retried removal must not drop the region of the
+  /// employee now signed in). Other tenants' and other plugins' regions are
+  /// left alone.
+  Future<void> removeAll(String db, {String? keep}) => _serial(() async {
     for (final g in await _port.registered()) {
-      if (_isOurs(g.id, db)) await _port.removeById(g.id);
+      if (_isOurs(g.id, db) && g.id != keep) await _port.removeById(g.id);
     }
   });
 
