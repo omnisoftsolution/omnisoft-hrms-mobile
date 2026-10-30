@@ -64,6 +64,8 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  # In-memory SharedPreferencesAsync platform for queue tests.
+  shared_preferences_platform_interface: ^2.4.1
   # Generates platform launcher icons from a single source PNG.
   # Source lives at macos/Runner/Assets.xcassets/AppIcon.appiconset/
   # because that's where the original 1024×1024 Omnisoft icon is
