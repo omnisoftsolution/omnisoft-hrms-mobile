@@ -5,6 +5,8 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
+import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 import 'package:omni_hr/core/error_messages.dart';
 import 'package:omni_hr/models/attendance_status.dart';
 import 'package:omni_hr/models/expense_record.dart';
@@ -16,12 +18,14 @@ import 'package:omni_hr/screens/home/my_day/check_in_out_screen.dart';
 import 'package:omni_hr/screens/home/my_day/declaration_sheet.dart';
 import 'package:omni_hr/screens/home/my_day/my_day_screen.dart';
 import 'package:omni_hr/services/attendance_action_controller.dart';
+import 'package:omni_hr/services/auto/auto_attendance_service.dart';
 import 'package:omni_hr/services/face_recognition_service.dart';
 import 'package:omni_hr/services/my_day_memory.dart';
 import 'package:omni_hr/services/omni_mobile_api.dart';
 import 'package:omni_hr/services/session_service.dart';
 import 'package:omni_hr/widgets/error_state_view.dart';
 
+import '../../fixtures/fake_auto.dart';
 import '../../fixtures/my_day_fixture.dart';
 
 const _banner = "Couldn't refresh. Pull down to try again.";
@@ -203,8 +207,14 @@ Widget _host(
   _Calls? enrolCalls,
   Future<LocationResult> Function()? getLocation,
   bool signaturePage = false,
-}) => ChangeNotifierProvider<SessionService>(
-  create: (_) => session ?? SessionService(),
+  AutoAttendanceService? auto,
+}) => MultiProvider(
+  providers: [
+    ChangeNotifierProvider<SessionService>(
+      create: (_) => session ?? SessionService(),
+    ),
+    if (auto != null) ChangeNotifierProvider.value(value: auto),
+  ],
   child: MaterialApp(
     home: MyDayScreen(
       key: key,
@@ -375,6 +385,29 @@ void main() {
     expect(find.text('For you'), findsOneWidget);
     expect(find.text('3 leave requests to approve'), findsOneWidget);
     expect(find.text(_banner), findsNothing);
+  });
+
+  testWidgets('automatic check-in card sits right below the status tile', (
+    tester,
+  ) async {
+    _tallScreen(tester);
+    SharedPreferencesAsyncPlatform.instance =
+        InMemorySharedPreferencesAsync.empty();
+    final auto = FakeAuto();
+    await tester.pumpWidget(_host(_FakeApi([sampleMyDay()]), auto: auto));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('auto-setup-card')), findsOneWidget);
+    final tile = tester.getBottomLeft(
+      find.byKey(const ValueKey('status-tile')),
+    );
+    final card = tester.getTopLeft(
+      find.byKey(const ValueKey('auto-setup-card')),
+    );
+    expect(card.dy, greaterThan(tile.dy));
+    expect(card.dy - tile.dy, lessThan(40));
+    auto.setState(AutoPhoneState.on);
+    await tester.pump();
+    expect(find.byKey(const ValueKey('auto-setup-card')), findsNothing);
   });
 
   testWidgets('sections in order: tile, week, timeline, for you', (

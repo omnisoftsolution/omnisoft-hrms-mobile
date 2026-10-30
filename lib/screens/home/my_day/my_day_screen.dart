@@ -12,6 +12,7 @@ import '../../../models/expense_record.dart';
 import '../../../models/face_capture_result.dart';
 import '../../../models/my_day.dart';
 import '../../../services/attendance_action_controller.dart';
+import '../../../services/auto/auto_attendance_service.dart';
 import '../../../services/face_recognition_service.dart';
 import '../../../services/my_day_memory.dart';
 import '../../../services/omni_mobile_api.dart';
@@ -19,6 +20,7 @@ import '../../../services/session_service.dart';
 import '../../../widgets/error_state_view.dart';
 import '../../../widgets/feature_locked_pane.dart';
 import '../../../widgets/omni_app_bar.dart';
+import '../../auto/auto_setup_card.dart';
 import '../../face_scan/face_enrollment_screen.dart';
 import 'auto_closed_banner.dart';
 import 'check_in_out_screen.dart';
@@ -688,6 +690,7 @@ class MyDayScreenState extends State<MyDayScreen> {
     // Attendance off in the subscription: no tile, no timeline, no punch
     // (no controller either); the week and For you still apply.
     final attendanceOn = context.watch<SessionService>().featureAttendance;
+    final autoService = context.read<AutoAttendanceService?>();
     return Column(
       children: [
         if (_fromMemory)
@@ -722,6 +725,10 @@ class MyDayScreenState extends State<MyDayScreen> {
                   : (_controller!.hasPlace && !_controller!.isOutside),
             ),
           ),
+        // Automatic check-in setup (1.36.0); nothing without the service
+        // (older tests) and gone once it is on.
+        if (attendanceOn && autoService != null)
+          AutoSetupCard(auto: autoService),
         Expanded(
           child: RefreshIndicator(
             onRefresh: refresh,
