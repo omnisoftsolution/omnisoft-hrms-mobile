@@ -41,8 +41,9 @@ Android + iOS employee app for Omni HR (version in pubspec.yaml). Backend = Odoo
   project.pbxproj. **Willy gate:** the App ID `com.omnisoftsolution.omnihr` (team 5PBHZ3JDAD) needs
   "Access Wi-Fi Information" enabled in the Apple Developer portal before this entitlement takes effect
   on device — automatic signing regenerates the provisioning profile on the next Xcode/fastlane build.
-- No new PrivacyInfo.xcprivacy entry: Wi-Fi info has no dedicated NSPrivacyAccessedAPICategory; the
-  precise-location declaration already covers the geofence and this feature reuses it.
+- PrivacyInfo.xcprivacy: Wi-Fi info has no dedicated NSPrivacyAccessedAPICategory, so it needs no entry of its own.
+  Precise location (`NSPrivacyCollectedDataTypePreciseLocation`, linked, not tracking, app functionality) was NOT
+  declared until 1.36.0 (Task 8 added it); it is declared now and covers the geofence and automatic check-in.
 - Play Console Data-safety: confirm the existing location-purpose text also covers office-network
   verification for attendance (Willy gate, not automatable).
 - Device test caveat: check whether iPhone actually returns a BSSID (iOS 26 reality — Apple has
@@ -651,3 +652,73 @@ Design: `session-assets/2026-10-22-team-leave-mgmt-day/proposal.md` (r3); plans:
   `test/services/session_team_flags_test.dart`, `test/services/team_api_test.dart`, `test/services/team_cache_test.dart`,
   `test/models/team_*_test.dart`, `test/widgets/pill_segments_test.dart`.
 - Needs connector 2.65.0 for anything to show; older connectors keep 1.33 behaviour (matrix in the plan).
+
+## Automatic check-in (1.36.0, connector 2.66.0, hrmsmanager omni_hrms_saas 1.10.0)
+Plan: `docs/superpowers/plans/2026-10-30-auto-attendance-m3-app-1.36.0.md`; spec in the connector repo
+(`docs/superpowers/specs/2026-10-27-auto-attendance-design.md`, M1 plan "API contract"). HR switches it on per
+employee; the phone registers one OS geofence (the office) and posts arrive / leave events. `auto_attendance`
+null or missing in `/me` = off (older connector); the manual Check in / out button always keeps working.
+Release checklist (all steps need Willy, nothing is uploaded yet): `docs/auto-checkin-release.md`.
+- Files: `lib/services/auto/` — `auto_api.dart` (own HTTP client, L8), `auto_attendance_service.dart` (state,
+  `sync`, `turnOff` / `turnOnAgain`, sign-out hook), `auto_background.dart` (geofence + `auto_recheck` entry points,
+  headless isolate), `auto_event.dart`, `auto_event_queue.dart`, `auto_fence.dart` (region arming), `auto_key_store.dart`,
+  `auto_sampler.dart` (fix + Wi-Fi + mock flag), `auto_sender.dart` (queue flush). `lib/screens/auto/` —
+  `auto_setup_screen.dart` (disclosure + permission flow), `auto_setup_card.dart` (card on My day), `auto_checkin_screen.dart`
+  (Profile → status screen). `lib/models/auto_attendance_config.dart` (the `/me` block, pref `employee_auto_attendance`,
+  `SessionService.autoAttendance`). Touched existing: `main.dart` (provider + sign-out hook), `session_service.dart`,
+  `omni_mobile_api.dart` (`fetchAutoKey`, `undoPunch(id, {required action})`), `push_service.dart` +
+  `core/push_groups.dart` + `notification_tap.dart` (`auto_checked_in/out` confirmations open Home, silent
+  `auto_recheck`), `device_service.dart` (`prefsKey`), `attendance_action_controller.dart`, `error_messages.dart`
+  (undo_not_last), `models/attendance_record.dart` + `my_day.dart` + `team_overview.dart` + `person_sheet.dart` +
+  `attendance_history_screen.dart` ("Automatic" labels, AA-F09), `my_day_screen.dart` (setup card, status line),
+  `profile_screen.dart` (row). Platform: `android/app/src/main/AndroidManifest.xml`, `android/app/proguard-rules.pro`,
+  `ios/Runner/AppDelegate.swift`, `ios/Runner/Info.plist`, `ios/Runner/PrivacyInfo.xcprivacy`, `ios/Podfile` (+ lock).
+  Deps: `native_geofence` 1.5.1, `permission_handler` 12.0.3 (exact pins from the spike).
+- Lead decisions: **L1** no `location` background mode on iOS (`UIBackgroundModes` stays `[remote-notification]`; a
+  terminated app is relaunched on ENTER without it). **L2** the auto key lives in the keychain with
+  `KeychainAccessibility.first_unlock` (a wake usually comes with the phone locked); access / refresh tokens keep
+  their options, so the background session refresh (AA-F06) is best effort and skips silently when the keychain is
+  not readable. **L3** arming is idempotent: `AutoFence.sync` re-creates the region only when id / centre (6 decimals) /
+  radius differ from `getRegisteredGeofences()` — re-registering opens iOS's initial-state window (a crossing in it is
+  lost). **L4** opening the app posts `source: foreground` only when the last region state seen is not `inside`, or the
+  last answer was `waiting_wifi` < 30 min ago. **L5** the queue is in `SharedPreferencesAsync` (`omni_auto_queue`, max
+  20, oldest dropped); `flush()` takes a 30 s lease (`omni_auto_flush_lease_until`) so the UI isolate and a wake
+  never post at once; the refresh has its own lease (`omni_auto_refresh_lease_until`). **L6** Android has no native
+  NetworkCallback: Wi-Fi is re-checked on the plugin's DWELL (`source: dwell`) and on app open; iPhone on the silent
+  `auto_recheck`. **L7** "Turn off on this phone" is a local opt-out (`omni_auto_opted_out_<employee>`): disarm,
+  delete the key, post status `enabled: false`; HR's switch is untouched, the setup card offers to turn it back on.
+  **L8** `AutoApi` has its own HTTP client: it reads the status (409 / 5xx / 401 / 400 matter) and never fires
+  `OmniMobileApi.onInvalidSession` (a background wake must not sign the user out); the key fetch (device-bound bearer
+  route `attendance/auto/key`) uses `OmniMobileApi` in the foreground. Never log the key, tokens or a full BSSID
+  outside `kDebugMode`.
+- Contract rules kept: event queue is posted one at a time in ascending `event_at`, the next only after 2xx or a final
+  4xx; 409 / 5xx / 422 / timeout / non-JSON = resend the same `event_uid` (AA-F01); never `auth/refresh` and
+  `attendance/auto/key` at once, refresh first (AA-F02); every Undo sends `action`, 409 `undo_not_last` = no resend
+  (AA-F03); an event older than 30 min is dropped with the local notification "Couldn't check you in/out — open
+  Omni HR". HTTP timeout stays 30 s.
+- Rulings a future developer must know: **R6** the cross-isolate queue read-modify-write is not atomic (a UI add and a
+  background add at the same instant can lose one write; accepted, `AutoSender` tolerates an already-removed event).
+  **R7** every non-JSON answer (even 401) and JSON 408 / 429 = retry (`AutoRetry`); only a JSON 401 = `AutoKeyInvalid`
+  (fetch a new key). **R9** Android drops geofences on an app update and the plugin only re-registers on boot, while
+  its list still reports the region: at app start on Android `AutoFence` calls `reCreateAll()` when the app version
+  differs from pref `omni_auto_armed_app_version`; an update where the app is never opened leaves auto off. **R11**
+  `proguard-rules.pro` keeps `WorkDatabase_Impl`, `androidx.work.**` and `native_geofence` (R8 stripped Room's
+  reflection-created constructor); checked on the release mapping only — the release APK was never started on a
+  phone (the Samsung has the Play-signed install), so the real start test is an M4 item. **R12** the Podfile adds
+  only `PERMISSION_LOCATION=1` (no notifications macro; notifications keep the firebase path). **R15** `needsSetup`
+  (session has no trusted phone) = no button, text "Automatic check-in needs this phone to be your signed-in phone.
+  Sign out and sign in again on this phone, then come back here." **R17** no separate "paused" banner on My day: the
+  setup card already shows for `needsAlways`, the status tile keeps a "Paused" line. **R18** `undo_not_last` →
+  "That punch can't be undone any more." (true for both server causes). Copy marked R14/R15/R18 gets a final check with
+  Willy at M4.
+- Play: the prominent disclosure must contain "location" and "even when the app is closed or not in use" (it does, `auto_setup_screen.dart`). The disclosure comes before the system permission prompt, also on "Try again".
+- Testing on a phone. iPhone: `xcrun devicectl device simulate location coordinate --device <udid> <lat> <lng>` and
+  `... simulate location clear`; **wait more than 1 minute after arming** before simulating a crossing (iOS initial-
+  state window, L3). Samsung: `adb shell appops set com.android.shell android:mock_location allow`, then
+  `adb shell cmd location providers add-test-provider gps|network|fused` (add `enable-test-provider`) and
+  `adb shell cmd location providers set-test-provider-location gps --location <lat>,<lng> --accuracy 5`; clean up with
+  `remove-test-provider` for each and `appops set com.android.shell android:mock_location deny`. A fix from a test provider is
+  flagged `is_mocked` in the event, so the tenant's mock-location control may act on it: check the omnihrdemo setting first.
+  Unit tests: `test/services/auto/`, `test/screens/auto/`, `test/models/auto_attendance_config_test.dart` (fakes by
+  subclassing / implementing `GeofencePort`, `AutoApi`, `AutoKeyStore`; queue tests use the in-memory `SharedPreferencesAsync`
+  platform).

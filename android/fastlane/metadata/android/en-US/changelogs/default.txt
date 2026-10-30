@@ -1,2 +1,1 @@
-Dark mode: Omni HR now follows your phone's light or dark setting.
-Foldable phones: the layout adapts when the phone is folded or open.
+Automatic check-in: if your HR turns it on, Omni HR checks you in and out at your office.
