@@ -60,9 +60,9 @@
 	<key>NSFaceIDUsageDescription</key>
 	<string>Use Face ID to log in to Omni HR.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Omni HR needs your location for attendance geofence verification.</string>
+	<string>Omni HR uses your location to check you in and out at your office.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>Omni HR needs your location for attendance geofence verification.</string>
+	<string>If your HR turned on automatic check-in, Omni HR uses your location in the background, even when the app is closed, only to notice when you arrive at or leave your office.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Omni HR needs photo library access to attach supporting documents to leave requests.</string>
 	<key>UIBackgroundModes</key>

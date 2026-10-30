@@ -1,5 +1,6 @@
 import Flutter
 import UIKit
+import native_geofence
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
@@ -7,6 +8,12 @@ import UIKit
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+    // Automatic check-in/out (native_geofence). Must stay here and not move
+    // into the implicit-engine callback below: a geofence event can launch the
+    // app without a UI scene, so the headless engine needs this at launch.
+    NativeGeofencePlugin.setPluginRegistrantCallback { registry in
+      GeneratedPluginRegistrant.register(with: registry)
+    }
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 

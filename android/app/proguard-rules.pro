@@ -55,3 +55,13 @@
 -keepattributes InnerClasses
 -keepattributes Exceptions
 -keep class kotlin.Metadata { *; }
+
+# -----------------------------------------------------------
+# native_geofence + WorkManager (automatic check-in/out, 1.36.0).
+# A geofence wake runs a WorkManager worker; with R8 on, the
+# WorkDatabase_Impl constructor (reflection-created by Room) was
+# stripped and the geofence spike crashed at start.
+# -----------------------------------------------------------
+-keep class androidx.work.impl.WorkDatabase_Impl { *; }
+-keep class androidx.work.** { *; }
+-keep class com.chunkytofustudios.native_geofence.** { *; }
