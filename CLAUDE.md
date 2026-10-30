@@ -710,15 +710,25 @@ Release checklist (all steps need Willy, nothing is uploaded yet): `docs/auto-ch
   Sign out and sign in again on this phone, then come back here." **R17** no separate "paused" banner on My day: the
   setup card already shows for `needsAlways`, the status tile keeps a "Paused" line. **R18** `undo_not_last` →
   "That punch can't be undone any more." (true for both server causes). Copy marked R14/R15/R18 gets a final check with
-  Willy at M4.
+  Willy at M4. **R21** HR switch off / opted out is a retraction only: with nothing stored from an earlier "on" (no
+  `omni_auto_status_sent`, `omni_auto_engaged`, armed-version or last-state pref) `sync()` makes no plugin, keychain or
+  network call (most employees are never switched on); otherwise it removes region + key once and posts
+  `enabled: false` only when a status signature exists, then drops the signature.
+- Final-review fixes: the auto key is stored with its owner `<db>|<employeeId>` (`AutoKeyStore.readFor`); a key of
+  another sign-in is deleted and re-fetched in the foreground and ignored by a wake (F4). A wake refreshes the session
+  only when it is due (`autoRefreshDue`) and waits at most 8 s (`autoWakeRefreshLimit`) before sending the queue (F2).
+  `OmniMobileApi.refresh` never fires `onInvalidSession`.
 - Play: the prominent disclosure must contain "location" and "even when the app is closed or not in use" (it does, `auto_setup_screen.dart`). The disclosure comes before the system permission prompt, also on "Try again".
 - Testing on a phone. iPhone: `xcrun devicectl device simulate location coordinate --device <udid> <lat> <lng>` and
   `... simulate location clear`; **wait more than 1 minute after arming** before simulating a crossing (iOS initial-
   state window, L3). Samsung: `adb shell appops set com.android.shell android:mock_location allow`, then
   `adb shell cmd location providers add-test-provider gps|network|fused` (add `enable-test-provider`) and
   `adb shell cmd location providers set-test-provider-location gps --location <lat>,<lng> --accuracy 5`; clean up with
-  `remove-test-provider` for each and `appops set com.android.shell android:mock_location deny`. A fix from a test provider is
-  flagged `is_mocked` in the event, so the tenant's mock-location control may act on it: check the omnihrdemo setting first.
+  `remove-test-provider` for each and `appops set com.android.shell android:mock_location deny`. Mock location is a
+  **hard deny** for automatic events (spec §4.4, whatever the tenant's mock setting): an `adb` test-provider fix reports
+  `isMocked`, so every such event comes back `rejected / mock_location` — it proves only wake → server; real walks are
+  the proof on Android. On iPhone geolocator reports `isMocked` false for `devicectl simulate location`, so simulated
+  walks can run end to end (confirm on the first try).
   Unit tests: `test/services/auto/`, `test/screens/auto/`, `test/models/auto_attendance_config_test.dart` (fakes by
   subclassing / implementing `GeofencePort`, `AutoApi`, `AutoKeyStore`; queue tests use the in-memory `SharedPreferencesAsync`
   platform).
