@@ -24,8 +24,8 @@ class NativeGeofencePort implements GeofencePort {
   Future<void>? _initialized;
 
   Future<void> _ready() => _initialized ??= NativeGeofenceManager.instance
-          .initialize()
-          .catchError((Object e) {
+      .initialize()
+      .catchError((Object e) {
         // Allow a retry on the next call.
         _initialized = null;
         throw e;
@@ -64,13 +64,26 @@ class NativeGeofencePort implements GeofencePort {
 /// [sync] is idempotent (lead decision L3): re-registering a region resets
 /// iOS's state and loses a crossing, so it re-creates only when the id,
 /// centre (6 decimals) or radius differ from what is registered.
+///
+/// One instance serves the app, and its operations run one at a time: a
+/// [removeAll] at sign-out waits for a [sync] that is still creating the
+/// region, then removes it (never the other way round).
 class AutoFence {
   AutoFence({GeofencePort? port, bool? isAndroid})
-      : _port = port ?? NativeGeofencePort(),
-        _isAndroid = isAndroid ?? Platform.isAndroid;
+    : _port = port ?? NativeGeofencePort(),
+      _isAndroid = isAndroid ?? Platform.isAndroid;
 
   final GeofencePort _port;
   final bool _isAndroid;
+
+  Future<void> _tail = Future<void>.value();
+
+  /// Runs [body] after every operation started before it.
+  Future<T> _serial<T>(Future<T> Function() body) {
+    final result = _tail.then((_) => body());
+    _tail = result.then((_) {}, onError: (_) {});
+    return result;
+  }
 
   static String regionId(String db, int employeeId) =>
       autoRegionId(db, employeeId);
@@ -92,7 +105,7 @@ class AutoFence {
     required int employeeId,
     required AutoAttendanceConfig? config,
     required bool alwaysGranted,
-  }) async {
+  }) => _serial(() async {
     final wantedId = regionId(db, employeeId);
     final wanted = config != null && alwaysGranted;
     final mine = [
@@ -114,19 +127,19 @@ class AutoFence {
     if (current != null) await _port.removeById(wantedId);
     await _port.create(_build(wantedId, config));
     return true;
-  }
+  });
 
   /// Removes this [db]'s office regions (sign-out). Other tenants' and other
   /// plugins' regions are left alone.
-  Future<void> removeAll(String db) async {
+  Future<void> removeAll(String db) => _serial(() async {
     for (final g in await _port.registered()) {
       if (_isOurs(g.id, db)) await _port.removeById(g.id);
     }
-  }
+  });
 
   /// Re-registers the plugin's persisted regions with the OS (Android after
   /// an app update; Ruling R9). Throws what the plugin throws.
-  Future<void> reCreateAll() => _port.reCreateAll();
+  Future<void> reCreateAll() => _serial(_port.reCreateAll);
 
   static double _round6(double v) => double.parse(v.toStringAsFixed(6));
 
@@ -136,23 +149,23 @@ class AutoFence {
       g.radiusMeters == c.office.areaM.toDouble();
 
   Geofence _build(String id, AutoAttendanceConfig c) => Geofence(
-        id: id,
-        location: Location(
-          latitude: c.office.latitude,
-          longitude: c.office.longitude,
-        ),
-        radiusMeters: c.office.areaM.toDouble(),
-        triggers: {
-          GeofenceEvent.enter,
-          GeofenceEvent.exit,
-          if (_isAndroid) GeofenceEvent.dwell,
-        },
-        iosSettings: const IosGeofenceSettings(initialTrigger: false),
-        androidSettings: AndroidGeofenceSettings(
-          initialTriggers: const {},
-          expiration: const Duration(days: 365),
-          loiteringDelay: Duration(minutes: c.dwellMin),
-          notificationResponsiveness: const Duration(minutes: 1),
-        ),
-      );
+    id: id,
+    location: Location(
+      latitude: c.office.latitude,
+      longitude: c.office.longitude,
+    ),
+    radiusMeters: c.office.areaM.toDouble(),
+    triggers: {
+      GeofenceEvent.enter,
+      GeofenceEvent.exit,
+      if (_isAndroid) GeofenceEvent.dwell,
+    },
+    iosSettings: const IosGeofenceSettings(initialTrigger: false),
+    androidSettings: AndroidGeofenceSettings(
+      initialTriggers: const {},
+      expiration: const Duration(days: 365),
+      loiteringDelay: Duration(minutes: c.dwellMin),
+      notificationResponsiveness: const Duration(minutes: 1),
+    ),
+  );
 }

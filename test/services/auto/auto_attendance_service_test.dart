@@ -116,9 +116,21 @@ class _FakeSender extends AutoSender {
   final List<String> log;
   final outcomes = <FlushOutcome>[];
 
+  /// When set, a flush waits for it (a post on the wire), then runs
+  /// [afterHold] (the real sender saves the server's answer then).
+  Completer<void>? hold;
+  Future<void> Function()? afterHold;
+  final called = Completer<void>();
+
   @override
   Future<FlushOutcome> flush() async {
     log.add('flush');
+    if (!called.isCompleted) called.complete();
+    final h = hold;
+    if (h != null) {
+      await h.future;
+      await afterHold?.call();
+    }
     return outcomes.isEmpty ? FlushOutcome.done : outcomes.removeAt(0);
   }
 }
@@ -129,6 +141,10 @@ class _FakePort implements GeofencePort {
   final List<Geofence> created = [];
   final List<String> removed = [];
   int reCreated = 0;
+
+  /// When set, [create] waits for it (the plugin call on the wire).
+  Completer<void>? holdCreate;
+  final createCalled = Completer<void>();
 
   @override
   Future<List<ActiveGeofence>> registered() async => [
@@ -144,6 +160,9 @@ class _FakePort implements GeofencePort {
 
   @override
   Future<void> create(Geofence g) async {
+    if (!createCalled.isCompleted) createCalled.complete();
+    final h = holdCreate;
+    if (h != null) await h.future;
     created.add(g);
     store[g.id] = g;
   }
@@ -210,6 +229,10 @@ void main() {
     String appVersion = '1.36.0',
     Future<String> Function()? permissionSeam,
     bool android = false,
+    Future<AutoSample> Function()? samplerSeam,
+    Future<String> Function()? deviceIdSeam,
+    AutoFence? fence,
+    Duration clearingCap = const Duration(seconds: 2),
   }) => AutoAttendanceService(
     session: session,
     permission:
@@ -218,22 +241,25 @@ void main() {
           log.add('permission');
           return permission;
         },
-    fence: AutoFence(port: port, isAndroid: android),
+    fence: fence ?? AutoFence(port: port, isAndroid: android),
     keyStore: keyStore,
     apiBuilder: (_) => _FakeMobileApi(log, error: keyError),
     autoApiBuilder: (_, key) => _FakeAutoApi(statuses, autoKey: key),
     sender: sender,
-    sampler: () async {
-      samples++;
-      return sample;
-    },
+    sampler:
+        samplerSeam ??
+        () async {
+          samples++;
+          return sample;
+        },
     platform: platform,
     queue: queue,
     prefs: prefs,
     refresh: () async => log.add('refresh'),
-    deviceId: () async => 'dev-1',
+    deviceId: deviceIdSeam ?? () async => 'dev-1',
     appVersion: () => appVersion,
     now: () => now,
+    clearingCap: clearingCap,
   );
 
   Future<void> answered(String state, {Duration ago = Duration.zero}) =>
@@ -530,6 +556,110 @@ void main() {
     expect(statuses.last['enabled'], true);
   });
 
+  group('sign-out while a sync runs (review round 1)', () {
+    Future<void> expectNothingLeft(AutoAttendanceService auto) async {
+      expect(port.store, isEmpty);
+      expect(await queue.ordered(), isEmpty);
+      expect(await keyStore.read(), isNull);
+      final keys = await prefs.getKeys();
+      expect(keys.where((k) => k.startsWith('omni_auto_')), isEmpty);
+      expect(auto.state, AutoPhoneState.off);
+    }
+
+    test('while the region is being created: the region is removed after '
+        'the create', () async {
+      port.holdCreate = Completer<void>();
+      final auto = service();
+      final run = auto.sync(appStart: true);
+      await port.createCalled.future;
+
+      final clearing = auto.onSessionClearing();
+      port.holdCreate!.complete();
+      await clearing;
+      await run;
+
+      expect(port.created.single.id, _region);
+      expect(statuses, isEmpty);
+      expect(samples, 0);
+      expect(log, isNot(contains('flush')));
+      await expectNothingLeft(auto);
+    });
+
+    test('while the fix is taken: no event and no inside state', () async {
+      final fix = Completer<AutoSample>();
+      final asked = Completer<void>();
+      final auto = service(
+        samplerSeam: () {
+          asked.complete();
+          return fix.future;
+        },
+      );
+      final run = auto.sync();
+      await asked.future;
+
+      await auto.onSessionClearing();
+      fix.complete(_inside);
+      await run;
+
+      expect(log, isNot(contains('flush')));
+      await expectNothingLeft(auto);
+    });
+
+    test('while the device id is read: no event and no inside state', () async {
+      final id = Completer<String>();
+      final asked = Completer<void>();
+      final auto = service(
+        deviceIdSeam: () {
+          asked.complete();
+          return id.future;
+        },
+      );
+      final run = auto.sync();
+      await asked.future;
+
+      await auto.onSessionClearing();
+      id.complete('dev-1');
+      await run;
+
+      await expectNothingLeft(auto);
+    });
+
+    test('while a flush is on the wire: its late answer is swept', () async {
+      await prefs.setString(autoLastStateKey, autoStateInside);
+      sender.hold = Completer<void>();
+      sender.afterHold = () => answered('waiting_wifi');
+      final auto = service();
+      final run = auto.sync();
+      await sender.called.future;
+
+      await auto.onSessionClearing();
+      sender.hold!.complete();
+      await run;
+
+      await expectNothingLeft(auto);
+    });
+
+    test('a stalled plugin holds the sign-out no longer than the cap; the '
+        'rest is still wiped', () async {
+      await keyStore.write('K0', 'dev-1');
+      await prefs.setString(autoLastStateKey, autoStateInside);
+      final stalled = _StalledPort();
+      final auto = service(
+        fence: AutoFence(port: stalled, isAndroid: false),
+        clearingCap: const Duration(milliseconds: 50),
+      );
+
+      final watch = Stopwatch()..start();
+      await auto.onSessionClearing();
+      expect(watch.elapsed, lessThan(const Duration(seconds: 1)));
+
+      expect(await keyStore.read(), isNull);
+      final keys = await prefs.getKeys();
+      expect(keys.where((k) => k.startsWith('omni_auto_')), isEmpty);
+      expect(auto.state, AutoPhoneState.off);
+    });
+  });
+
   group('Android app update (R9)', () {
     test('re-creates the regions once per new app version', () async {
       await prefs.setString(autoArmedAppVersionKey, '1.35.0');
@@ -586,4 +716,17 @@ class _ThrowingPort implements GeofencePort {
   Future<List<ActiveGeofence>> registered() => throw StateError('plugin');
   @override
   Future<void> removeById(String id) => throw StateError('plugin');
+}
+
+/// A plugin channel that never answers.
+class _StalledPort implements GeofencePort {
+  @override
+  Future<void> create(Geofence g) => Completer<void>().future;
+  @override
+  Future<void> reCreateAll() => Completer<void>().future;
+  @override
+  Future<List<ActiveGeofence>> registered() =>
+      Completer<List<ActiveGeofence>>().future;
+  @override
+  Future<void> removeById(String id) => Completer<void>().future;
 }

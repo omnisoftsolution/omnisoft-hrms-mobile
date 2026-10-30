@@ -206,4 +206,13 @@ void main() {
     await fence.removeAll('acme');
     expect(port.store.keys.toSet(), {'omni_office_other_7', 'something_else'});
   });
+
+  test('removeAll started during a sync runs after it (nothing stays armed)',
+      () async {
+    final armed = sync(_config());
+    final removed = fence.removeAll('acme');
+    await Future.wait([armed, removed]);
+    expect(port.created, hasLength(1));
+    expect(port.store, isEmpty);
+  });
 }

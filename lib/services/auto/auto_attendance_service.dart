@@ -83,7 +83,9 @@ class AutoAttendanceService extends ChangeNotifier {
     Future<String> Function()? deviceId,
     String Function()? appVersion,
     DateTime Function()? now,
+    Duration clearingCap = const Duration(seconds: 2),
   }) : _session = session,
+       _clearingCap = clearingCap,
        _permission = permission ?? locationPermissionWord,
        _fence = fence ?? AutoFence(),
        _keyStore = keyStore ?? AutoKeyStore(),
@@ -124,6 +126,10 @@ class AutoAttendanceService extends ChangeNotifier {
   final Future<String> Function() _deviceId;
   final String Function() _appVersion;
   final DateTime Function() _now;
+
+  /// How long a sign-out waits for [onSessionClearing] (push's own cap);
+  /// the rest finishes in the background.
+  final Duration _clearingCap;
   late final AutoEventQueue _queue;
   late final AutoApiFor _autoApi;
   late final Future<void> Function() _refresh;
@@ -223,14 +229,30 @@ class AutoAttendanceService extends ChangeNotifier {
       _rerun = false;
       final appStart = _pendingAppStart;
       _pendingAppStart = false;
+      final epoch = _epoch;
       try {
         await _syncOnce(appStart: appStart);
       } catch (e) {
         _log('sync ended early (${e.runtimeType})');
       }
+      if (epoch != _epoch) await _sweepAfterSignOut();
     } while (_rerun);
   }
 
+  /// A run that a sign-out overtook may have had a flush on the wire; the
+  /// sender saves its answer after the sign-out wiped the prefs. Runs before
+  /// any newer run (same loop), so it never touches a newer session.
+  Future<void> _sweepAfterSignOut() async {
+    try {
+      await _prefs.remove(AutoSender.lastAnswerKey);
+    } catch (e) {
+      _log('last answer not cleared (${e.runtimeType})');
+    }
+  }
+
+  /// True once a sign-out began after the run with [epoch] started. Every
+  /// write below is issued right after this check, with no await between,
+  /// so the sign-out's wipe (issued later) always comes after it.
   bool _stale(int epoch) =>
       epoch != _epoch || !_session.isLoggedIn || _session.isClearing;
 
@@ -276,7 +298,7 @@ class AutoAttendanceService extends ChangeNotifier {
     final always = permission == 'always';
     final armWanted = always && !needsSetup;
     if (armWanted && appStart && _platform == 'android') {
-      await _reCreateAfterUpdate();
+      await _reCreateAfterUpdate(epoch);
     }
     if (_stale(epoch)) return;
     try {
@@ -299,6 +321,7 @@ class AutoAttendanceService extends ChangeNotifier {
     await _postStatus(
       permission,
       armedState == AutoPhoneState.on,
+      epoch: epoch,
       force: appStart,
     );
     if (_stale(epoch)) return;
@@ -311,11 +334,9 @@ class AutoAttendanceService extends ChangeNotifier {
     await _flush(epoch);
     if (_stale(epoch)) return;
 
-    _setState(
-      armedState == AutoPhoneState.on && await _waitingWifi()
-          ? AutoPhoneState.waitingWifi
-          : armedState,
-    );
+    final waiting = armedState == AutoPhoneState.on && await _waitingWifi();
+    if (_stale(epoch)) return;
+    _setState(waiting ? AutoPhoneState.waitingWifi : armedState);
   }
 
   /// Off or opted out: no region, no key, and the server told once.
@@ -328,7 +349,7 @@ class AutoAttendanceService extends ChangeNotifier {
     _key = null;
     await _keyStore.delete();
     if (_stale(epoch)) return;
-    await _postStatus(permission, false, force: false);
+    await _postStatus(permission, false, epoch: epoch, force: false);
   }
 
   /// The stored key, else one fetched with the bearer session.
@@ -343,6 +364,7 @@ class AutoAttendanceService extends ChangeNotifier {
       final got = await _apiBuilder(_session).fetchAutoKey();
       if (_stale(epoch)) return _KeyResult.failed;
       await _keyStore.write(got.key, got.deviceId);
+      if (_stale(epoch)) return _KeyResult.failed;
       _key = got.key;
       return _KeyResult.ok;
     } on ApiException catch (e) {
@@ -365,11 +387,13 @@ class AutoAttendanceService extends ChangeNotifier {
 
   /// Android forgets its geofences on an app update while the plugin still
   /// lists them (Ruling R9): register them again once per new version.
-  Future<void> _reCreateAfterUpdate() async {
+  Future<void> _reCreateAfterUpdate(int epoch) async {
     final version = _appVersion();
     if (await _prefs.getString(autoArmedAppVersionKey) == version) return;
+    if (_stale(epoch)) return;
     try {
       await _fence.reCreateAll();
+      if (_stale(epoch)) return;
       await _prefs.setString(autoArmedAppVersionKey, version);
     } catch (e) {
       _log('re-creating regions failed (${e.runtimeType})');
@@ -381,10 +405,12 @@ class AutoAttendanceService extends ChangeNotifier {
   Future<void> _postStatus(
     String permission,
     bool enabled, {
+    required int epoch,
     required bool force,
   }) async {
     final sig = '$permission|$enabled|$_platform';
     if (!force && await _prefs.getString(autoStatusSentKey) == sig) return;
+    if (_stale(epoch)) return;
     final result = await _autoApi(
       _session,
       null,
@@ -393,6 +419,7 @@ class AutoAttendanceService extends ChangeNotifier {
       case AutoAccepted():
       case AutoFinal():
         // A final refusal will not change by asking again for the same.
+        if (_stale(epoch)) return;
         await _prefs.setString(autoStatusSentKey, sig);
       case AutoRetry(:final why):
         _log('status not sent ($why)');
@@ -419,9 +446,11 @@ class AutoAttendanceService extends ChangeNotifier {
     );
     final slack = math.max(0.0, math.min(sample.accuracy ?? 0, 100.0));
     if (distance > config.office.areaM + slack) return;
+    final deviceId = await _deviceId();
     if (_stale(epoch)) return;
-    await _prefs.setString(autoLastStateKey, autoStateInside);
-    await _queue.add(
+    // Both issued before any await: a sign-out's queue clear and prefs wipe
+    // queue up behind them.
+    final added = _queue.add(
       AutoEvent(
         eventUid: AutoEvent.newUid(),
         kind: AutoKind.arrive,
@@ -432,11 +461,13 @@ class AutoAttendanceService extends ChangeNotifier {
         isMocked: sample.isMocked,
         wifiSsid: sample.ssid,
         wifiBssid: sample.bssid,
-        deviceId: await _deviceId(),
+        deviceId: deviceId,
         appVersion: _appVersion(),
         source: AutoSource.foreground,
       ),
     );
+    final marked = _prefs.setString(autoLastStateKey, autoStateInside);
+    await Future.wait([added, marked]);
   }
 
   /// Sends the queue; a refused key is deleted and fetched once more.
@@ -484,29 +515,45 @@ class AutoAttendanceService extends ChangeNotifier {
 
   /// Runs before every sign-out, while the session is intact: removes this
   /// db's region, the key, the queue and every `omni_auto_*` pref.
-  Future<void> onSessionClearing() async {
+  ///
+  /// A run in flight stops writing at once (epoch). The three clean-ups run
+  /// side by side; the sign-out waits at most [_clearingCap] (Ruling R10)
+  /// and the rest finishes in the background. The region removal queues
+  /// behind any fence operation still running, so it always comes last.
+  Future<void> onSessionClearing() {
     _epoch++;
     _key = null;
-    final db = _session.clientDb;
-    try {
-      await _fence.removeAll(db);
-    } catch (e) {
-      _log('fence removal failed (${e.runtimeType})');
-    }
-    try {
-      await _keyStore.delete();
-    } catch (e) {
-      _log('key not deleted (${e.runtimeType})');
-    }
-    try {
-      await _queue.clear();
-      final keys = await _prefs.getKeys();
-      final ours = keys.where((k) => k.startsWith(_autoPrefix)).toSet();
-      if (ours.isNotEmpty) await _prefs.clear(allowList: ours);
-    } catch (e) {
-      _log('prefs not cleared (${e.runtimeType})');
-    }
     _setState(AutoPhoneState.off);
+    final db = _session.clientDb;
+    final work = Future.wait([
+      _quietly('fence removal', () => _fence.removeAll(db)),
+      _quietly('key delete', _keyStore.delete),
+      _quietly('prefs wipe', () async {
+        await _queue.clear();
+        final keys = await _prefs.getKeys();
+        final ours = keys.where((k) => k.startsWith(_autoPrefix)).toSet();
+        if (ours.isNotEmpty) await _prefs.clear(allowList: ours);
+      }),
+    ]);
+    return work
+        .then<void>((_) {})
+        .timeout(
+          _clearingCap,
+          onTimeout: () {
+            _log('sign-out clean-up goes on in the background');
+          },
+        );
+  }
+
+  static Future<void> _quietly(
+    String what,
+    Future<void> Function() step,
+  ) async {
+    try {
+      await step();
+    } catch (e) {
+      _log('$what failed (${e.runtimeType})');
+    }
   }
 
   @override
