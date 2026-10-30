@@ -66,6 +66,14 @@ post_install do |installer|
       # Apple Silicon refuse to launch x86_64 / Rosetta builds.
       # Real iPhone / iPad builds are unaffected.
       config.build_settings['EXCLUDED_ARCHS[sdk=iphonesimulator*]'] = 'arm64'
+
+      # permission_handler compiles in only the permissions enabled by macro;
+      # without this every Permission.location* request/status is denied on
+      # iOS (automatic check-in asks When in use, then Always). Notifications
+      # keep their existing path (firebase_messaging), so no
+      # PERMISSION_NOTIFICATIONS here.
+      defs = config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= ['$(inherited)']
+      defs << 'PERMISSION_LOCATION=1'
     end
   end
 
