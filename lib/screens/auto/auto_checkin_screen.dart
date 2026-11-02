@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../core/omni_colors.dart';
-import '../../models/auto_attendance_config.dart';
 import '../../services/auto/auto_attendance_service.dart';
 import 'auto_setup_card.dart';
 import 'auto_setup_screen.dart';
@@ -15,7 +14,8 @@ String autoStateWord(AutoPhoneState state, {String? office}) {
     case AutoPhoneState.waitingWifi:
       return 'Waiting for office Wi-Fi';
     case AutoPhoneState.needsAlways:
-      return 'Paused — location permission';
+      // Also the state before setup was ever done (F-a): nothing is paused.
+      return 'Needs location access';
     case AutoPhoneState.optedOut:
       return 'Off on this phone';
     case AutoPhoneState.needsSetup:
@@ -104,9 +104,9 @@ class AutoCheckinScreen extends StatelessWidget {
                     c,
                     text,
                     'Triggers on',
-                    cfg.trigger == AutoTrigger.locationWifi
-                        ? 'Location + Wi-Fi'
-                        : 'Location',
+                    // The server's answer for this office (F-c): Location +
+                    // Wi-Fi falls back to Location without a Wi-Fi list.
+                    cfg.wifiRequired ? 'Location + Wi-Fi' : 'Location',
                   ),
                 ],
                 _row(c, text, 'Location permission', _permissionWord(state)),

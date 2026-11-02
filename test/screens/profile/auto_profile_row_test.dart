@@ -78,7 +78,7 @@ void main() {
     const expected = {
       AutoPhoneState.on: 'On · HQ',
       AutoPhoneState.waitingWifi: 'Waiting for office Wi-Fi',
-      AutoPhoneState.needsAlways: 'Paused — location permission',
+      AutoPhoneState.needsAlways: 'Needs location access',
       AutoPhoneState.optedOut: 'Off on this phone',
       AutoPhoneState.needsSetup: 'Not set up',
     };

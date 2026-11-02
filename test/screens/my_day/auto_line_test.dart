@@ -79,7 +79,9 @@ void main() {
 
     auto.setState(AutoPhoneState.needsAlways);
     await tester.pump();
-    expect(find.text('Paused'), findsOneWidget);
+    // F-a: also shown before setup was ever done, so not "Paused".
+    expect(find.text('Needs location access'), findsOneWidget);
+    expect(find.textContaining('Paused'), findsNothing);
   });
 
   testWidgets('no line for off, optedOut, needsSetup or without the service', (

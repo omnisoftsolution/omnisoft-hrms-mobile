@@ -14,11 +14,15 @@ final fakeAutoConfig = AutoAttendanceConfig.fromJson({
 /// [sync] moves to [afterSync] (when set) and counts the call. Set
 /// SharedPreferencesAsync's in-memory platform before constructing one.
 class FakeAuto extends AutoAttendanceService {
-  FakeAuto({AutoPhoneState initial = AutoPhoneState.needsAlways})
-    : _state = initial,
-      super(session: SessionService());
+  FakeAuto({
+    AutoPhoneState initial = AutoPhoneState.needsAlways,
+    AutoAttendanceConfig? config,
+  }) : _state = initial,
+       _config = config ?? fakeAutoConfig,
+       super(session: SessionService());
 
   AutoPhoneState _state;
+  final AutoAttendanceConfig _config;
   AutoPhoneState? afterSync;
   AutoPhoneState? afterTurnOn;
   int syncs = 0;
@@ -29,7 +33,7 @@ class FakeAuto extends AutoAttendanceService {
   AutoPhoneState get state => _state;
 
   @override
-  AutoAttendanceConfig? get config => fakeAutoConfig;
+  AutoAttendanceConfig? get config => _config;
 
   void setState(AutoPhoneState s) {
     _state = s;

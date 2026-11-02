@@ -854,32 +854,33 @@ class MyDayScreenState extends State<MyDayScreen> {
     final c = context.omni;
     final office = auto.config?.office.name ?? '';
     final String text;
-    final bool paused;
+    final bool warn;
     switch (auto.state) {
       case AutoPhoneState.on:
         text = office.isEmpty
             ? 'Auto check-in on'
             : 'Auto check-in on · $office';
-        paused = false;
+        warn = false;
       case AutoPhoneState.waitingWifi:
         text = 'Waiting for office Wi-Fi';
-        paused = false;
+        warn = false;
       case AutoPhoneState.needsAlways:
-        text = 'Paused';
-        paused = true;
+        // Also before setup was ever done (F-a), so not "Paused".
+        text = 'Needs location access';
+        warn = true;
       case AutoPhoneState.off:
       case AutoPhoneState.optedOut:
       case AutoPhoneState.needsSetup:
         return const SizedBox.shrink();
     }
-    final color = paused ? c.warning : c.textSub;
+    final color = warn ? c.warning : c.textSub;
     return Padding(
       key: const ValueKey('auto-line'),
       padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
       child: Row(
         children: [
           Icon(
-            paused ? Icons.pause_circle_outline_rounded : Icons.my_location,
+            warn ? Icons.location_off_outlined : Icons.my_location,
             size: 14,
             color: color,
           ),
