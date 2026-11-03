@@ -17,6 +17,7 @@ import '../../../services/face_recognition_service.dart';
 import '../../../services/my_day_memory.dart';
 import '../../../services/omni_mobile_api.dart';
 import '../../../services/session_service.dart';
+import '../../../widgets/duo_panes.dart';
 import '../../../widgets/error_state_view.dart';
 import '../../../widgets/feature_locked_pane.dart';
 import '../../../widgets/omni_app_bar.dart';
@@ -742,6 +743,76 @@ class MyDayScreenState extends State<MyDayScreen> {
     // (no controller either); the week and For you still apply.
     final attendanceOn = context.watch<SessionService>().featureAttendance;
     final autoService = context.read<AutoAttendanceService?>();
+    final tile = attendanceOn
+        ? StatusTile(
+            day: day,
+            action: _tileAction(day),
+            place: _controller?.placeLabel ?? '',
+            pinOn: _controller == null
+                ? null
+                : (_controller!.hasPlace && !_controller!.isOutside),
+          )
+        : null;
+    Widget? autoLine(double side) => attendanceOn && autoService != null
+        ? ListenableBuilder(
+            listenable: autoService,
+            builder: (context, _) =>
+                _autoLine(context, autoService, side: side),
+          )
+        : null;
+    final cards = <Widget>[
+      // Automatic check-in setup (1.36.0); nothing without the service
+      // (older tests) and gone once it is on. In the list, so a short
+      // screen scrolls instead of overflowing.
+      if (attendanceOn && autoService != null) AutoSetupCard(auto: autoService),
+      if (!attendanceOn) ...[
+        const FeatureLockedPane(
+          featureName: 'Attendance',
+          subtitle:
+              'Your subscription does not include '
+              'attendance tracking. Contact your administrator '
+              'to upgrade.',
+        ),
+        const SizedBox(height: 16),
+      ],
+      if (_autoClosed != null) ...[
+        AutoClosedBanner(
+          acp: _autoClosed!,
+          onDismiss: () => setState(() => _autoClosed = null),
+        ),
+        const SizedBox(height: 16),
+      ],
+    ];
+    final week = <Widget>[
+      if (day.week.isNotEmpty) ...[
+        WeekStrip(day: day),
+        const SizedBox(height: 20),
+      ],
+    ];
+    final timeline = <Widget>[
+      if (!attendanceOn)
+        const SizedBox.shrink()
+      else if (day.off == null || day.punches.isNotEmpty) ...[
+        Text('Timeline', style: sectionStyle),
+        const SizedBox(height: 8),
+        DayTimeline(day: day, phoneHint: _phoneHint()),
+        const SizedBox(height: 16),
+      ] else ...[
+        _offCard(context, day),
+        const SizedBox(height: 16),
+      ],
+    ];
+    final forYou = <Widget>[
+      Text('For you', style: sectionStyle),
+      const SizedBox(height: 8),
+      ForYouList(
+        items: day.forYou,
+        onTap: _onTap,
+        missing: attendanceOn && day.missing && day.kioskOnly,
+        onMissingTap: () => showKioskSheet(context),
+        onYesterday: _onYesterday,
+      ),
+    ];
     return Column(
       children: [
         if (_fromMemory)
@@ -759,87 +830,48 @@ class MyDayScreenState extends State<MyDayScreen> {
               style: text.bodySmall?.copyWith(color: c.error),
             ),
           ),
-        if (header != null)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-            child: header,
-          ),
-        if (attendanceOn)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-            child: StatusTile(
-              day: day,
-              action: _tileAction(day),
-              place: _controller?.placeLabel ?? '',
-              pinOn: _controller == null
-                  ? null
-                  : (_controller!.hasPlace && !_controller!.isOutside),
-            ),
-          ),
-        if (attendanceOn && autoService != null)
-          ListenableBuilder(
-            listenable: autoService,
-            builder: (context, _) => _autoLine(context, autoService),
-          ),
         Expanded(
-          child: RefreshIndicator(
-            onRefresh: refresh,
-            child: ListView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: EdgeInsets.fromLTRB(
-                16,
-                16,
-                16,
-                16 + MediaQuery.of(context).viewPadding.bottom,
-              ),
+          // iPhone Duo open sideways (v4): today's tile and For you left of
+          // the fold, the week and the timeline right of it.
+          child: DuoPanes(
+            single: (context) => Column(
               children: [
-                // Automatic check-in setup (1.36.0); nothing without the
-                // service (older tests) and gone once it is on. In the list,
-                // so a short screen scrolls instead of overflowing.
-                if (attendanceOn && autoService != null)
-                  AutoSetupCard(auto: autoService),
-                if (!attendanceOn) ...[
-                  const FeatureLockedPane(
-                    featureName: 'Attendance',
-                    subtitle:
-                        'Your subscription does not include '
-                        'attendance tracking. Contact your administrator '
-                        'to upgrade.',
+                if (header != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                    child: header,
                   ),
-                  const SizedBox(height: 16),
-                ],
-                if (_autoClosed != null) ...[
-                  AutoClosedBanner(
-                    acp: _autoClosed!,
-                    onDismiss: () => setState(() => _autoClosed = null),
+                if (tile != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                    child: tile,
                   ),
-                  const SizedBox(height: 16),
-                ],
-                if (day.week.isNotEmpty) ...[
-                  WeekStrip(day: day),
-                  const SizedBox(height: 20),
-                ],
-                if (!attendanceOn)
-                  const SizedBox.shrink()
-                else if (day.off == null || day.punches.isNotEmpty) ...[
-                  Text('Timeline', style: sectionStyle),
-                  const SizedBox(height: 8),
-                  DayTimeline(day: day, phoneHint: _phoneHint()),
-                  const SizedBox(height: 16),
-                ] else ...[
-                  _offCard(context, day),
-                  const SizedBox(height: 16),
-                ],
-                Text('For you', style: sectionStyle),
-                const SizedBox(height: 8),
-                ForYouList(
-                  items: day.forYou,
-                  onTap: _onTap,
-                  missing: attendanceOn && day.missing && day.kioskOnly,
-                  onMissingTap: () => showKioskSheet(context),
-                  onYesterday: _onYesterday,
+                ?autoLine(20),
+                Expanded(
+                  child: _list(
+                    context,
+                    const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                    [...cards, ...week, ...timeline, ...forYou],
+                  ),
                 ),
               ],
+            ),
+            left: (context) => _list(
+              context,
+              paneInsets(left: true, bottom: 0),
+              [
+                if (header != null) ...[header, const SizedBox(height: 16)],
+                ?tile,
+                ?autoLine(4),
+                const SizedBox(height: 16),
+                ...cards,
+                ...forYou,
+              ],
+            ),
+            right: (context) => _list(
+              context,
+              paneInsets(left: false, bottom: 0),
+              [...week, ...timeline],
             ),
           ),
         ),
@@ -847,10 +879,34 @@ class MyDayScreenState extends State<MyDayScreen> {
     );
   }
 
+  /// The pull-to-refresh list of the whole screen or of one pane; [padding]
+  /// gets the bottom inset added.
+  Widget _list(
+    BuildContext context,
+    EdgeInsets padding,
+    List<Widget> children,
+  ) {
+    return RefreshIndicator(
+      onRefresh: refresh,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: padding.copyWith(
+          bottom: 16 + MediaQuery.of(context).viewPadding.bottom,
+        ),
+        children: children,
+      ),
+    );
+  }
+
   /// One line under the status tile: what automatic check-in is doing.
   /// Nothing while it is off, turned off here or not set up (the setup card
-  /// covers those).
-  Widget _autoLine(BuildContext context, AutoAttendanceService auto) {
+  /// covers those). [side] = its inset from the tile's edges plus the
+  /// list's padding.
+  Widget _autoLine(
+    BuildContext context,
+    AutoAttendanceService auto, {
+    double side = 20,
+  }) {
     final c = context.omni;
     final office = auto.config?.office.name ?? '';
     final String text;
@@ -876,7 +932,7 @@ class MyDayScreenState extends State<MyDayScreen> {
     final color = warn ? c.warning : c.textSub;
     return Padding(
       key: const ValueKey('auto-line'),
-      padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+      padding: EdgeInsets.fromLTRB(side, 4, side, 0),
       child: Row(
         children: [
           Icon(

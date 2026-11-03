@@ -17,10 +17,12 @@ const kPaneFoldGap = 14.0;
 /// middle of the whole view: the side column belongs to the right-hand
 /// half, so the content's own middle would put the split off the fold. A
 /// fold that would leave either pane under 35 % (the app beside another one)
-/// splits the box in the middle instead.
+/// splits the box in the middle instead. Only sideways: a wide screen held
+/// upright (a tablet) keeps one column.
 double? twoPaneSplit(BuildContext context, double width) {
   if (width < kTwoPaneMinWidth) return null;
   final view = MediaQueryData.fromView(View.of(context));
+  if (view.size.width <= view.size.height) return null;
   final columnLeft = sideColumnOf(view.viewPadding) == SideColumn.left
       ? view.viewPadding.left
       : 0.0;

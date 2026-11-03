@@ -938,9 +938,7 @@ void main() {
       api.gate = Completer<void>();
       await tester.tap(find.byKey(const ValueKey('ov-dept-5')));
       await tester.pump();
-      // 1080 pt wide = two panes (Duo v4): both halves of the kept answer
-      // are dimmed.
-      expect(find.byKey(const ValueKey('ov-kept')), findsNWidgets(2));
+      expect(find.byKey(const ValueKey('ov-kept')), findsOneWidget);
       expect(find.text('42 checked in'), findsOneWidget); // kept, dimmed
 
       // Taps do not reach the kept sections, and their handlers refuse too.

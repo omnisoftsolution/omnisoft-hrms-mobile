@@ -53,6 +53,15 @@ void main() {
     expect(find.byKey(const ValueKey('single')), findsOneWidget);
   });
 
+  testWidgets('a wide screen held upright (a tablet) keeps one column', (
+    tester,
+  ) async {
+    addTearDown(tester.view.reset);
+    _view(tester, const Size(1080, 2400));
+    await tester.pumpWidget(_panes(1080));
+    expect(find.byKey(const ValueKey('single')), findsOneWidget);
+  });
+
   testWidgets('Duo open sideways: the split sits on the middle of the whole '
       'screen, not of the space left of the column', (tester) async {
     addTearDown(tester.view.reset);

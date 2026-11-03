@@ -399,6 +399,28 @@ void main() {
     expect(find.text(_banner), findsNothing);
   });
 
+  testWidgets('Duo open sideways: the check-in tile and For you left of the '
+      'fold, this week and the timeline right of it (v4)', (tester) async {
+    tester.view.physicalSize = const Size(951, 669);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(_host(_FakeApi([sampleMyDay()])));
+    await tester.pumpAndSettle();
+    Finder inPane(String side, Finder f) => find.descendant(
+      of: find.byKey(ValueKey('duo-pane-$side')),
+      matching: f,
+    );
+    expect(
+      inPane('left', find.byKey(const ValueKey('status-tile'))),
+      findsOneWidget,
+    );
+    expect(inPane('left', find.text('For you')), findsOneWidget);
+    expect(inPane('right', find.byType(WeekStrip)), findsOneWidget);
+    expect(inPane('right', find.text('Timeline')), findsOneWidget);
+    expect(inPane('right', find.text('Shift ends')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('automatic check-in card is the list\'s first row, below the '
       'status tile', (tester) async {
     _tallScreen(tester);
