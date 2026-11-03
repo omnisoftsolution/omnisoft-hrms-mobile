@@ -43,6 +43,20 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  // Duo v4 (2026-11-03): the scope gets its own line under the title, so a
+  // company name shows in full in a pane.
+  testWidgets('the scope sits under the title, starting at its left edge', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_card('OMNISOFT TECHNOLOGIES Pte. Ltd.'));
+    final title = tester.getRect(find.text("Who's out"));
+    final scope = tester.getRect(
+      find.text('everyone in OMNISOFT TECHNOLOGIES Pte. Ltd.'),
+    );
+    expect(scope.top, greaterThanOrEqualTo(title.bottom));
+    expect(scope.left, title.left);
+  });
+
   testWidgets('a short scope shows in full', (tester) async {
     await tester.pumpWidget(_card('SG Company'));
     expect(find.text('everyone in SG Company'), findsOneWidget);

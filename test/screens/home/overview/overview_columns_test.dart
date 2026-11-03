@@ -59,11 +59,13 @@ void main() {
     expect(_y(tester, 'forYou'), greaterThan(_y(tester, 'who')));
   });
 
-  testWidgets('iPhone Duo open sideways: three columns', (tester) async {
+  // Duo v4 (2026-11-03): never three columns; sideways the screen splits at
+  // the fold (DuoPanes) and a wide box still gets two.
+  testWidgets('a wide box stays two columns', (tester) async {
     await _pump(tester, 835);
     expect(_x(tester, 'who'), greaterThan(_x(tester, 'tile')));
-    expect(_x(tester, 'forYou'), greaterThan(_x(tester, 'who')));
-    expect(_y(tester, 'forYou'), _y(tester, 'tile'));
+    expect(_x(tester, 'forYou'), _x(tester, 'who'));
+    expect(_y(tester, 'forYou'), greaterThan(_y(tester, 'who')));
   });
 
   testWidgets('an empty block takes no column', (tester) async {

@@ -220,9 +220,11 @@ class WhoOutCard extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
+          // The scope on its own line under the title (Duo v4): a company
+          // name shows in full in a pane and never squeezes the title; a
+          // very long one still shortens itself.
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 OverviewCopy.whoOut,
@@ -232,16 +234,12 @@ class WhoOutCard extends StatelessWidget {
                   color: c.textSub,
                 ),
               ),
-              const SizedBox(width: 12),
-              // A long company name shortens itself; the title keeps its line.
-              Expanded(
-                child: Text(
-                  OverviewCopy.everyoneIn(scopeLabel),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.end,
-                  style: TextStyle(fontSize: 12, color: c.textMuted),
-                ),
+              const SizedBox(height: 2),
+              Text(
+                OverviewCopy.everyoneIn(scopeLabel),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 12, color: c.textMuted),
               ),
             ],
           ),

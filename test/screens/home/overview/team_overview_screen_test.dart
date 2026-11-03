@@ -892,6 +892,36 @@ void main() {
       expect(find.byKey(const ValueKey('ov-progress')), findsNothing);
     });
 
+    testWidgets('Duo open sideways: switches and tiles left of the fold, '
+        'Who\'s out and For you right of it (v4)', (tester) async {
+      tester.view.physicalSize = const Size(951, 669);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      final api = _Api([
+        _json(forYou: [_myLeave]),
+      ]);
+      await tester.pumpWidget(_host(api));
+      await tester.pumpAndSettle();
+      Finder inPane(String side, Finder f) => find.descendant(
+        of: find.byKey(ValueKey('duo-pane-$side')),
+        matching: f,
+      );
+      expect(inPane('left', find.text('42 checked in')), findsOneWidget);
+      expect(inPane('left', find.text('Yesterday · reviewed')), findsOneWidget);
+      expect(inPane('left', find.byKey(const ValueKey('ov-dept-5'))), findsOne);
+      expect(inPane('right', find.text("Who's out")), findsOneWidget);
+      expect(
+        inPane('right', find.byKey(const ValueKey('for-you-my_leave-412'))),
+        findsOneWidget,
+      );
+      expect(inPane('right', find.text('42 checked in')), findsNothing);
+      expect(
+        tester.getRect(find.byKey(const ValueKey('duo-pane-left'))).right,
+        475.5,
+      );
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('a kept previous selection is dimmed and its Who\'s out rows, '
         'For-you cards and See 30 / 60 / 90 open nothing (review fix 8)', (
       tester,
@@ -908,7 +938,9 @@ void main() {
       api.gate = Completer<void>();
       await tester.tap(find.byKey(const ValueKey('ov-dept-5')));
       await tester.pump();
-      expect(find.byKey(const ValueKey('ov-kept')), findsOneWidget);
+      // 1080 pt wide = two panes (Duo v4): both halves of the kept answer
+      // are dimmed.
+      expect(find.byKey(const ValueKey('ov-kept')), findsNWidgets(2));
       expect(find.text('42 checked in'), findsOneWidget); // kept, dimmed
 
       // Taps do not reach the kept sections, and their handlers refuse too.

@@ -13,6 +13,7 @@ import '../../../models/team_overview.dart';
 import '../../../services/omni_mobile_api.dart';
 import '../../../services/session_service.dart';
 import '../../../services/team_cache.dart';
+import '../../../widgets/duo_panes.dart';
 import '../../../widgets/error_state_view.dart';
 import '../../../widgets/omni_app_bar.dart';
 import '../../../widgets/pill_segments.dart';
@@ -578,17 +579,13 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
         children: [
           if (_refreshFailed) _strip(context),
           Expanded(
-            child: RefreshIndicator(
-              onRefresh: refresh,
-              child: ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: EdgeInsets.fromLTRB(
-                  16,
-                  14,
-                  16,
-                  16 + MediaQuery.of(context).viewPadding.bottom,
-                ),
-                children: [
+            // iPhone Duo open sideways: the tiles on the left of the fold,
+            // Who's out and For you on the right (v4).
+            child: DuoPanes(
+              single: (context) => _list(
+                context,
+                const EdgeInsets.fromLTRB(16, 14, 16, 0),
+                [
                   if (widget.header != null) ...[
                     widget.header!,
                     const SizedBox(height: 14),
@@ -596,9 +593,44 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
                   ..._content(context),
                 ],
               ),
+              left: (context) => _list(
+                context,
+                paneInsets(left: true, top: 14, bottom: 0),
+                [
+                  if (widget.header != null) ...[
+                    widget.header!,
+                    const SizedBox(height: 14),
+                  ],
+                  ..._content(context, _Pane.left),
+                ],
+              ),
+              right: (context) => _list(
+                context,
+                paneInsets(left: false, top: 14, bottom: 0),
+                _content(context, _Pane.right),
+              ),
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// The pull-to-refresh list of the whole screen or of one pane; [padding]
+  /// gets the bottom inset added.
+  Widget _list(
+    BuildContext context,
+    EdgeInsets padding,
+    List<Widget> children,
+  ) {
+    return RefreshIndicator(
+      onRefresh: refresh,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: padding.copyWith(
+          bottom: 16 + MediaQuery.of(context).viewPadding.bottom,
+        ),
+        children: children,
       ),
     );
   }
@@ -633,9 +665,18 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
     return 'on ${DateFormat('EEE d MMM', 'en_US').format(at)} at $time';
   }
 
-  List<Widget> _content(BuildContext context) {
+  /// The screen's content: all of it ([_Pane.both]), or what one pane of
+  /// the two-pane layout shows. The right pane only ever shows sections;
+  /// the chips, the day switch, spinners and errors live on the left.
+  List<Widget> _content(BuildContext context, [_Pane pane = _Pane.both]) {
     final last = _last;
     final error = _firstLoadError;
+    if (pane == _Pane.right) {
+      final overview = _overview;
+      if (last == null || overview == null) return const [];
+      final b = _blocks(context, overview);
+      return _keptIfStale([...b.whoOut, ...b.forYou]);
+    }
     if (last == null) {
       return [
         if (error == null)
@@ -682,26 +723,44 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
           ),
           const SizedBox(height: 12),
         ],
-        // A previous selection kept while the new one loads is dimmed; its
-        // rows, cards and links open nothing (1.34.1 review fix 8).
-        if (_shownMatches)
-          ..._sections(context, overview)
-        else
-          Opacity(
-            key: const ValueKey('ov-kept'),
-            opacity: 0.55,
-            child: IgnorePointer(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: _sections(context, overview),
-              ),
-            ),
-          ),
+        ..._keptIfStale(
+          pane == _Pane.left
+              ? _blocks(context, overview).attendance
+              : _sections(context, overview),
+        ),
       ],
     ];
   }
 
+  /// A previous selection kept while the new one loads is dimmed; its rows,
+  /// cards and links open nothing (1.34.1 review fix 8).
+  List<Widget> _keptIfStale(List<Widget> children) {
+    if (_shownMatches || children.isEmpty) return children;
+    return [
+      Opacity(
+        key: const ValueKey('ov-kept'),
+        opacity: 0.55,
+        child: IgnorePointer(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: children,
+          ),
+        ),
+      ),
+    ];
+  }
+
   List<Widget> _sections(BuildContext context, TeamOverview o) {
+    final b = _blocks(context, o);
+    if (b.empty) return [...b.attendance, ...b.forYou];
+    return [
+      OverviewColumns(blocks: [b.attendance, b.whoOut, b.forYou]),
+    ];
+  }
+
+  /// The overview's blocks: today's or yesterday's tile and counts (or the
+  /// empty card), Who's out and For you.
+  _OverviewBlocks _blocks(BuildContext context, TeamOverview o) {
     final sectionStyle = Theme.of(context).textTheme.labelLarge?.copyWith(
       color: context.omni.textSub,
       fontWeight: FontWeight.w700,
@@ -774,12 +833,14 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
         ),
       ],
     ];
-    if (empty != null) {
-      return [_emptyCard(empty), const SizedBox(height: 16), ...forYouBlock];
-    }
-    return [
-      OverviewColumns(blocks: [attendance, whoOutBlock, forYouBlock]),
-    ];
+    return (
+      attendance: empty == null
+          ? attendance
+          : [_emptyCard(empty), const SizedBox(height: 16)],
+      whoOut: whoOutBlock,
+      forYou: forYouBlock,
+      empty: empty != null,
+    );
   }
 
   Widget _departmentChips(List<TeamDepartment> departments) {
@@ -880,17 +941,26 @@ class TeamOverviewScreenState extends State<TeamOverviewScreen> {
   }
 }
 
+/// Which part of the overview a list shows (two panes on a wide screen).
+enum _Pane { both, left, right }
+
+typedef _OverviewBlocks = ({
+  List<Widget> attendance,
+  List<Widget> whoOut,
+  List<Widget> forYou,
+  bool empty,
+});
+
 /// Lays the overview's blocks (today's tile and counts, Who's out, For you)
-/// side by side when the screen is wide — iPhone Duo open: two columns
-/// upright, three sideways — and stacked on a phone. With two columns,
-/// Who's out and For you share the second.
+/// in two columns when the screen is wide (iPhone Duo open upright) and
+/// stacked on a phone; Who's out and For you share the second column.
+/// Sideways the screen splits at the fold instead ([DuoPanes]).
 class OverviewColumns extends StatelessWidget {
   const OverviewColumns({super.key, required this.blocks});
 
-  /// Width (content, between the side paddings) from which a second and a
-  /// third column are used.
+  /// Width (content, between the side paddings) from which a second column
+  /// is used.
   static const twoColumnWidth = 600.0;
-  static const threeColumnWidth = 820.0;
 
   final List<List<Widget>> blocks;
 
@@ -900,15 +970,10 @@ class OverviewColumns extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final w = constraints.maxWidth;
-        final cols = w >= threeColumnWidth
-            ? 3
-            : w >= twoColumnWidth
-            ? 2
-            : 1;
-        if (cols == 1 || groups.length < 2) {
+        if (w < twoColumnWidth || groups.length < 2) {
           return _stack([for (final g in groups) ...g]);
         }
-        final columns = cols == 2 && groups.length == 3
+        final columns = groups.length == 3
             ? [groups[0], groups[1] + groups[2]]
             : groups;
         return Row(
