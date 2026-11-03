@@ -9,6 +9,7 @@ import '../../core/money.dart';
 import '../../models/expense_record.dart';
 import '../../services/omni_mobile_api.dart';
 import '../../services/session_service.dart';
+import '../../widgets/duo_panes.dart';
 import '../../widgets/feature_locked_pane.dart';
 import '../../widgets/omni_app_bar.dart';
 import 'expense_create_screen.dart';
@@ -18,7 +19,10 @@ import 'expense_detail_screen.dart';
 /// badges, plus a FAB to create a new one. Subscription gating
 /// (FeatureLockedPane) is preserved from the previous stub.
 class ExpensesScreen extends StatefulWidget {
-  const ExpensesScreen({super.key});
+  const ExpensesScreen({super.key, this.apiBuilder});
+
+  /// Test seam: swaps in a fake API (fake-subclass pattern).
+  final OmniMobileApi Function(SessionService session)? apiBuilder;
 
   @override
   State<ExpensesScreen> createState() => ExpensesScreenState();
@@ -26,6 +30,17 @@ class ExpensesScreen extends StatefulWidget {
 
 class ExpensesScreenState extends State<ExpensesScreen> {
   List<ExpenseRecord> _records = const [];
+
+  /// The claim open in the right pane (two panes only).
+  int? _openId;
+
+  OmniMobileApi _api(SessionService session) =>
+      widget.apiBuilder?.call(session) ??
+      OmniMobileApi(
+        baseUrl: session.clientUrl,
+        db: session.clientDb,
+        token: session.token,
+      );
   bool _loading = false;
   bool _loadingMore = false;
   bool _hasMore = false;
@@ -51,12 +66,7 @@ class ExpensesScreenState extends State<ExpensesScreen> {
       _error = null;
     });
     try {
-      final api = OmniMobileApi(
-        baseUrl: session.clientUrl,
-        db: session.clientDb,
-        token: session.token,
-      );
-      final page = await api.getExpenseList();
+      final page = await _api(session).getExpenseList();
       if (!mounted) return;
       setState(() {
         _records = page.records;
@@ -79,12 +89,9 @@ class ExpensesScreenState extends State<ExpensesScreen> {
     final session = context.read<SessionService>();
     setState(() => _loadingMore = true);
     try {
-      final api = OmniMobileApi(
-        baseUrl: session.clientUrl,
-        db: session.clientDb,
-        token: session.token,
-      );
-      final page = await api.getExpenseList(beforeId: _records.last.id);
+      final page = await _api(
+        session,
+      ).getExpenseList(beforeId: _records.last.id);
       if (!mounted) return;
       setState(() {
         _records = [..._records, ...page.records];
@@ -112,32 +119,42 @@ class ExpensesScreenState extends State<ExpensesScreen> {
   @override
   Widget build(BuildContext context) {
     final session = context.watch<SessionService>();
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Two panes (iPhone Duo open sideways, v4): New expense sits at
+        // the foot of the list, not over the open claim.
+        final panes =
+            _records.isNotEmpty &&
+            twoPaneSplit(context, constraints.maxWidth) != null;
+        return Scaffold(
+          appBar: const OmniAppBar(title: 'Expenses'),
+          body: !session.featureExpenses
+              ? const FeatureLockedPane(
+                  featureName: 'Expenses',
+                  subtitle:
+                      'Your subscription does not include expense '
+                      'tracking. Contact your administrator to upgrade.',
+                )
+              : _buildBody(),
+          floatingActionButton: !session.featureExpenses || panes
+              ? null
+              : _newExpenseButton(),
+        );
+      },
+    );
+  }
+
+  Widget _newExpenseButton() {
     final c = context.omni;
-    return Scaffold(
-      appBar: const OmniAppBar(title: 'Expenses'),
-      body: !session.featureExpenses
-          ? const FeatureLockedPane(
-              featureName: 'Expenses',
-              subtitle:
-                  'Your subscription does not include expense '
-                  'tracking. Contact your administrator to upgrade.',
-            )
-          : _buildBody(),
-      floatingActionButton: !session.featureExpenses
-          ? null
-          : FloatingActionButton.extended(
-              onPressed: _openCreate,
-              backgroundColor: c.brandFill,
-              foregroundColor: c.onBrandFill,
-              icon: const Icon(Icons.add_rounded),
-              label: const Text(
-                'NEW EXPENSE',
-                style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.6,
-                ),
-              ),
-            ),
+    return FloatingActionButton.extended(
+      onPressed: _openCreate,
+      backgroundColor: c.brandFill,
+      foregroundColor: c.onBrandFill,
+      icon: const Icon(Icons.add_rounded),
+      label: const Text(
+        'NEW EXPENSE',
+        style: TextStyle(fontWeight: FontWeight.w700, letterSpacing: 0.6),
+      ),
     );
   }
 
@@ -148,20 +165,56 @@ class ExpensesScreenState extends State<ExpensesScreen> {
     if (_error != null && _records.isEmpty) {
       return _errorPane(_error!);
     }
-    return RefreshIndicator(
-      onRefresh: _refresh,
-      child: _records.isEmpty
-          ? _emptyState()
-          : ListView.builder(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
-              itemCount: _records.length + (_hasMore ? 1 : 0),
-              itemBuilder: (_, i) {
-                if (i == _records.length) return _loadOlderTile();
-                return _expenseTile(_records[i]);
-              },
-            ),
+    if (_records.isEmpty) {
+      return RefreshIndicator(onRefresh: _refresh, child: _emptyState());
+    }
+    Widget list(EdgeInsets padding, {bool picks = false}) {
+      final open = _openRecord;
+      return RefreshIndicator(
+        onRefresh: _refresh,
+        child: ListView.builder(
+          padding: padding,
+          itemCount: _records.length + (_hasMore ? 1 : 0),
+          itemBuilder: (_, i) {
+            if (i == _records.length) return _loadOlderTile();
+            final r = _records[i];
+            if (!picks) return _expenseTile(r);
+            return _expenseTile(
+              r,
+              open: r.id == open.id,
+              onTap: () => setState(() => _openId = r.id),
+            );
+          },
+        ),
+      );
+    }
+
+    // iPhone Duo open sideways (v4, idea A): the list left of the fold,
+    // the claim it opens right of it.
+    return DuoPanes(
+      single: (_) => list(const EdgeInsets.fromLTRB(16, 12, 16, 96)),
+      left: (context) => Stack(
+        children: [
+          list(paneInsets(left: true, top: 12, bottom: 96), picks: true),
+          Positioned(
+            right: kPaneFoldGap,
+            bottom: 16 + MediaQuery.of(context).viewPadding.bottom,
+            child: _newExpenseButton(),
+          ),
+        ],
+      ),
+      right: (_) => ExpenseDetailScreen(
+        key: ValueKey('expense-open-${_openRecord.id}'),
+        record: _openRecord,
+        onChanged: _refresh,
+      ),
     );
   }
+
+  /// The claim open in the right pane: the one last tapped while it is
+  /// still listed, else the newest.
+  ExpenseRecord get _openRecord =>
+      _records.firstWhere((r) => r.id == _openId, orElse: () => _records.first);
 
   Widget _loadOlderTile() {
     return Padding(
@@ -226,22 +279,39 @@ class ExpensesScreenState extends State<ExpensesScreen> {
     );
   }
 
-  Widget _expenseTile(ExpenseRecord r) {
+  /// One expense. [onTap] null opens it as a page (a phone); in two panes
+  /// it opens the claim on the right and [open] marks the one shown there.
+  Widget _expenseTile(
+    ExpenseRecord r, {
+    bool open = false,
+    VoidCallback? onTap,
+  }) {
     final c = context.omni;
     return Card(
+      key: open ? ValueKey('expense-tile-${r.id}-open') : null,
       margin: const EdgeInsets.only(bottom: 12),
+      shape: open
+          ? RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(24),
+              side: BorderSide(color: c.accent, width: 1.5),
+            )
+          : null,
       child: InkWell(
         borderRadius: BorderRadius.circular(24),
-        onTap: () async {
-          // The detail screen pops `true` after a successful edit;
-          // refresh the list so the new values / state are visible.
-          final updated = await Navigator.of(context).push<bool>(
-            MaterialPageRoute(builder: (_) => ExpenseDetailScreen(record: r)),
-          );
-          if (updated == true && mounted) {
-            await _refresh();
-          }
-        },
+        onTap:
+            onTap ??
+            () async {
+              // The detail screen pops `true` after a successful edit;
+              // refresh the list so the new values / state are visible.
+              final updated = await Navigator.of(context).push<bool>(
+                MaterialPageRoute(
+                  builder: (_) => ExpenseDetailScreen(record: r),
+                ),
+              );
+              if (updated == true && mounted) {
+                await _refresh();
+              }
+            },
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Row(

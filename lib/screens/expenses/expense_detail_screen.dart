@@ -19,7 +19,24 @@ import 'expense_create_screen.dart';
 /// the screen pops `true` so the parent list refreshes.
 class ExpenseDetailScreen extends StatelessWidget {
   final ExpenseRecord record;
-  const ExpenseDetailScreen({super.key, required this.record});
+
+  /// Set when the claim is shown in the Expenses list's right pane (iPhone
+  /// Duo open sideways, v4) instead of as a page: an edit or a delete
+  /// calls it (the list reloads) instead of popping `true`, and the bar
+  /// has no back arrow.
+  final Future<void> Function()? onChanged;
+
+  const ExpenseDetailScreen({super.key, required this.record, this.onChanged});
+
+  /// After an edit or a delete: tell the list.
+  void _changed(BuildContext context) {
+    final onChanged = this.onChanged;
+    if (onChanged != null) {
+      onChanged();
+    } else {
+      Navigator.of(context).pop(true);
+    }
+  }
 
   bool get _isModifiable =>
       record.state == 'draft' || record.state == 'submitted';
@@ -38,7 +55,7 @@ class ExpenseDetailScreen extends StatelessWidget {
       // Bubble the refresh signal up to the list. The detail screen
       // itself will be rebuilt next time the user opens it via the
       // refreshed list.
-      Navigator.of(context).pop(true);
+      _changed(context);
     }
   }
 
@@ -76,10 +93,9 @@ class ExpenseDetailScreen extends StatelessWidget {
     try {
       await api.deleteExpense(record.id);
       if (!context.mounted) return;
-      Navigator.of(context).pop(true); // refresh signal up to list
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Expense deleted.')));
+      final messenger = ScaffoldMessenger.of(context);
+      _changed(context); // refresh signal up to list
+      messenger.showSnackBar(const SnackBar(content: Text('Expense deleted.')));
     } on ApiException catch (e) {
       if (!context.mounted) return;
       // Prefer the server's `message` field when present — Odoo's
@@ -116,8 +132,11 @@ class ExpenseDetailScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.omni;
+    final inPane = onChanged != null;
     return Scaffold(
       appBar: AppBar(
+        primary: !inPane,
+        automaticallyImplyLeading: !inPane,
         title: const Text('Expense'),
         actions: [
           if (_isModifiable)
