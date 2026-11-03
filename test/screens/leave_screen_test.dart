@@ -209,6 +209,37 @@ void main() {
       expect(find.byKey(const ValueKey('leave-approvals-row')), findsOneWidget);
     });
 
+    testWidgets('Duo open sideways: leave types left of the fold, Leave '
+        'approvals right of it (v4)', (tester) async {
+      tester.view.physicalSize = const Size(951, 669);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(host(FakeApi(), session: NewApproverSession()));
+      await tester.pumpAndSettle();
+      Finder inPane(String side, Finder f) => find.descendant(
+        of: find.byKey(ValueKey('duo-pane-$side')),
+        matching: f,
+      );
+      expect(
+        inPane('right', find.byKey(const ValueKey('leave-approvals-row'))),
+        findsOneWidget,
+      );
+      expect(inPane('left', find.text('Annual Leave')), findsOneWidget);
+      expect(inPane('right', find.text('Annual Leave')), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('Duo open sideways without approvals or team leave: one '
+        'list, no empty pane', (tester) async {
+      tester.view.physicalSize = const Size(951, 669);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(host(FakeApi()));
+      await tester.pumpAndSettle();
+      expect(find.text('Annual Leave'), findsOneWidget);
+      expect(find.byKey(const ValueKey('duo-pane-right')), findsNothing);
+    });
+
     testWidgets('tab re-opens within 30 s do not re-ask; a pull-down does', (
       tester,
     ) async {

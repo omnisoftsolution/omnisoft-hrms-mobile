@@ -13,6 +13,7 @@ import '../../services/session_service.dart';
 import '../../widgets/auto_pickers.dart';
 import '../../widgets/error_state_view.dart';
 import '../../widgets/document_picker_field.dart';
+import '../../widgets/duo_panes.dart';
 import '../../widgets/feature_locked_pane.dart';
 import '../../widgets/omni_app_bar.dart';
 import '../../widgets/primary_button.dart';
@@ -516,7 +517,7 @@ class LeaveScreenState extends State<LeaveScreen> {
                 children: [ErrorStateView(message: _error!, onRetry: refresh)],
               ),
             )
-          : RefreshIndicator(onRefresh: _pullToRefresh, child: _buildList()),
+          : _buildList(),
     );
   }
 
@@ -541,44 +542,65 @@ class LeaveScreenState extends State<LeaveScreen> {
           onTap: _openTeamLeave,
         ),
     ];
-    final offset = rows.length;
     // Flat list ordered by Odoo's hr.leave.type.sequence — the
     // connector returns types in `sequence asc, id asc` order, so
     // we render them as received. HR controls ordering by drag-
     // reordering in the Odoo admin list view; no mobile release
     // needed when the order changes.
-    return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-      itemCount: _types.length + offset,
-      // 8 between rows, 16 under the last optional row.
-      separatorBuilder: (_, i) =>
-          SizedBox(height: offset > 0 && i == offset - 1 ? 16 : 8),
-      itemBuilder: (_, i) {
-        if (i < offset) return rows[i];
-        final type = _types[i - offset];
-        return Opacity(
-          // Exhausted-allocation tiles fade in place. The red
-          // "0d left" badge in _tileSubtitle is the explanation;
-          // onTap is gated below so the user can't submit a leave
-          // the server would reject.
-          opacity: _isExhausted(type) ? 0.55 : 1.0,
-          child: Card(
-            child: ListTile(
-              leading: CircleAvatar(
-                backgroundColor: c.accent.withValues(alpha: 0.1),
-                child: Icon(
-                  _categoryIcon(type.mobileCategory),
-                  color: c.accent,
-                ),
-              ),
-              title: Text(type.name),
-              subtitle: _tileSubtitle(type),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: _isExhausted(type) ? null : () => _openApplyForm(type),
-            ),
+    Widget list(EdgeInsets padding, List<Widget> top) {
+      final offset = top.length;
+      return RefreshIndicator(
+        onRefresh: _pullToRefresh,
+        child: ListView.separated(
+          padding: padding,
+          itemCount: _types.length + offset,
+          // 8 between rows, 16 under the last optional row.
+          separatorBuilder: (_, i) =>
+              SizedBox(height: offset > 0 && i == offset - 1 ? 16 : 8),
+          itemBuilder: (_, i) =>
+              i < offset ? top[i] : _typeTile(c, _types[i - offset]),
+        ),
+      );
+    }
+
+    const phone = EdgeInsets.fromLTRB(16, 16, 16, 24);
+    if (rows.isEmpty) return list(phone, rows);
+    // iPhone Duo open sideways (v4): the leave types left of the fold,
+    // Leave approvals and Team leave right of it, open straight away.
+    return DuoPanes(
+      single: (_) => list(phone, rows),
+      left: (_) => list(paneInsets(left: true, bottom: 24), const []),
+      right: (_) => RefreshIndicator(
+        onRefresh: _pullToRefresh,
+        child: ListView.separated(
+          padding: paneInsets(left: false, bottom: 24),
+          itemCount: rows.length,
+          separatorBuilder: (_, _) => const SizedBox(height: 8),
+          itemBuilder: (_, i) => rows[i],
+        ),
+      ),
+    );
+  }
+
+  Widget _typeTile(OmniColors c, LeaveType type) {
+    return Opacity(
+      // Exhausted-allocation tiles fade in place. The red
+      // "0d left" badge in _tileSubtitle is the explanation;
+      // onTap is gated below so the user can't submit a leave
+      // the server would reject.
+      opacity: _isExhausted(type) ? 0.55 : 1.0,
+      child: Card(
+        child: ListTile(
+          leading: CircleAvatar(
+            backgroundColor: c.accent.withValues(alpha: 0.1),
+            child: Icon(_categoryIcon(type.mobileCategory), color: c.accent),
           ),
-        );
-      },
+          title: Text(type.name),
+          subtitle: _tileSubtitle(type),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: _isExhausted(type) ? null : () => _openApplyForm(type),
+        ),
+      ),
     );
   }
 
@@ -1085,13 +1107,7 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    label,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: c.textSub,
-                    ),
-                  ),
+                  Text(label, style: TextStyle(fontSize: 12, color: c.textSub)),
                   const SizedBox(height: 2),
                   Text(
                     time.format(context),
@@ -1241,11 +1257,7 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
                 ),
                 child: Row(
                   children: [
-                    Icon(
-                      Icons.calendar_today,
-                      size: 18,
-                      color: c.accent,
-                    ),
+                    Icon(Icons.calendar_today, size: 18, color: c.accent),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
@@ -1253,10 +1265,7 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
                         children: [
                           Text(
                             _hourlyCustom ? 'Leave date' : 'Leave dates',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: c.textSub,
-                            ),
+                            style: TextStyle(fontSize: 12, color: c.textSub),
                           ),
                           const SizedBox(height: 2),
                           Text(
@@ -1320,9 +1329,7 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
                     _hourCaption!,
                     style: TextStyle(
                       fontSize: 12,
-                      color: _customHoursOutsideSchedule
-                          ? c.error
-                          : c.textSub,
+                      color: _customHoursOutsideSchedule ? c.error : c.textSub,
                     ),
                   ),
                 ),
@@ -1375,9 +1382,7 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
                 decoration: BoxDecoration(
                   color: c.error.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: c.error.withValues(alpha: 0.3),
-                  ),
+                  border: Border.all(color: c.error.withValues(alpha: 0.3)),
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1457,11 +1462,7 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
                 shape: BoxShape.circle,
                 color: c.button.withValues(alpha: 0.15),
               ),
-              child: Icon(
-                Icons.check_rounded,
-                color: c.accent,
-                size: 30,
-              ),
+              child: Icon(Icons.check_rounded, color: c.accent, size: 30),
             ),
           ),
           const SizedBox(height: 14),
@@ -1481,10 +1482,7 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
             ),
           ),
           const SizedBox(height: 24),
-          Divider(
-            height: 1,
-            color: c.line.withValues(alpha: 0.6),
-          ),
+          Divider(height: 1, color: c.line.withValues(alpha: 0.6)),
           const SizedBox(height: 16),
           _summaryRow('Type', widget.leaveType.name),
           _summaryRow('Dates', datesBlurb),
