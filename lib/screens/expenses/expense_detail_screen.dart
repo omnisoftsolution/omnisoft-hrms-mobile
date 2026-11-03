@@ -132,30 +132,34 @@ class ExpenseDetailScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.omni;
+    // In a Duo pane the list beside it says what this is: no title bar, the
+    // actions sit at the top of the pane instead.
     final inPane = onChanged != null;
+    final actions = [
+      if (_isModifiable)
+        IconButton(
+          tooltip: 'Edit',
+          icon: const Icon(Icons.edit_rounded),
+          onPressed: () => _openEdit(context),
+        ),
+      if (_isDeletable)
+        IconButton(
+          tooltip: 'Delete',
+          icon: Icon(Icons.delete_outline_rounded, color: c.error),
+          onPressed: () => _confirmDelete(context),
+        ),
+    ];
     return Scaffold(
-      appBar: AppBar(
-        primary: !inPane,
-        automaticallyImplyLeading: !inPane,
-        title: const Text('Expense'),
-        actions: [
-          if (_isModifiable)
-            IconButton(
-              tooltip: 'Edit',
-              icon: const Icon(Icons.edit_rounded),
-              onPressed: () => _openEdit(context),
-            ),
-          if (_isDeletable)
-            IconButton(
-              tooltip: 'Delete',
-              icon: Icon(Icons.delete_outline_rounded, color: c.error),
-              onPressed: () => _confirmDelete(context),
-            ),
-        ],
-      ),
+      appBar: inPane
+          ? null
+          : AppBar(title: const Text('Expense'), actions: actions),
       body: ListView(
-        padding: const EdgeInsets.all(24),
+        padding: inPane
+            ? const EdgeInsets.fromLTRB(24, 8, 24, 24)
+            : const EdgeInsets.all(24),
         children: [
+          if (inPane && actions.isNotEmpty)
+            Row(mainAxisAlignment: MainAxisAlignment.end, children: actions),
           Center(
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),

@@ -38,6 +38,12 @@ class _Api extends OmniMobileApi {
           totalAmount: 719.4,
           state: 'posted',
         ),
+        ExpenseRecord(
+          id: 13,
+          name: 'Taxi to client',
+          totalAmount: 32.5,
+          state: 'submitted',
+        ),
       ],
       hasMore: false,
     );
@@ -118,6 +124,35 @@ void main() {
         find.byKey(const ValueKey('expense-tile-12-open')),
         findsOneWidget,
       );
+    });
+
+    testWidgets('the open claim has no Expense bar; Edit and Delete sit in '
+        'the pane', (tester) async {
+      _sideways(tester);
+      await tester.pumpWidget(_host(_Api()));
+      await tester.pumpAndSettle();
+      await tester.tap(_inPane('left', find.text('Taxi to client')));
+      await tester.pumpAndSettle();
+      expect(_openId(tester), 13);
+      expect(_inPane('right', find.byType(AppBar)), findsNothing);
+      expect(_inPane('right', find.text('Expense')), findsNothing);
+      expect(_inPane('right', find.byTooltip('Edit')), findsOneWidget);
+      expect(_inPane('right', find.byTooltip('Delete')), findsOneWidget);
+    });
+
+    testWidgets('a phone page keeps its Expense bar', (tester) async {
+      await tester.pumpWidget(_host(_Api()));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Taxi to client'));
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: find.byType(AppBar),
+          matching: find.text('Expense'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.byTooltip('Edit'), findsOneWidget);
     });
   });
 }
