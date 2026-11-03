@@ -77,9 +77,9 @@ class ExpenseDetailScreen extends StatelessWidget {
       await api.deleteExpense(record.id);
       if (!context.mounted) return;
       Navigator.of(context).pop(true); // refresh signal up to list
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Expense deleted.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Expense deleted.')));
     } on ApiException catch (e) {
       if (!context.mounted) return;
       // Prefer the server's `message` field when present — Odoo's
@@ -89,14 +89,12 @@ class ExpenseDetailScreen extends StatelessWidget {
       final msg = (serverMsg != null && serverMsg.isNotEmpty)
           ? serverMsg
           : _humanizeDeleteError(e.errorCode);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(msg)),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
     } catch (e) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not delete: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not delete: $e')));
     }
   }
 
@@ -131,8 +129,7 @@ class ExpenseDetailScreen extends StatelessWidget {
           if (_isDeletable)
             IconButton(
               tooltip: 'Delete',
-              icon: Icon(Icons.delete_outline_rounded,
-                  color: c.error),
+              icon: Icon(Icons.delete_outline_rounded, color: c.error),
               onPressed: () => _confirmDelete(context),
             ),
         ],
@@ -142,10 +139,12 @@ class ExpenseDetailScreen extends StatelessWidget {
         children: [
           Center(
             child: Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 12, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
               decoration: BoxDecoration(
-                color: _stateColor(context, record.state).withValues(alpha: 0.1),
+                color: _stateColor(
+                  context,
+                  record.state,
+                ).withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
@@ -163,15 +162,11 @@ class ExpenseDetailScreen extends StatelessWidget {
           Center(
             child: Text(
               _formatAmount(),
-              style: const TextStyle(
-                fontSize: 32,
-                fontWeight: FontWeight.w800,
-              ),
+              style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w800),
             ),
           ),
           const SizedBox(height: 24),
-          if (record.state == 'refused' &&
-              record.refuseReason.isNotEmpty) ...[
+          if (record.state == 'refused' && record.refuseReason.isNotEmpty) ...[
             _refuseBanner(context),
             const SizedBox(height: 16),
           ],
@@ -203,9 +198,7 @@ class ExpenseDetailScreen extends StatelessWidget {
       decoration: BoxDecoration(
         color: c.error.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: c.error.withValues(alpha: 0.3),
-        ),
+        border: Border.all(color: c.error.withValues(alpha: 0.3)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -261,7 +254,10 @@ class ExpenseDetailScreen extends StatelessWidget {
   // focus, etc.) triggered a fresh getExpenseAttachment network call.
 
   Widget _imagePreview(
-      BuildContext context, ExpenseAttachment att, String dataB64) {
+    BuildContext context,
+    ExpenseAttachment att,
+    String dataB64,
+  ) {
     Uint8List? bytes;
     try {
       bytes = base64Decode(dataB64);
@@ -279,8 +275,9 @@ class ExpenseDetailScreen extends StatelessWidget {
       borderRadius: BorderRadius.circular(16),
       onTap: () async {
         final err = await openBase64File(
-            name: att.name.isEmpty ? 'receipt.jpg' : att.name,
-            dataB64: dataB64);
+          name: att.name.isEmpty ? 'receipt.jpg' : att.name,
+          dataB64: dataB64,
+        );
         if (err != null && context.mounted) {
           showFileViewError(context, err);
         }
@@ -291,10 +288,7 @@ class ExpenseDetailScreen extends StatelessWidget {
           color: context.omni.soft,
           constraints: const BoxConstraints(maxHeight: 320),
           width: double.infinity,
-          child: Image.memory(
-            imageBytes,
-            fit: BoxFit.contain,
-          ),
+          child: Image.memory(imageBytes, fit: BoxFit.contain),
         ),
       ),
     );
@@ -311,8 +305,12 @@ class ExpenseDetailScreen extends StatelessWidget {
     );
   }
 
-  Widget _fileFallback(BuildContext context, ExpenseAttachment att,
-      {String? dataB64, String? reason}) {
+  Widget _fileFallback(
+    BuildContext context,
+    ExpenseAttachment att, {
+    String? dataB64,
+    String? reason,
+  }) {
     final c = context.omni;
     return Row(
       children: [
@@ -336,10 +334,7 @@ class ExpenseDetailScreen extends StatelessWidget {
                 reason ??
                     '${att.mimetype.isEmpty ? "file" : att.mimetype}'
                         ' · ${att.sizeLabel}',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: c.textSub,
-                ),
+                style: TextStyle(fontSize: 12, color: c.textSub),
               ),
             ],
           ),
@@ -350,8 +345,9 @@ class ExpenseDetailScreen extends StatelessWidget {
             label: const Text('VIEW'),
             onPressed: () async {
               final err = await openBase64File(
-                  name: att.name.isEmpty ? 'receipt' : att.name,
-                  dataB64: dataB64);
+                name: att.name.isEmpty ? 'receipt' : att.name,
+                dataB64: dataB64,
+              );
               if (err != null && context.mounted) {
                 showFileViewError(context, err);
               }
@@ -369,15 +365,10 @@ class ExpenseDetailScreen extends StatelessWidget {
   List<Widget> _buildDetailRows(BuildContext context) {
     final entries = <List<String>>[
       ['Description', record.name.isEmpty ? '—' : record.name],
-      [
-        'Category',
-        record.productName.isEmpty ? '—' : record.productName,
-      ],
+      ['Category', record.productName.isEmpty ? '—' : record.productName],
       [
         'Date',
-        record.date.isEmpty
-            ? '—'
-            : DateTimeUtils.formatLocalDate(record.date),
+        record.date.isEmpty ? '—' : DateTimeUtils.formatLocalDate(record.date),
       ],
       ['Paid By', record.paymentModeLabel],
     ];
@@ -388,8 +379,14 @@ class ExpenseDetailScreen extends StatelessWidget {
       ]);
     }
     if (record.taxAmount > 0) {
-      entries.add(['Untaxed', MoneyFormatter.format(record.untaxedAmount, record.currency)]);
-      entries.add(['Inc. tax', MoneyFormatter.format(record.taxAmount, record.currency)]);
+      entries.add([
+        'Untaxed',
+        MoneyFormatter.format(record.untaxedAmount, record.currency),
+      ]);
+      entries.add([
+        'Inc. tax',
+        MoneyFormatter.format(record.taxAmount, record.currency),
+      ]);
     }
     // "Receipt attached" row removed — the inline preview below the
     // card makes the boolean redundant.
@@ -407,18 +404,13 @@ class ExpenseDetailScreen extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label,
-            style: TextStyle(
-                color: c.textSub, fontSize: 13)),
+        Text(label, style: TextStyle(color: c.textSub, fontSize: 13)),
         const SizedBox(width: 16),
         Flexible(
           child: Text(
             value,
             textAlign: TextAlign.end,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-            ),
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
           ),
         ),
       ],
@@ -496,8 +488,11 @@ class _AttachmentCardState extends State<_AttachmentCard> {
             return widget.parent._placeholderCard(
               context,
               child: widget.parent._fileFallback(
-                  context, att, dataB64: null,
-                  reason: 'Could not load receipt.'),
+                context,
+                att,
+                dataB64: null,
+                reason: 'Could not load receipt.',
+              ),
             );
           }
           final dataB64 = snap.data!['data_b64']?.toString() ?? '';
