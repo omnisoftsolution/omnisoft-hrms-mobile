@@ -49,24 +49,20 @@ IPA_OUTPUT_NAME = "omnihr.ipa"
 # this per release. Inlined (not read from a file) so it can't break on a
 # path/cwd surprise during the upload step. TestFlight allows ~4000 chars.
 TESTFLIGHT_CHANGELOG = <<~NOTES.freeze
-  New in this build (1.34.1, best with connector 2.65.3):
-  - Team overview (people HR gives it): Today and Yesterday counts,
-    Who's out with one line per person ("Mon 26 - Tue 3"), and the
-    30 / 60 / 90-day team leave calendar.
-  - Team leave calendar: tap a day to see who is off in a sheet;
-    clearer colours (Sundays and public holidays in red, "PH").
-  - Check-in: if your face isn't recognised, the camera opens again
-    straight away (3 tries in total per check-in).
-  - Less waiting: switching Team overview / My day, Today / Yesterday
-    or department keeps the page while it updates; the Leave tab no
-    longer flashes a spinner.
+  New in this build (1.36.0, best with connector 2.67):
+  - Automatic check-in / check-out: when HR switches it on for you, the
+    app checks you in when you arrive at the office and out when you
+    leave (location "Always" needed). A notice tells you each time,
+    with Undo.
+  - iPhone Duo / iPad held sideways: Team overview, My day, Leave and
+    Expenses show two panes, one on each side of the fold.
 
   Please test:
-  1. Check in with your face half covered: "Not recognised - 2 tries
-     left", then check in normally on the next try.
-  2. Team overview (if you have it): open Who's out and the 30-day
-     calendar, tap a day.
-  3. Approve or refuse a leave as an approver.
+  1. Automatic check-in (omnihrdemo): walk in and out with the phone
+     locked; check the notices and Undo one of them.
+  2. Sign out and in again: automatic check-in stops, then comes back.
+  3. iPhone Duo or iPad sideways: open each tab, edit and delete an
+     expense in the right pane.
 NOTES
 
 platform :ios do

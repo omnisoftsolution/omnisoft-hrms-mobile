@@ -1,1 +1,2 @@
-Automatic check-in: if your HR turns it on, Omni HR checks you in and out at your office.
+Automatic check-in: if your HR turns it on, Omni HR checks you in and out at your office, with Undo.
+Foldables and tablets held sideways: Team overview, My day, Leave and Expenses show two panes.
