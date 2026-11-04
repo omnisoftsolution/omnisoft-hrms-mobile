@@ -13,6 +13,9 @@ Android + iOS employee app for Omni HR (version in pubspec.yaml). Backend = Odoo
 - Dev toggles in lib/core/constants.dart: useDevLocation, simulateFaceRecognition, requireReceiptOnExpense.
 - `flutter test`: all green (repo suite; count grows with new model tests). No ink_sparkle shader failures in this repo (kiosk-only problem).
 - No l10n: no l10n.yaml / lib/l10n — UI strings are hardcoded English.
+- **Never `dart format lib test`** (or any folder): many files predate the SDK's tall style, and a folder format
+  rewrites ~190 of them (2026-11-04: a fix commit swept in 192 files and had to be redone). Before formatting a
+  touched file, check `dart format --output=show <file> | diff - <file>` touches only your lines; else leave it.
 
 ## Release
 - iOS TestFlight: `cd ios && fastlane beta` (`archive_only` = IPA, no upload). Bump pubspec version FIRST
@@ -72,15 +75,19 @@ Android + iOS employee app for Omni HR (version in pubspec.yaml). Backend = Odoo
   `SideColumnHost` (MaterialApp `builder`) does this for every route; in split view the column can be on the LEFT.
 - **Duo v4 two panes (branch feat/duo-two-panes, canvas row "v4"):** `DuoPanes` / `twoPaneSplit`
   (`lib/widgets/duo_panes.dart`) show one page each side of the fold when the content is ≥ 820 pt wide AND the
-  view is sideways (a tablet held upright stays one column). The split = the vertical `DuoGeometry.divisions` rect
+  view is sideways AND its shortest side is ≥ 600 pt (a tablet held upright and an ordinary phone held sideways,
+  e.g. 956×440, stay one column; R136-F01). An ACTIVE fold (half-folded: 40 pt in book pose) is kept clear: the
+  panes sit either side of its rect, not of its centre (R136-F04). The split = the vertical `DuoGeometry.divisions` rect
   (reported flat too, zero wide) or the middle of the whole view, minus a LEFT column; the 84 pt right column
   belongs to the right half, so the split is NOT the content's middle (475.5 of 867). A split under 35 % / over
   65 % of the box (app beside another) falls back to the box's middle. `paneInsets` = 16 outer / 14 at the fold.
   Pane keys `duo-pane-left` / `duo-pane-right`. Team overview: chips, day switch, tile, counts left; Who's out +
   For you right (Who's out scope on its own line). My day: tile, auto line, cards, For you left; week + timeline
   right (a day tap still opens the day sheet). Leave: types left; approvals + Team leave rows right (no rows = one
-  list). Expenses: list left, `ExpenseDetailScreen(onChanged:)` right (edit/delete reload the list instead of
-  popping), NEW EXPENSE at the foot of the left pane. Tests that use a 1080-wide but TALL view stay one column.
+  list). Expenses: list left, `ExpenseDetailScreen(onChanged:)` right (no title bar, Edit / Delete at the pane
+  top; edit/delete reload the list instead of popping, even when the pane closed meanwhile, and the claim is rebuilt
+  (`_paneRevision`) so a replaced receipt never shows the old one), NEW EXPENSE at the foot of the left pane.
+  Tests that use a 1080-wide but TALL view stay one column.
 - **Duo v3 (Apple's rules, iOS 27.1 SDK):** icon toolbar buttons go to the TOP of the side column under the status
   (`SideTool`s, `SideColumnHostState.offerTools` / `withdrawTools`); titles, text buttons and segmented controls
   stay in the screen. Buttons and tabs follow iOS's own bar frame (`DuoGeometry.barLeft` / `barRight` from
