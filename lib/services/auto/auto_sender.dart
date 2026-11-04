@@ -98,7 +98,10 @@ class AutoSender {
     SharedPreferencesAsync prefs,
   ) async => AutoLastAnswer.tryParse(await prefs.getString(lastAnswerKey));
 
-  Future<FlushOutcome> flush() async {
+  /// [owner] is the signed-in employee ([AutoKeyStore.ownerOf]); an event
+  /// queued for anyone else (a wake that finished during a sign-out) is
+  /// removed unsent.
+  Future<FlushOutcome> flush({String? owner}) async {
     final held = await _p.getString(leaseKey);
     final until = held == null ? null : DateTime.tryParse(held);
     if (until != null && _now().toUtc().isBefore(until.toUtc())) {
@@ -122,6 +125,10 @@ class AutoSender {
       // Built once per flush and not kept: the key may change between runs.
       final api = _api();
       for (final e in events) {
+        if (owner != null && e.owner != null && e.owner != owner) {
+          await _queue.remove(e.eventUid);
+          continue;
+        }
         // Posting can take up to the HTTP timeout; keep the lease ours.
         mine = await _takeLease();
         final result = await api.postEvent(e);

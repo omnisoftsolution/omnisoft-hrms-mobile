@@ -208,16 +208,25 @@ class ExpensesScreenState extends State<ExpensesScreen> {
           ),
         ],
       ),
-      right: (_) => ExpenseDetailScreen(
-        key: ValueKey('expense-open-${_openRecord.id}-$_paneRevision'),
-        record: _openRecord,
-        apiBuilder: widget.apiBuilder,
-        onChanged: () async {
-          if (!mounted) return;
-          setState(() => _paneRevision++);
-          await _refresh();
-        },
-      ),
+      right: (_) => _openPane(),
+    );
+  }
+
+  /// The right pane: the open claim. An edit or delete there reloads the
+  /// list, and rebuilds the claim if it is still the one open.
+  Widget _openPane() {
+    final changed = _openRecord.id;
+    return ExpenseDetailScreen(
+      key: ValueKey('expense-open-$changed-$_paneRevision'),
+      record: _openRecord,
+      apiBuilder: widget.apiBuilder,
+      onChanged: () async {
+        if (!mounted) return;
+        // One deleted after another claim was picked leaves that one (and
+        // its scroll) alone.
+        if (_openRecord.id == changed) setState(() => _paneRevision++);
+        await _refresh();
+      },
     );
   }
 

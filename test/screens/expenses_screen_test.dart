@@ -179,12 +179,23 @@ void main() {
       await tester.tap(_inPane('left', find.text('Clean September 2026')));
       await tester.pumpAndSettle();
       final before = api.calls;
+      final open = tester.element(
+        _inPane('right', find.byType(ExpenseDetailScreen)),
+      );
       api.deleteGate!.complete();
       await tester.pumpAndSettle();
       expect(api.deleted, [13]);
       expect(api.calls, before + 1);
       expect(find.text('Taxi to client'), findsNothing);
       expect(_openId(tester), 11);
+      // The claim open meanwhile is left as it is (scroll and all).
+      expect(
+        identical(
+          tester.element(_inPane('right', find.byType(ExpenseDetailScreen))),
+          open,
+        ),
+        isTrue,
+      );
     });
 
     testWidgets('a receipt replaced by Edit is not shown from the old one '

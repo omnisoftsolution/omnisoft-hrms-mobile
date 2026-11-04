@@ -9,16 +9,21 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 
-AutoEvent _e(String uid, DateTime at, {AutoKind kind = AutoKind.arrive}) =>
-    AutoEvent(
-      eventUid: uid,
-      kind: kind,
-      eventAt: at,
-      isMocked: false,
-      deviceId: 'd',
-      appVersion: '1.36.0',
-      source: AutoSource.geofence,
-    );
+AutoEvent _e(
+  String uid,
+  DateTime at, {
+  AutoKind kind = AutoKind.arrive,
+  String? owner,
+}) => AutoEvent(
+  eventUid: uid,
+  kind: kind,
+  eventAt: at,
+  isMocked: false,
+  deviceId: 'd',
+  appVersion: '1.36.0',
+  source: AutoSource.geofence,
+  owner: owner,
+);
 
 /// Answers each post from [answer] (by event uid) and records the posts.
 class _FakeApi extends AutoApi {
@@ -71,6 +76,21 @@ void main() {
     final outcome = await sender(api).flush();
     expect(outcome, FlushOutcome.done);
     expect(api.posted, ['a-0', 'a-1', 'a-2']);
+    expect(await queue.ordered(), isEmpty);
+  });
+
+  test('an event queued for another sign-in is dropped, never posted '
+      '(R136-F03)', () async {
+    await queue.add(_e('a-old', t0, owner: 'acme|8'));
+    await queue.add(
+      _e('a-mine', t0.add(const Duration(minutes: 1)), owner: 'acme|7'),
+    );
+    // Queued by a 1.36 build before events carried an owner: still sent.
+    await queue.add(_e('a-legacy', t0.add(const Duration(minutes: 2))));
+    final api = _FakeApi(accepted);
+    final outcome = await sender(api).flush(owner: 'acme|7');
+    expect(outcome, FlushOutcome.done);
+    expect(api.posted, ['a-mine', 'a-legacy']);
     expect(await queue.ordered(), isEmpty);
   });
 

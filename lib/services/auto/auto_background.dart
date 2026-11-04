@@ -226,6 +226,7 @@ Future<void> handleAutoWake({
           deviceId: c.deviceId,
           appVersion: c.appVersion,
           source: source,
+          owner: AutoKeyStore.ownerOf(c.db, c.employeeId),
         ),
       );
 
@@ -259,7 +260,7 @@ Future<void> handleAutoWake({
         notifyDropped: notifyDropped ?? (_) => showAutoDroppedNotice(),
         prefs: prefs,
         now: clock,
-      ).flush();
+      ).flush(owner: AutoKeyStore.ownerOf(c.db, c.employeeId));
     }().timeout(timeout);
   } catch (e) {
     if (kDebugMode) debugPrint('auto wake ended early: ${e.runtimeType}');

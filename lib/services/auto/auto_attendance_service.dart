@@ -345,7 +345,11 @@ class AutoAttendanceService extends ChangeNotifier {
     if (_stale(epoch)) return;
 
     if (armedState == AutoPhoneState.on) {
-      await _foregroundArrive(config, epoch);
+      await _foregroundArrive(
+        config,
+        epoch,
+        AutoKeyStore.ownerOf(db, employeeId),
+      );
       if (_stale(epoch)) return;
     }
 
@@ -554,7 +558,11 @@ class AutoAttendanceService extends ChangeNotifier {
 
   /// Lead decision L4: opening the app checks in only when the phone has no
   /// inside state, or the last arrival waits for the Wi-Fi (< 30 min).
-  Future<void> _foregroundArrive(AutoAttendanceConfig config, int epoch) async {
+  Future<void> _foregroundArrive(
+    AutoAttendanceConfig config,
+    int epoch,
+    String owner,
+  ) async {
     final inside = await _prefs.getString(autoLastStateKey) == autoStateInside;
     if (inside && !await _waitingWifi()) return;
     final at = _now().toUtc();
@@ -588,6 +596,7 @@ class AutoAttendanceService extends ChangeNotifier {
         deviceId: deviceId,
         appVersion: _appVersion(),
         source: AutoSource.foreground,
+        owner: owner,
       ),
     );
     final marked = _prefs.setString(autoLastStateKey, autoStateInside);
@@ -596,13 +605,15 @@ class AutoAttendanceService extends ChangeNotifier {
 
   /// Sends the queue; a refused key is deleted and fetched once more.
   Future<void> _flush(String db, int employeeId, int epoch) async {
-    final outcome = await _sender.flush();
+    final outcome = await _sender.flush(
+      owner: AutoKeyStore.ownerOf(db, employeeId),
+    );
     if (outcome != FlushOutcome.keyInvalid || _stale(epoch)) return;
     _key = null;
     await _keyStore.delete();
     if (await _ensureKey(db, employeeId, epoch) == _KeyResult.ok &&
         !_stale(epoch)) {
-      await _sender.flush();
+      await _sender.flush(owner: AutoKeyStore.ownerOf(db, employeeId));
     }
   }
 

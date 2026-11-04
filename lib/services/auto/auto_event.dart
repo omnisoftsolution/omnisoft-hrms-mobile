@@ -26,6 +26,7 @@ class AutoEvent {
     required this.deviceId,
     required this.appVersion,
     required this.source,
+    this.owner,
   });
 
   final String eventUid;
@@ -40,6 +41,11 @@ class AutoEvent {
   final String deviceId;
   final String appVersion;
   final AutoSource source;
+
+  /// Whose event this is, `<db>|<employee id>` (`AutoKeyStore.ownerOf`):
+  /// kept in the queue only, never sent. [AutoSender.flush] drops an event
+  /// of another sign-in (R136-F03). Null = queued before 1.36.0 (115).
+  final String? owner;
 
   /// The request body of the auto-event route (contract keys, verbatim).
   Map<String, dynamic> toBody() => {
@@ -71,6 +77,7 @@ class AutoEvent {
     'device_id': deviceId,
     'app_version': appVersion,
     'source': source.name,
+    'owner': ?owner,
   };
 
   factory AutoEvent.fromJson(Map json) => AutoEvent(
@@ -88,6 +95,7 @@ class AutoEvent {
     source: AutoSource.values.byName(
       json['source'] as String? ?? AutoSource.geofence.name,
     ),
+    owner: json['owner'] as String?,
   );
 
   /// `'a-'` + 24 lowercase hex chars (fits the server's `[\x21-\x7e]{1,64}`).

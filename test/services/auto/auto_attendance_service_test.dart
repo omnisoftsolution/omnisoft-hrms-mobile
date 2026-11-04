@@ -207,7 +207,7 @@ class _FakeSender extends AutoSender {
   final called = Completer<void>();
 
   @override
-  Future<FlushOutcome> flush() async {
+  Future<FlushOutcome> flush({String? owner}) async {
     log.add('flush');
     if (!called.isCompleted) called.complete();
     final h = hold;

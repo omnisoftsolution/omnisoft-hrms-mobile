@@ -165,6 +165,19 @@ void main() {
     }
   });
 
+  test(
+    'a wake stamps its event with the signed-in employee (R136-F03)',
+    () async {
+      api = _FakeApi(answer: const AutoRetry('timeout')); // stays queued
+      await wake(
+        kind: AutoKind.arrive,
+        source: AutoSource.geofence,
+        ctx: _ctx(),
+      );
+      expect((await queue.ordered()).single.owner, 'acme|7');
+    },
+  );
+
   group('geofence wake', () {
     test('enter posts an arrive with the sample and device id', () async {
       await geofence(GeofenceEvent.enter, ['omni_office_acme_7']);

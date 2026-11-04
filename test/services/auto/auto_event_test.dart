@@ -89,6 +89,14 @@ void main() {
     expect(back.kind, AutoKind.arrive);
   });
 
+  test('the owner is kept in the queue but never sent (R136-F03)', () {
+    final e = AutoEvent.fromJson({..._event().toJson(), 'owner': 'acme|7'});
+    expect(e.owner, 'acme|7');
+    expect(AutoEvent.fromJson(e.toJson()).owner, 'acme|7');
+    expect(e.toBody().containsKey('owner'), isFalse);
+    expect(_event().owner, isNull);
+  });
+
   test(r'newUid matches ^a-[0-9a-f]{24}$', () {
     final re = RegExp(r'^a-[0-9a-f]{24}$');
     final uids = {for (var i = 0; i < 50; i++) AutoEvent.newUid()};
