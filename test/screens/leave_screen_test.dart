@@ -229,6 +229,24 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    testWidgets('Duo open sideways: pulling the short right pane down '
+        'refreshes (R136-F08)', (tester) async {
+      tester.view.physicalSize = const Size(951, 669);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      final session = NewApproverSession();
+      await tester.pumpWidget(host(FakeApi(), session: session));
+      await tester.pumpAndSettle();
+      expect(session.meCalls, 1);
+      await tester.fling(
+        find.byKey(const ValueKey('leave-approvals-row')),
+        const Offset(0, 300),
+        1000,
+      );
+      await tester.pumpAndSettle();
+      expect(session.meCalls, 2);
+    });
+
     testWidgets('Duo open sideways without approvals or team leave: one '
         'list, no empty pane', (tester) async {
       tester.view.physicalSize = const Size(951, 669);

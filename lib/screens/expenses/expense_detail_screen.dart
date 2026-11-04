@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -26,7 +27,15 @@ class ExpenseDetailScreen extends StatelessWidget {
   /// has no back arrow.
   final Future<void> Function()? onChanged;
 
-  const ExpenseDetailScreen({super.key, required this.record, this.onChanged});
+  /// Test seam: swaps in a fake API (fake-subclass pattern).
+  final OmniMobileApi Function(SessionService session)? apiBuilder;
+
+  const ExpenseDetailScreen({
+    super.key,
+    required this.record,
+    this.onChanged,
+    this.apiBuilder,
+  });
 
   /// After an edit or a delete: tell the list.
   void _changed(BuildContext context) {
@@ -46,11 +55,17 @@ class ExpenseDetailScreen extends StatelessWidget {
   bool get _isDeletable => _isModifiable;
 
   Future<void> _openEdit(BuildContext context) async {
+    final onChanged = this.onChanged;
     final updated = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => ExpenseCreateScreen(editingRecord: record),
       ),
     );
+    // A pane closed meanwhile (the Duo folded) still has a list to reload.
+    if (updated == true && onChanged != null) {
+      await onChanged();
+      return;
+    }
     if (updated == true && context.mounted) {
       // Bubble the refresh signal up to the list. The detail screen
       // itself will be rebuilt next time the user opens it via the
@@ -85,16 +100,25 @@ class ExpenseDetailScreen extends StatelessWidget {
     if (confirmed != true || !context.mounted) return;
 
     final session = context.read<SessionService>();
-    final api = OmniMobileApi(
-      baseUrl: session.clientUrl,
-      db: session.clientDb,
-      token: session.token,
-    );
+    final api =
+        apiBuilder?.call(session) ??
+        OmniMobileApi(
+          baseUrl: session.clientUrl,
+          db: session.clientDb,
+          token: session.token,
+        );
+    final onChanged = this.onChanged;
+    final messenger = ScaffoldMessenger.of(context);
     try {
       await api.deleteExpense(record.id);
-      if (!context.mounted) return;
-      final messenger = ScaffoldMessenger.of(context);
-      _changed(context); // refresh signal up to list
+      if (onChanged != null) {
+        // The list reloads even when this pane closed meanwhile (another
+        // claim picked, the Duo folded).
+        unawaited(onChanged());
+      } else {
+        if (!context.mounted) return;
+        Navigator.of(context).pop(true);
+      }
       messenger.showSnackBar(const SnackBar(content: Text('Expense deleted.')));
     } on ApiException catch (e) {
       if (!context.mounted) return;
@@ -207,7 +231,11 @@ class ExpenseDetailScreen extends StatelessWidget {
             _receiptHeader(context),
             const SizedBox(height: 8),
             for (final att in record.attachments)
-              _AttachmentCard(parent: this, att: att),
+              _AttachmentCard(
+                key: ValueKey('expense-attachment-${att.id}'),
+                parent: this,
+                att: att,
+              ),
           ],
         ],
       ),
@@ -469,7 +497,7 @@ class ExpenseDetailScreen extends StatelessWidget {
 class _AttachmentCard extends StatefulWidget {
   final ExpenseDetailScreen parent;
   final ExpenseAttachment att;
-  const _AttachmentCard({required this.parent, required this.att});
+  const _AttachmentCard({super.key, required this.parent, required this.att});
 
   @override
   State<_AttachmentCard> createState() => _AttachmentCardState();

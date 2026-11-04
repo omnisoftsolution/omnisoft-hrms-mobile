@@ -34,6 +34,11 @@ class ExpensesScreenState extends State<ExpensesScreen> {
   /// The claim open in the right pane (two panes only).
   int? _openId;
 
+  /// Bumped when the open claim was edited or deleted, so the pane builds
+  /// it afresh: a receipt replaced under the same id must not keep the old
+  /// download.
+  int _paneRevision = 0;
+
   OmniMobileApi _api(SessionService session) =>
       widget.apiBuilder?.call(session) ??
       OmniMobileApi(
@@ -204,9 +209,14 @@ class ExpensesScreenState extends State<ExpensesScreen> {
         ],
       ),
       right: (_) => ExpenseDetailScreen(
-        key: ValueKey('expense-open-${_openRecord.id}'),
+        key: ValueKey('expense-open-${_openRecord.id}-$_paneRevision'),
         record: _openRecord,
-        onChanged: _refresh,
+        apiBuilder: widget.apiBuilder,
+        onChanged: () async {
+          if (!mounted) return;
+          setState(() => _paneRevision++);
+          await _refresh();
+        },
       ),
     );
   }
