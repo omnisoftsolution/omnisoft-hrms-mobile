@@ -137,8 +137,10 @@ class MyDayScreenState extends State<MyDayScreen> {
   final Set<int> _undoingAttendanceIds = {};
 
   /// Automatic punches whose Undo snackbar was already shown by this
-  /// screen: each `auto_undo` offer is shown once.
-  final Set<int> _autoUndoShown = {};
+  /// screen, and those undone here ([_autoUndoKey]): each `auto_undo` offer
+  /// is shown once. A check-in and the check-out on the same row are two.
+  final Set<String> _autoUndoShown = {};
+  final Set<String> _autoUndone = {};
 
   @override
   void initState() {
@@ -189,6 +191,14 @@ class MyDayScreenState extends State<MyDayScreen> {
   Future<void> refresh() => _inFlight ??= _load().whenComplete(() {
     _inFlight = null;
   });
+
+  /// [refresh] when the employee came here on purpose from a notice (a
+  /// push, the bell): an automatic punch's Undo still open is offered again,
+  /// even if its snackbar already came and went.
+  Future<void> refreshFromNotice() {
+    _autoUndoShown.clear();
+    return refresh();
+  }
 
   Future<void> _load() async {
     final memo = MyDayMemory.bind(context.read<SessionService>());
@@ -508,16 +518,17 @@ class MyDayScreenState extends State<MyDayScreen> {
   }
 
   /// The Undo of an automatic punch (`today.auto_undo`, connector 2.66.0):
-  /// the same snackbar a manual punch gets, once per attendance row and
-  /// only while the window is open. The phone's own check-in/out is
-  /// confirmed by a push; this is for the employee who opens the app after.
+  /// the same snackbar a manual punch gets, once per punch and only while
+  /// the window is open. The phone's own check-in/out is confirmed by a
+  /// push; this is for the employee who opens the app after.
   void _offerAutoUndo(MyDay day) {
     final offer = day.autoUndo;
-    if (offer == null ||
-        !DateTime.now().toUtc().isBefore(offer.undoUntil) ||
-        _undoneAttendanceIds.contains(offer.attendanceId) ||
+    if (offer == null) return;
+    final key = _autoUndoKey(offer);
+    if (!DateTime.now().toUtc().isBefore(offer.undoUntil) ||
+        _autoUndone.contains(key) ||
         _undoingAttendanceIds.contains(offer.attendanceId) ||
-        !_autoUndoShown.add(offer.attendanceId)) {
+        !_autoUndoShown.add(key)) {
       return;
     }
     ScaffoldMessenger.of(context)
@@ -535,12 +546,20 @@ class MyDayScreenState extends State<MyDayScreen> {
           action: SnackBarAction(
             label: 'UNDO',
             textColor: Colors.white,
-            onPressed: () =>
-                _undo(offer.attendanceId, action: offer.action, auto: true),
+            onPressed: () => _undo(
+              offer.attendanceId,
+              action: offer.action,
+              auto: true,
+              autoKey: key,
+            ),
           ),
         ),
       );
   }
+
+  static String _autoUndoKey(MyDayAutoUndo offer) =>
+      '${offer.attendanceId}|${offer.action}|'
+      '${offer.undoUntil.millisecondsSinceEpoch}';
 
   /// min(time left in the undo window, 10 s).
   static Duration _undoDuration(DateTime until) {
@@ -559,6 +578,7 @@ class MyDayScreenState extends State<MyDayScreen> {
     int attendanceId, {
     required String action,
     bool auto = false,
+    String? autoKey,
   }) async {
     final messenger = ScaffoldMessenger.of(context);
     final api = _api();
@@ -567,6 +587,7 @@ class MyDayScreenState extends State<MyDayScreen> {
     try {
       final status = await api.undoPunch(attendanceId, action: action);
       _undoneAttendanceIds.add(attendanceId);
+      if (autoKey != null) _autoUndone.add(autoKey);
       _controller?.applyStatus(status);
       autoService?.onAutoUndone();
     } catch (e) {

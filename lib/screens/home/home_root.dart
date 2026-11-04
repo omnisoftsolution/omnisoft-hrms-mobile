@@ -121,6 +121,12 @@ class HomeRootState extends State<HomeRoot> {
       });
       await WidgetsBinding.instance.endOfFrame;
     }
+    // Opened on purpose: an automatic punch's Undo is offered again.
+    final myDay = widget.myDayKey.currentState;
+    if (myDay != null) {
+      await myDay.refreshFromNotice();
+      return;
+    }
     await refresh();
   }
 

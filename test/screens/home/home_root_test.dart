@@ -55,6 +55,9 @@ class _MyDayApi extends OmniMobileApi {
   int calls = 0;
   Object? error;
 
+  /// `today.auto_undo` on every answer, when set.
+  Map<String, dynamic>? autoUndo;
+
   /// When set, every call waits for it before answering.
   Completer<void>? gate;
 
@@ -65,7 +68,7 @@ class _MyDayApi extends OmniMobileApi {
     if (g != null) await g.future;
     final e = error;
     if (e != null) throw e;
-    return sampleMyDay();
+    return sampleMyDay(autoUndo: autoUndo);
   }
 }
 
@@ -844,6 +847,43 @@ void main() {
         expect(prefs.getString(homeModeKey(session)), isNull);
       },
     );
+
+    testWidgets('showMyDay offers an automatic punch\'s open Undo again '
+        '(R136-F02)', (tester) async {
+      _tall(tester);
+      final session = await _signedIn(tester, _employee());
+      final rootKey = GlobalKey<HomeRootState>();
+      final myDayApi = _MyDayApi()
+        ..autoUndo = {
+          'attendance_id': 900,
+          'action': 'check_in',
+          'undo_until': DateTime.now()
+              .toUtc()
+              .add(const Duration(minutes: 3))
+              .toIso8601String()
+              .substring(0, 19)
+              .replaceFirst('T', ' '),
+        };
+      await tester.pumpWidget(
+        _host(
+          session,
+          rootKey: rootKey,
+          myDayApi: myDayApi,
+          overviewApi: _OverviewApi(),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('UNDO'), findsOneWidget);
+      ScaffoldMessenger.of(
+        tester.element(find.byType(MyDayScreen)),
+      ).removeCurrentSnackBar();
+      await tester.pumpAndSettle();
+      expect(find.text('UNDO'), findsNothing);
+
+      unawaited(rootKey.currentState!.showMyDay());
+      await tester.pumpAndSettle();
+      expect(find.text('UNDO'), findsOneWidget);
+    });
   });
 
   group('notification taps while the overview shows (A-L8)', () {

@@ -1629,6 +1629,48 @@ void main() {
       expect(api.undoActions, ['check_in']);
     });
 
+    testWidgets('the check-out on a row whose check-in Undo was shown gets '
+        'its own Undo (R136-F02)', (tester) async {
+      _tallScreen(tester);
+      final key = GlobalKey<MyDayScreenState>();
+      final api = _FakeApi([
+        sampleMyDay(autoUndo: offer()),
+        sampleMyDay(autoUndo: offer(action: 'check_out')),
+      ]);
+      await tester.pumpWidget(_host(api, key: key, auto: FakeAuto()));
+      await tester.pumpAndSettle();
+      expect(find.text('Checked in automatically'), findsOneWidget);
+      ScaffoldMessenger.of(
+        tester.element(find.byType(MyDayScreen)),
+      ).removeCurrentSnackBar();
+      await tester.pumpAndSettle();
+      await key.currentState!.refresh();
+      await tester.pumpAndSettle();
+      expect(find.text('Checked out automatically'), findsOneWidget);
+      await tester.tap(find.text('UNDO'));
+      await tester.pumpAndSettle();
+      expect(api.undos, [900]);
+      expect(api.undoActions, ['check_out']);
+    });
+
+    testWidgets('opening My day from a notice offers an open Undo again '
+        '(R136-F02)', (tester) async {
+      _tallScreen(tester);
+      final key = GlobalKey<MyDayScreenState>();
+      final api = _FakeApi([sampleMyDay(autoUndo: offer())]);
+      await tester.pumpWidget(_host(api, key: key, auto: FakeAuto()));
+      await tester.pumpAndSettle();
+      ScaffoldMessenger.of(
+        tester.element(find.byType(MyDayScreen)),
+      ).removeCurrentSnackBar();
+      await tester.pumpAndSettle();
+      expect(find.text('UNDO'), findsNothing);
+      await key.currentState!.refreshFromNotice();
+      await tester.pumpAndSettle();
+      expect(find.text('Checked in automatically'), findsOneWidget);
+      expect(find.text('UNDO'), findsOneWidget);
+    });
+
     testWidgets('UNDO sends id + action and tells auto attendance', (
       tester,
     ) async {
