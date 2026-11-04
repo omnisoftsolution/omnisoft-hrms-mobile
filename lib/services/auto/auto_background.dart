@@ -75,6 +75,14 @@ class AutoBackgroundContext {
 
   String get regionId => autoRegionId(db, employeeId);
 
+  /// Whether [other] (read again from the stored session) is still this
+  /// sign-in: same server, database and employee.
+  bool sameSignIn(AutoBackgroundContext? other) =>
+      other != null &&
+      other.baseUrl == baseUrl &&
+      other.db == db &&
+      other.employeeId == employeeId;
+
   /// The context, or null when no one is signed in, HR's switch is off
   /// (no `employee_auto_attendance` block) or the employee turned it off
   /// on this phone. The seams default to the real stores.
@@ -203,13 +211,8 @@ Future<void> handleAutoWake({
       // The fix takes seconds: after a sign-out (and maybe someone else's
       // sign-in) meanwhile, this event belongs to nobody signed in now and
       // must not reach the queue the next sign-in sends from.
-      final still = await (loadContext ?? AutoBackgroundContext.load)();
-      if (still == null ||
-          still.baseUrl != c.baseUrl ||
-          still.db != c.db ||
-          still.employeeId != c.employeeId) {
-        return;
-      }
+      final load = loadContext ?? AutoBackgroundContext.load;
+      if (!c.sameSignIn(await load())) return;
 
       final q = queue ?? AutoEventQueue(prefs: prefs);
       await q.add(
@@ -253,6 +256,10 @@ Future<void> handleAutoWake({
         token = await (bearer ?? _readBearer)();
         if (token == null || token.isEmpty) return; // the foreground sends it
       }
+      // Checked again after the refresh and the token read: a sign-in that
+      // changed meanwhile must neither have its events deleted as another
+      // owner's nor have this employee's events sent with its token.
+      if (!c.sameSignIn(await load())) return;
 
       await AutoSender(
         queue: q,

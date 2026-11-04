@@ -165,6 +165,33 @@ void main() {
     }
   });
 
+  test('a sign-in changing during the refresh: the wake sends nothing and '
+      'deletes nothing (R136-F03, round 2)', () async {
+    // Employee 8's event, queued by the foreground after 8 signed in.
+    await queue.add(
+      AutoEvent(
+        eventUid: 'a-eight',
+        kind: AutoKind.arrive,
+        eventAt: now,
+        isMocked: false,
+        deviceId: 'ios-dev-1',
+        appVersion: '1.36.0',
+        source: AutoSource.foreground,
+        owner: 'acme|8',
+      ),
+    );
+    final seen = [_ctx(), _ctx(employeeId: 8)];
+    await wake(
+      kind: AutoKind.arrive,
+      source: AutoSource.geofence,
+      ctx: _ctx(),
+      loadContext: () async => seen.length > 1 ? seen.removeAt(0) : seen.first,
+    );
+    expect(api.bodies, isEmpty);
+    final left = await queue.ordered();
+    expect(left.map((e) => e.owner), containsAll(['acme|7', 'acme|8']));
+  });
+
   test(
     'a wake stamps its event with the signed-in employee (R136-F03)',
     () async {

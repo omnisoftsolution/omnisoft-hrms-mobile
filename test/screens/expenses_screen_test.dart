@@ -30,6 +30,9 @@ class _Api extends OmniMobileApi {
   /// Receipts of claim 13 (Taxi to client), by attachment id.
   List<int> taxiReceipts = const [];
 
+  /// The server has no claims at all (every one deleted elsewhere).
+  bool empty = false;
+
   @override
   Future<Map<String, dynamic>> deleteExpense(int expenseId) async {
     await deleteGate?.future;
@@ -40,6 +43,7 @@ class _Api extends OmniMobileApi {
   @override
   Future<ExpenseListPage> getExpenseList({int? beforeId}) async {
     calls++;
+    if (empty) return ExpenseListPage(records: const [], hasMore: false);
     return ExpenseListPage(
       records: [
         ExpenseRecord(
@@ -196,6 +200,28 @@ void main() {
         ),
         isTrue,
       );
+    });
+
+    testWidgets('a delete finishing after the list emptied does not throw '
+        '(R136-F09, round 2)', (tester) async {
+      _sideways(tester);
+      final api = _Api()..deleteGate = Completer<void>();
+      final list = GlobalKey<ExpensesScreenState>();
+      await tester.pumpWidget(_host(api, key: list));
+      await tester.pumpAndSettle();
+      await tester.tap(_inPane('left', find.text('Taxi to client')));
+      await tester.pumpAndSettle();
+      await tester.tap(_inPane('right', find.byTooltip('Delete')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(TextButton, 'Delete'));
+      await tester.pump();
+      api.empty = true;
+      await list.currentState!.refresh();
+      await tester.pumpAndSettle();
+      api.deleteGate!.complete();
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(api.deleted, [13]);
     });
 
     testWidgets('a receipt replaced by Edit is not shown from the old one '

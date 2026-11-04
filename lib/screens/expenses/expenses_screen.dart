@@ -224,7 +224,9 @@ class ExpensesScreenState extends State<ExpensesScreen> {
         if (!mounted) return;
         // One deleted after another claim was picked leaves that one (and
         // its scroll) alone.
-        if (_openRecord.id == changed) setState(() => _paneRevision++);
+        if (_records.isNotEmpty && _openRecord.id == changed) {
+          setState(() => _paneRevision++);
+        }
         await _refresh();
       },
     );
