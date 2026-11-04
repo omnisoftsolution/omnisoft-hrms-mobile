@@ -17,25 +17,33 @@ const kPaneFoldGap = 14.0;
 /// middle of the whole view: the side column belongs to the right-hand
 /// half, so the content's own middle would put the split off the fold. A
 /// fold that would leave either pane under 35 % (the app beside another one)
-/// splits the box in the middle instead. Only sideways: a wide screen held
-/// upright (a tablet) keeps one column.
-double? twoPaneSplit(BuildContext context, double width) {
+/// splits the box in the middle instead. Only sideways, and only on a
+/// tablet-sized screen (shortest side 600 pt, Apple's regular size class):
+/// a wide screen held upright (a tablet) and an ordinary phone held
+/// sideways keep one column.
+double? twoPaneSplit(BuildContext context, double width) =>
+    _twoPanes(context, width)?.split;
+
+/// [twoPaneSplit] plus the width of an active fold there (half-folded,
+/// e.g. 40 pt in book pose; 0 when flat), which no pane may cover.
+({double split, double fold})? _twoPanes(BuildContext context, double width) {
   if (width < kTwoPaneMinWidth) return null;
   final view = MediaQueryData.fromView(View.of(context));
   if (view.size.width <= view.size.height) return null;
+  if (view.size.shortestSide < 600) return null;
   final columnLeft = sideColumnOf(view.viewPadding) == SideColumn.left
       ? view.viewPadding.left
       : 0.0;
-  double? fold;
+  DuoRegion? fold;
   for (final d in DuoFeatures.geometryOf(context).divisions) {
     if (d.rect.height > d.rect.width) {
-      fold = d.rect.center.dx;
+      fold = d;
       break;
     }
   }
-  final x = (fold ?? view.size.width / 2) - columnLeft;
-  if (x < width * 0.35 || x > width * 0.65) return width / 2;
-  return x;
+  final x = (fold?.rect.center.dx ?? view.size.width / 2) - columnLeft;
+  if (x < width * 0.35 || x > width * 0.65) return (split: width / 2, fold: 0);
+  return (split: x, fold: fold != null && fold.active ? fold.rect.width : 0.0);
 }
 
 /// Padding for a pane's scroll view: 16 at the screen edge, [kPaneFoldGap]
@@ -69,18 +77,19 @@ class DuoPanes extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final split = constraints.hasBoundedWidth
-            ? twoPaneSplit(context, constraints.maxWidth)
+        final panes = constraints.hasBoundedWidth
+            ? _twoPanes(context, constraints.maxWidth)
             : null;
-        if (split == null) return single(context);
+        if (panes == null) return single(context);
         return Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             SizedBox(
               key: const ValueKey('duo-pane-left'),
-              width: split,
+              width: panes.split - panes.fold / 2,
               child: left(context),
             ),
+            if (panes.fold > 0) SizedBox(width: panes.fold),
             Expanded(
               key: const ValueKey('duo-pane-right'),
               child: right(context),

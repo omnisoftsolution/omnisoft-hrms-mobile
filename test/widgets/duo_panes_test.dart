@@ -62,6 +62,38 @@ void main() {
     expect(find.byKey(const ValueKey('single')), findsOneWidget);
   });
 
+  testWidgets('a big phone held sideways keeps one column (R136-F01)', (
+    tester,
+  ) async {
+    addTearDown(tester.view.reset);
+    // iPhone 16 Pro Max landscape: 956 wide, but only 440 tall.
+    _view(tester, const Size(956, 440), left: 62, right: 62);
+    await tester.pumpWidget(_panes(956));
+    expect(find.byKey(const ValueKey('single')), findsOneWidget);
+    expect(find.byKey(const ValueKey('left')), findsNothing);
+  });
+
+  testWidgets('a half-folded Duo (book) keeps both panes off the fold '
+      '(R136-F04)', (tester) async {
+    addTearDown(tester.view.reset);
+    final service = DuoService.instance;
+    addTearDown(() => service.debugGeometry = DuoGeometry.none);
+    _view(tester, const Size(951, 669), right: 84);
+    // Measured on the 27.1 simulator: an active fold 40 pt wide.
+    service.debugGeometry = DuoGeometry.fromMap(const {
+      'available': true,
+      'hinge': 'half',
+      'divisions': [
+        [455.5, 0, 40, 669, 1],
+      ],
+      'occlusions': [],
+    });
+    await tester.pumpWidget(DuoFeatures(child: _panes(867)));
+    await tester.pump();
+    expect(tester.getRect(find.byKey(const ValueKey('left'))).right, 455.5);
+    expect(tester.getRect(find.byKey(const ValueKey('right'))).left, 495.5);
+  });
+
   testWidgets('Duo open sideways: the split sits on the middle of the whole '
       'screen, not of the space left of the column', (tester) async {
     addTearDown(tester.view.reset);
