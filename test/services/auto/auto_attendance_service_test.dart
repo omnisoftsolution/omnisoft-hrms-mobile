@@ -548,6 +548,37 @@ void main() {
     expect(log, isNot(contains('flush')));
   });
 
+  AutoEvent queued(String uid) => AutoEvent(
+    eventUid: uid,
+    kind: AutoKind.leave,
+    eventAt: now,
+    isMocked: false,
+    deviceId: 'dev-1',
+    appVersion: '1.36.0',
+    source: AutoSource.geofence,
+  );
+
+  test('not_enabled on key fetch drops the queued events (R136-F05)', () async {
+    keyError = ApiException('not_enabled');
+    port.seed(_region);
+    await queue.add(queued('a-1'));
+    await service().sync();
+    expect(await queue.ordered(), isEmpty);
+  });
+
+  test(
+    'HR switching off (no config) drops the queued events (R136-F05)',
+    () async {
+      final auto = service();
+      await auto.sync(appStart: true);
+      await queue.add(queued('a-2'));
+      session.config = null;
+      await auto.sync();
+      expect(auto.state, AutoPhoneState.off);
+      expect(await queue.ordered(), isEmpty);
+    },
+  );
+
   test('device_required on key fetch → needsSetup, no region', () async {
     keyError = ApiException('device_required');
     final auto = service();

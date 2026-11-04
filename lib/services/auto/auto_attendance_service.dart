@@ -389,9 +389,10 @@ class AutoAttendanceService extends ChangeNotifier {
     await _postStatus(permission, false, epoch: epoch, force: false);
   }
 
-  /// Removes this db's region and the key, then the prefs that said there
-  /// was something to clean — those only when the region is gone. A failed
-  /// removal leaves [autoEngagedKey] set so the next sync tries again.
+  /// Removes this db's region, the key and the queue, then the prefs that
+  /// said there was something to clean — those only when the region is
+  /// gone. A failed removal leaves [autoEngagedKey] set so the next sync
+  /// tries again.
   Future<void> _cleanUp(String db, int epoch) async {
     var removed = true;
     try {
@@ -402,6 +403,13 @@ class AutoAttendanceService extends ChangeNotifier {
     }
     _key = null;
     await _keyStore.delete();
+    // HR switched it off: events still queued are not to be sent, nor
+    // reported as dropped when HR switches it on again weeks later.
+    try {
+      await _queue.clear();
+    } catch (e) {
+      _log('queue not cleared (${e.runtimeType})');
+    }
     if (_stale(epoch)) return;
     if (!removed) {
       await _prefs.setBool(autoEngagedKey, true);

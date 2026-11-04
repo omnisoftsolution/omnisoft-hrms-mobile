@@ -200,6 +200,17 @@ Future<void> handleAutoWake({
         sample = AutoSample.empty;
       }
 
+      // The fix takes seconds: after a sign-out (and maybe someone else's
+      // sign-in) meanwhile, this event belongs to nobody signed in now and
+      // must not reach the queue the next sign-in sends from.
+      final still = await (loadContext ?? AutoBackgroundContext.load)();
+      if (still == null ||
+          still.baseUrl != c.baseUrl ||
+          still.db != c.db ||
+          still.employeeId != c.employeeId) {
+        return;
+      }
+
       final q = queue ?? AutoEventQueue(prefs: prefs);
       await q.add(
         AutoEvent(

@@ -31,15 +31,16 @@ final _config = AutoAttendanceConfig.fromJson({
   'wifi_required': true,
 })!;
 
-AutoBackgroundContext _ctx({String? autoKey = 'K'}) => AutoBackgroundContext(
-  baseUrl: 'http://localhost',
-  db: 'acme',
-  deviceId: 'ios-dev-1',
-  appVersion: '1.36.0',
-  employeeId: 7,
-  autoKey: autoKey,
-  config: _config,
-);
+AutoBackgroundContext _ctx({String? autoKey = 'K', int employeeId = 7}) =>
+    AutoBackgroundContext(
+      baseUrl: 'http://localhost',
+      db: 'acme',
+      deviceId: 'ios-dev-1',
+      appVersion: '1.36.0',
+      employeeId: employeeId,
+      autoKey: autoKey,
+      config: _config,
+    );
 
 const _sample = AutoSample(
   latitude: 1.3001,
@@ -120,7 +121,8 @@ void main() {
     kind: kind,
     source: source,
     ctx: ctx,
-    loadContext: loadContext,
+    // Still the same sign-in when the fix is taken, unless a test says not.
+    loadContext: loadContext ?? () async => ctx ?? _ctx(),
     sampler: sampler ?? () async => _sample,
     queue: queue,
     prefs: prefs,
@@ -144,6 +146,24 @@ void main() {
         wake: ({required kind, required source, ctx}) =>
             wake(kind: kind, source: source, ctx: ctx),
       );
+
+  group('a sign-out while the fix is taken (R136-F03)', () {
+    for (final (name, after) in [
+      ('signed out', null),
+      ('another employee signed in', _ctx(employeeId: 8)),
+    ]) {
+      test('$name: the event is dropped, nothing is sent', () async {
+        await wake(
+          kind: AutoKind.arrive,
+          source: AutoSource.geofence,
+          ctx: _ctx(),
+          loadContext: () async => after,
+        );
+        expect(await queue.ordered(), isEmpty);
+        expect(api.bodies, isEmpty);
+      });
+    }
+  });
 
   group('geofence wake', () {
     test('enter posts an arrive with the sample and device id', () async {
@@ -537,6 +557,7 @@ void main() {
       kind: AutoKind.arrive,
       source: AutoSource.geofence,
       ctx: _ctx(),
+      loadContext: () async => _ctx(),
       sampler: () async => _sample,
       queue: queue,
       prefs: prefs,

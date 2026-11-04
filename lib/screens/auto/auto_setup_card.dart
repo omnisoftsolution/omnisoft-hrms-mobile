@@ -7,9 +7,10 @@ import 'auto_setup_screen.dart';
 
 /// Asks the system for one location step and answers the permission the
 /// phone has afterwards: `always`, `while_using`, `denied` (may be asked
-/// again) or `blocked` (denied for good: only the system settings can
-/// change it). [step] is `while_using`, `always` or `settings` (opens the
-/// app's system settings, Android's only way to "Allow all the time").
+/// again) or `blocked` (denied for good, or restricted: only the system
+/// settings can change it). [step] is `while_using`, `always` or `settings`
+/// (opens the app's system settings, Android's only way to "Allow all the
+/// time").
 typedef AutoPermissionRequest = Future<String> Function(String step);
 
 /// What the card and the result say when the session is not this phone's
@@ -32,7 +33,10 @@ Future<String> requestAutoPermission(String step) async {
     }
     if (await Permission.locationAlways.isGranted) return 'always';
     if (await Permission.locationWhenInUse.isGranted) return 'while_using';
-    if (await Permission.locationWhenInUse.isPermanentlyDenied) {
+    // Restricted (Screen Time, a company profile): asking again cannot
+    // change it either.
+    final whileUsing = await Permission.locationWhenInUse.status;
+    if (whileUsing.isPermanentlyDenied || whileUsing.isRestricted) {
       return 'blocked';
     }
   } catch (_) {
